@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Aged {{ kind }}{% endblock %}
+{% block heading %}Aged {{ kind }}{% endblock %}
+{% block content %}
+{% set end_label = "As of" %}{% include "reports/_filters.html" %}
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Contact</th>{% for b in buckets %}<th class="num">{{ b }}</th>{% endfor %}<th class="num">Total</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr><td>{{ row.name }}</td>{% for b in row.buckets %}<td class="num">{{ b|eur if b else '' }}</td>{% endfor %}<td class="num">{{ row.total_cents|eur }}</td></tr>
+    {% else %}<tr><td class="muted" colspan="{{ buckets|length + 2 }}">Nothing outstanding.</td></tr>{% endfor %}
+    <tr class="total-row"><td>Total</td>{% for t in totals %}<td class="num">{{ t|eur }}</td>{% endfor %}<td class="num">{{ grand|eur }}</td></tr>
+  </tbody>
+</table></div></div>
+<p class="fine-print">Days past due are counted from the invoice due date to the "as of" date.</p>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}{{ contact.name }}{% endblock %}
+{% block heading %}{{ contact.name }}{% endblock %}
+{% block actions %}
+{% if not contact.anonymised_at and request.session.get('user_id') %}<a class="btn btn-secondary" href="/contacts/{{ contact.id }}/edit">Edit</a>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="grid grid-2">
+  <div class="card"><div class="card-header"><h2 class="card-title">Details</h2></div>
+    <div class="card-body"><dl class="kv">
+      <dt>Kind</dt><dd>{{ contact.kind }}</dd>
+      <dt>Email</dt><dd>{{ contact.email or '-' }}</dd>
+      <dt>Address</dt><dd>{{ contact.address_line or '-' }}, {{ contact.postcode or '' }} {{ contact.city or '' }}</dd>
+      <dt>Country</dt><dd>{{ contact.country }}</dd>
+      <dt>VAT number</dt><dd>{{ contact.vat_number or '-' }}</dd>
+      <dt>KvK</dt><dd>{{ contact.kvk_number or '-' }}</dd>
+      <dt>IBAN</dt><dd>{{ contact.iban or '-' }}</dd>
+      {% if contact.anonymised_at %}<dt>Anonymised</dt><dd>{{ contact.anonymised_at|nldate }}</dd>{% endif %}
+    </dl></div></div>
+  <div class="card"><div class="card-header"><h2 class="card-title">Data protection</h2></div>
+    <div class="card-body stack">
+      {% if retention.until %}
+        <p>Bookkeeping records for this contact run to {{ retention.last_activity|nldate }}. Under the {{ retention.years }}-year retention rule they are kept until <strong>{{ retention.until|nldate }}</strong>{% if retention.running %} (still running){% else %} (expired){% endif %}.</p>
+      {% else %}
+        <p class="muted">No bookkeeping records refer to this contact.</p>
+      {% endif %}
+      <div class="row">
+        <a class="btn btn-secondary" href="/settings/privacy/contacts/{{ contact.id }}/export.json">Export personal data (JSON)</a>
+      </div>
+      {% if request.session.get('user_id') %}
+      {% if not contact.anonymised_at %}
+      <form method="post" action="/contacts/{{ contact.id }}/anonymise" class="stack">
+        {{ ui.csrf() }}
+        <label class="checkbox"><input type="checkbox" name="confirm" value="yes" required> I understand this blanks name, email, address, IBAN and KvK number permanently. Invoices stay, and documents generated afterwards show the anonymised name.</label>
+        <button class="btn btn-danger" type="submit">Anonymise contact</button>
+      </form>
+      {% endif %}
+      {% if can_delete %}
+      <form method="post" action="/contacts/{{ contact.id }}/delete">
+        {{ ui.csrf() }}<button class="btn btn-danger" type="submit">Delete contact</button>
+      </form>
+      {% else %}
+      <p class="fine-print">Contacts with invoices or journal lines cannot be deleted; anonymise them instead.</p>
+      {% endif %}
+      {% endif %}
+    </div></div>
+</div>
+
+<h2 class="section-title">Sales invoices</h2>
+{% if sales %}
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Number</th><th>Date</th><th>Status</th><th class="num">Total incl. VAT</th></tr></thead>
+  <tbody>{% for i in sales %}<tr><td><a href="/sales/{{ i.id }}">{{ i.number or 'Draft' }}</a></td><td>{{ i.issue_date|nldate }}</td><td>{{ ui.badge(i.status) }}</td><td class="num">{{ i.total_incl_cents|eur }}</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% else %}<p class="muted">None.</p>{% endif %}
+
+<h2 class="section-title">Purchase invoices</h2>
+{% if purchases %}
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Reference</th><th>Date</th><th>Status</th><th class="num">Total incl. VAT</th></tr></thead>
+  <tbody>{% for i in purchases %}<tr><td><a href="/purchases/{{ i.id }}">{{ i.supplier_reference }}</a></td><td>{{ i.invoice_date|nldate }}</td><td>{{ ui.badge(i.status) }}</td><td class="num">{{ i.total_incl_cents|eur }}</td></tr>{% endfor %}</tbody>
+</table></div></div>
+{% else %}<p class="muted">None.</p>{% endif %}
+{% endblock %}

@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Balance sheet{% endblock %}
+{% block heading %}Balance sheet{% endblock %}
+{% block content %}
+{% set end_label = "As of" %}{% include "reports/_filters.html" %}
+<div class="card"><div class="table-wrap"><table class="table">
+  {% for section in (r.assets, r.liabilities, r.equity) %}
+  <thead><tr><th colspan="2">{{ section.title }}</th></tr></thead>
+  <tbody>
+    {% for row in section.rows %}
+    <tr><td><a href="/accounts/{{ row.account.id }}">{{ row.account.code }} {{ row.account.name }}</a></td><td class="num">{{ row.balance_cents|eur }}</td></tr>
+    {% endfor %}
+    {% for label, value in section.extra %}<tr><td>{{ label }}</td><td class="num">{{ value|eur }}</td></tr>{% endfor %}
+    <tr class="total-row"><td>Total {{ section.title|lower }}</td><td class="num">{{ section.total_cents|eur }}</td></tr>
+  </tbody>
+  {% endfor %}
+</table></div></div>
+<p data-testid="balance-check" class="{{ 'amount-pos' if r.balanced else 'amount-neg' }}">
+  {% if r.balanced %}&#10003; Assets = Liabilities + Equity{% else %}&#10007; Assets do not equal Liabilities + Equity{% endif %}
+</p>
+{% endblock %}

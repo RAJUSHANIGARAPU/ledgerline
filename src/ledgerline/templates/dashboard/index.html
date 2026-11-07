@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+{% block head %}<script src="{{ url_for('static', path='js/chart.umd.min.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/dashboard.js') }}" defer></script>{% endblock %}
+{% block content %}
+{% if not d.has_data %}
+<div class="card">
+  <div class="card-header"><h2 class="card-title">Welcome to Ledgerline</h2></div>
+  <div class="card-body stack">
+    <p>Four steps to get your books started.</p>
+    <ol class="stack" data-testid="onboarding">
+      {% for label, done, href in d.checklist %}
+      <li>
+        <a href="{{ href }}">{{ label }}</a>
+        {% if done %}<span class="badge badge-paid">done</span>{% else %}<span class="badge badge-draft">to do</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+</div>
+{% else %}
+<div class="page-grid">
+  <div class="grid grid-4">
+    {{ ui.stat("Bank balance", d.bank_cents|eur, "All bank ledger accounts") }}
+    {{ ui.stat("Receivables open", d.receivable_cents|eur,
+               (d.receivable_overdue ~ " overdue") if d.receivable_overdue else "None overdue",
+               "warn" if d.receivable_overdue else None) }}
+    {{ ui.stat("Payables open", d.payable_cents|eur, "Purchase invoices to pay") }}
+    {{ ui.stat("VAT " ~ ("to pay" if d.vat_cents >= 0 else "to claim") ~ " " ~ d.vat_label,
+               (d.vat_cents|abs)|eur, "Quarter to date, from the VAT return") }}
+  </div>
+  <div class="grid grid-2">
+    <div class="card">
+      <div class="card-header"><h2 class="card-title">Revenue and expenses, last 12 months</h2></div>
+      <div class="card-body">
+        <div class="chart-box"><canvas id="monthly-chart" role="img" aria-label="Revenue and expenses per month"></canvas></div>
+        <script type="application/json" id="chart-data">{{ chart|tojson }}</script>
+      </div>
+    </div>
+    <div class="stack">
+      {{ ui.stat("Result year to date", d.result_ytd_cents|eur, "Revenue minus expenses",
+                 "good" if d.result_ytd_cents >= 0 else "bad") }}
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">To do</h2></div>
+        <div class="card-body">
+          <ul class="stack">
+            <li><a href="/bank">{{ d.unmatched }} unmatched bank transaction{{ "" if d.unmatched == 1 else "s" }}</a></li>
+            <li><a href="/sales">{{ d.receivable_overdue }} overdue invoice{{ "" if d.receivable_overdue == 1 else "s" }}</a></li>
+            <li><a href="/sales">{{ d.draft_sales }} draft sales invoice{{ "" if d.draft_sales == 1 else "s" }}</a></li>
+            <li><a href="/purchases">{{ d.draft_purchases }} draft purchase invoice{{ "" if d.draft_purchases == 1 else "s" }}</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2 class="card-title">Recent journal entries</h2><span class="spacer"></span><a href="/ledger">All entries</a></div>
+    <div class="table-wrap">
+      <table class="table">
+        <thead><tr><th>Number</th><th>Date</th><th>Description</th><th class="num">Amount</th></tr></thead>
+        <tbody>
+        {% for e in d.recent %}
+          <tr><td><a href="/ledger/{{ e.id }}">{{ e.number }}</a></td><td>{{ e.entry_date|nldate }}</td>
+              <td>{{ e.description }}</td><td class="num">{{ e.lines|sum(attribute='debit_cents')|eur }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

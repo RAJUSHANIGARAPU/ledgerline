@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}SEPA payment file{% endblock %}
+{% block heading %}SEPA payment file{% endblock %}
+{% block content %}
+{% if not accounts %}
+  {{ ui.empty("No bank accounts yet", "Add a bank account first.", "/bank", "Go to bank") }}
+{% elif not invoices %}
+  {{ ui.empty("No open purchase invoices", "Booked purchase invoices that are still unpaid appear here.") }}
+{% else %}
+<form method="post" action="/bank/sepa/export" class="stack">
+  {{ ui.csrf() }}
+  <section class="card">
+    <div class="card-body form-grid">
+      <label class="field">
+        <span class="field-label">Pay from</span>
+        <select class="input" name="account_id">
+          {% for a in accounts %}<option value="{{ a.id }}">{{ a.name }} ({{ a.iban }})</option>{% endfor %}
+        </select>
+      </label>
+      {{ ui.field("execution_date", "Execution date", today.isoformat(), "date", True) }}
+    </div>
+  </section>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th></th><th>Supplier</th><th>Reference</th><th>Due</th><th>IBAN</th><th class="num">Open</th></tr></thead>
+      <tbody>
+      {% for i in invoices %}
+        <tr>
+          <td><input class="checkbox" type="checkbox" name="invoice_id" value="{{ i.id }}"{% if not i.contact.iban %} disabled{% endif %}></td>
+          <td>{{ i.contact.name }}</td><td>{{ i.supplier_reference }}</td><td>{{ i.due_date|nldate }}</td>
+          <td>{{ i.contact.iban or "missing" }}</td>
+          <td class="num">{{ (i.total_incl_cents - i.paid_cents)|eur }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="form-actions"><button class="btn btn-primary" type="submit">Download pain.001 file</button></div>
+</form>
+{% endif %}
+{% endblock %}

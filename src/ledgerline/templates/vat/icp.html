@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}ICP overview{% endblock %}
+{% block heading %}ICP overview {{ p.label }}{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="/vat?{{ p.qs }}">VAT return</a>{% endblock %}
+{% block content %}
+<div class="flash flash-info" role="note">Prepares your opgaaf intracommunautaire prestaties. File it yourself with the Belastingdienst; Ledgerline does not submit it.</div>
+{% include "vat/_period.html" %}
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>VAT number</th><th>Customer</th><th class="num">Amount</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr><td>{{ r.vat_number or '(missing)' }}</td><td>{{ r.name }}</td><td class="num">{{ r.amount_cents|eur }}</td></tr>
+  {% else %}<tr><td colspan="3" class="muted">No intra-EU supplies in this period.</td></tr>{% endfor %}
+  <tr class="total-row"><td colspan="2">Total</td><td class="num">{{ total|eur }}</td></tr>
+  </tbody>
+</table></div></div>
+<div class="toolbar"><a class="btn btn-secondary" href="/vat/icp?{{ p.qs }}&amp;export=csv">Download CSV</a>
+  <a class="btn btn-ghost" href="/vat/icp?{{ p.qs }}&amp;export=csv&comma=1">CSV with decimal comma</a></div>
+{% endblock %}

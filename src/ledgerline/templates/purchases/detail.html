@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}{{ invoice.supplier_reference }}{% endblock %}
+{% block heading %}{{ invoice.contact.name }} · {{ invoice.supplier_reference }} {{ ui.badge(display_status) }}{% endblock %}
+{% block actions %}{% if attachment %}<a class="btn btn-secondary" href="/purchases/{{ invoice.id }}/attachment">Download attachment</a>{% endif %}{% endblock %}
+{% block content %}
+<div class="grid grid-3">
+  {{ ui.stat("Payable", invoice.total_incl_cents|eur, "excl. " ~ (invoice.total_excl_cents|eur)) }}
+  {{ ui.stat("Paid", invoice.paid_cents|eur) }}
+  {{ ui.stat("Remaining", remaining|eur, "due " ~ (invoice.due_date|nldate), 'bad' if display_status == 'overdue' else None) }}
+</div>
+<div class="card">
+  <div class="card-body">
+    <dl class="kv">
+      <dt>Supplier</dt><dd><a href="/contacts/{{ invoice.contact_id }}">{{ invoice.contact.name }}</a></dd>
+      <dt>Invoice date</dt><dd>{{ invoice.invoice_date|nldate }}</dd>
+      <dt>Due date</dt><dd>{{ invoice.due_date|nldate }}</dd>
+      {% if invoice.description %}<dt>Description</dt><dd>{{ invoice.description }}</dd>{% endif %}
+      {% if entry %}<dt>Journal entry</dt><dd>{{ entry.number }}</dd>{% endif %}
+    </dl>
+  </div>
+</div>
+<div class="card">
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Description</th><th>Account</th><th>VAT code</th><th class="num">Excl.</th><th class="num">VAT</th></tr></thead>
+      <tbody>
+      {% for line in invoice.lines %}
+        <tr>
+          <td>{{ line.description }}</td>
+          <td class="muted">{% set acc = accounts.get(line.expense_account_id) %}{{ acc.code ~ ' ' ~ acc.name if acc else line.expense_account_id }}</td>
+          <td>{{ line.vat_code }}</td>
+          <td class="num">{{ line.amount_excl_cents|eur }}</td>
+          <td class="num">{{ line.vat_cents|eur }}</td>
+        </tr>
+      {% endfor %}
+        <tr class="total-row"><td colspan="3">Totals</td><td class="num">{{ invoice.total_excl_cents|eur }}</td><td class="num">{{ invoice.total_vat_cents|eur }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% if reverse %}<p class="fine-print">Reverse-charge VAT is self-assessed: it is deducted and owed in the same return and is not part of the amount payable to the supplier.</p>{% endif %}
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}{{ invoice.number }}{% endblock %}
+{% block heading %}{{ 'Credit note' if invoice.credit_note_of_id else 'Invoice' }} {{ invoice.number }} {{ ui.badge(display_status) }}{% endblock %}
+{% block actions %}
+  <a class="btn btn-secondary" href="/sales/{{ invoice.id }}/pdf">PDF</a>
+  <a class="btn btn-secondary" href="/sales/{{ invoice.id }}/ubl">UBL (Peppol)</a>
+  {% if can_credit %}
+  <form method="post" action="/sales/{{ invoice.id }}/credit">{{ ui.csrf() }}
+    <button class="btn btn-danger" type="submit" data-confirm="Issue a credit note for the full amount? The invoice will be cancelled.">Credit note</button>
+  </form>
+  {% endif %}
+{% endblock %}
+{% block content %}
+<div class="grid grid-3">
+  {{ ui.stat("Total", invoice.total_incl_cents|eur, "excl. " ~ (invoice.total_excl_cents|eur)) }}
+  {{ ui.stat("Paid", invoice.paid_cents|eur) }}
+  {{ ui.stat("Remaining", remaining|eur, "due " ~ (invoice.due_date|nldate), 'bad' if display_status == 'overdue' else None) }}
+</div>
+<div class="card">
+  <div class="card-body">
+    <dl class="kv">
+      <dt>Customer</dt><dd><a href="/contacts/{{ invoice.contact_id }}">{{ invoice.contact.name }}</a></dd>
+      <dt>Invoice date</dt><dd>{{ invoice.issue_date|nldate }}</dd>
+      <dt>Supply date</dt><dd>{{ (invoice.supply_date or invoice.issue_date)|nldate }}</dd>
+      <dt>Due date</dt><dd>{{ invoice.due_date|nldate }}</dd>
+      {% if invoice.reference %}<dt>Reference</dt><dd>{{ invoice.reference }}</dd>{% endif %}
+      {% if original %}<dt>Credits invoice</dt><dd><a href="/sales/{{ original.id }}">{{ original.number }}</a></dd>{% endif %}
+      {% for note in credit_notes %}<dt>Credit note</dt><dd><a href="/sales/{{ note.id }}">{{ note.number }}</a></dd>{% endfor %}
+      {% if entry %}<dt>Journal entry</dt><dd>{{ entry.number }}</dd>{% endif %}
+    </dl>
+  </div>
+</div>
+<div class="card">
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit price</th><th>Account</th><th>VAT</th><th class="num">Amount</th></tr></thead>
+      <tbody>
+      {% for line in invoice.lines %}
+        <tr>
+          <td>{{ line.description }}</td>
+          <td class="num">{{ line.quantity.normalize()|string }}</td>
+          <td class="num">{{ line.unit_price_cents|eur }}</td>
+          <td class="muted">{% set acc = accounts.get(line.revenue_account_id) %}{{ acc.code ~ ' ' ~ acc.name if acc else line.revenue_account_id }}</td>
+          <td>{{ line.vat_code }}</td>
+          <td class="num">{{ line.line_excl_cents|eur }}</td>
+        </tr>
+      {% endfor %}
+        <tr class="total-row"><td colspan="5">Total excl. VAT</td><td class="num">{{ invoice.total_excl_cents|eur }}</td></tr>
+        {% for row in vat_summary %}<tr><td class="muted" colspan="5">VAT {{ row.code }} ({{ row.rate }}%) on {{ row.base|eur }}</td><td class="num">{{ row.vat|eur }}</td></tr>{% endfor %}
+        <tr class="total-row"><td colspan="5">Total incl. VAT</td><td class="num">{{ invoice.total_incl_cents|eur }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% if invoice.notes %}<p class="muted">{{ invoice.notes }}</p>{% endif %}
+{% endblock %}

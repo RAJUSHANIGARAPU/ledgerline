@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Reconcile{% endblock %}
+{% block heading %}Reconcile {{ account.name }}{% endblock %}
+{% block actions %}
+{% if status == "unmatched" and rows %}
+<form method="post" action="/bank/accounts/{{ account.id }}/accept-exact">
+  {{ ui.csrf() }}<button class="btn btn-primary" type="submit">Accept all exact matches</button>
+</form>
+{% endif %}
+{% endblock %}
+{% block content %}
+<div class="page-grid">
+  <div class="row">
+    <div class="tabs">
+      {% for s in ["unmatched", "matched", "ignored"] %}
+      <a class="tab{% if status == s %} is-active{% endif %}" href="/bank/reconcile?account_id={{ account.id }}&status={{ s }}">{{ s|capitalize }} ({{ counts[s] }})</a>
+      {% endfor %}
+    </div>
+    <span class="spacer"></span>
+    {% if accounts|length > 1 %}
+    <form method="get" action="/bank/reconcile" class="row">
+      <select class="input" name="account_id">
+        {% for a in accounts %}<option value="{{ a.id }}"{% if a.id == account.id %} selected{% endif %}>{{ a.name }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-secondary btn-sm" type="submit">Show</button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if not rows %}
+    {{ ui.empty("Nothing here", "No " ~ status ~ " transactions for this account.", "/bank", "Back to bank") }}
+  {% endif %}
+
+  {% for row in rows %}
+  {% set tx = row.tx %}
+  <section class="card">
+    <div class="card-header">
+      <h2 class="card-title">{{ tx.counterparty_name or "Unknown counterparty" }}</h2>
+      <span class="num {{ 'amount-pos' if tx.amount_cents > 0 else 'amount-neg' }}">{{ tx.amount_cents|eur }}</span>
+    </div>
+    <div class="card-body stack">
+      <dl class="kv">
+        <dt>Date</dt><dd>{{ tx.booking_date|nldate }}</dd>
+        {% if tx.counterparty_iban %}<dt>IBAN</dt><dd>{{ tx.counterparty_iban }}</dd>{% endif %}
+        {% if tx.description %}<dt>Description</dt><dd>{{ tx.description }}</dd>{% endif %}
+        <dt>Status</dt><dd>{{ ui.badge(tx.status) }}</dd>
+      </dl>
+
+      {% if status == "unmatched" %}
+        {% if row.suggestions %}
+        <form method="post" action="/bank/transactions/{{ tx.id }}/match" class="stack">
+          {{ ui.csrf() }}
+          <div class="table-wrap">
+            <table class="table table-compact">
+              <thead><tr><th></th><th>Invoice</th><th>Contact</th><th class="num">Open</th><th>Why</th></tr></thead>
+              <tbody>
+              {% for s in row.suggestions %}
+                <tr>
+                  <td><input class="checkbox" type="checkbox" name="allocation" value="{{ s.candidate.kind }}:{{ s.candidate.invoice_id }}:{{ s.amount_cents if s.amount_cents <= tx.amount_cents|abs else tx.amount_cents|abs }}"{% if loop.first %} checked{% endif %}></td>
+                  <td>{{ s.candidate.number }}</td>
+                  <td>{{ s.candidate.contact_name }}</td>
+                  <td class="num">{{ s.candidate.remaining_cents|eur }}</td>
+                  <td class="muted">{{ s.reason }}</td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit">Match selected</button></div>
+        </form>
+        {% else %}
+          <p class="muted">No matching invoice found.</p>
+        {% endif %}
+
+        {% if row.others %}
+        <details>
+          <summary>Other open invoices</summary>
+          <form method="post" action="/bank/transactions/{{ tx.id }}/match" class="stack">
+            {{ ui.csrf() }}
+            <div class="table-wrap">
+              <table class="table table-compact">
+                <tbody>
+                {% for s in row.others %}
+                  <tr>
+                    <td><input class="checkbox" type="checkbox" name="allocation" value="{{ s.candidate.kind }}:{{ s.candidate.invoice_id }}:{{ s.amount_cents if s.amount_cents <= tx.amount_cents|abs else tx.amount_cents|abs }}"></td>
+                    <td>{{ s.candidate.number }}</td><td>{{ s.candidate.contact_name }}</td>
+                    <td class="num">{{ s.candidate.remaining_cents|eur }}</td>
+                  </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <div class="form-actions"><button class="btn btn-secondary btn-sm" type="submit">Match selected</button></div>
+          </form>
+        </details>
+        {% endif %}
+
+        <details>
+          <summary>Book to an account</summary>
+          <form method="post" action="/bank/transactions/{{ tx.id }}/book" class="stack">
+            {{ ui.csrf() }}
+            <div class="form-grid">
+              <label class="field">
+                <span class="field-label">Account</span>
+                <select class="input" name="account_id" required>
+                  {% for a in chart %}<option value="{{ a.id }}">{{ a.code }} {{ a.name }}</option>{% endfor %}
+                </select>
+              </label>
+              <label class="field">
+                <span class="field-label">VAT code</span>
+                <select class="input" name="vat_code">
+                  <option value="">No VAT</option>
+                  {% for c in (vat_in if tx.amount_cents > 0 else vat_out) %}<option value="{{ c.code }}">{{ c.code }} {{ c.label }}</option>{% endfor %}
+                </select>
+              </label>
+              {{ ui.field("description", "Description", "", "text") }}
+            </div>
+            <div class="form-actions"><button class="btn btn-secondary btn-sm" type="submit">Book</button></div>
+          </form>
+        </details>
+
+        <form method="post" action="/bank/transactions/{{ tx.id }}/ignore">
+          {{ ui.csrf() }}<button class="btn btn-ghost btn-sm" type="submit">Ignore</button>
+        </form>
+      {% else %}
+        <form method="post" action="/bank/transactions/{{ tx.id }}/undo">
+          {{ ui.csrf() }}<button class="btn btn-danger btn-sm" type="submit">Undo</button>
+        </form>
+      {% endif %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% endblock %}

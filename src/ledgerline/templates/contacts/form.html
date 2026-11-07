@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}{{ 'Edit contact' if contact else 'New contact' }}{% endblock %}
+{% block heading %}{{ 'Edit ' ~ contact.name if contact else 'New contact' }}{% endblock %}
+{% block content %}
+{% if errors %}<div class="flash flash-error" role="alert"><ul>{% for msg in errors.values() %}<li>{{ msg }}</li>{% endfor %}</ul></div>{% endif %}
+<form class="card" method="post" action="{{ '/contacts/' ~ contact.id ~ '/edit' if contact else '/contacts/new' }}">
+  <div class="card-body stack">
+    {{ ui.csrf() }}
+    <div class="form-grid">
+      {{ ui.field('name', 'Name', values.name, required=True) }}
+      <label class="field"><span class="field-label">Kind</span>
+        <select class="input" name="kind">
+          {% for k in kinds %}<option value="{{ k }}" {% if values.kind == k %}selected{% endif %}>{{ k|capitalize }}</option>{% endfor %}
+        </select></label>
+      {{ ui.field('email', 'Email', values.email, 'email') }}
+      {{ ui.field('address_line', 'Address', values.address_line) }}
+      {{ ui.field('postcode', 'Postcode', values.postcode) }}
+      {{ ui.field('city', 'City', values.city) }}
+      {{ ui.field('country', 'Country (ISO-2)', values.country, attrs='maxlength="2"') }}
+      {{ ui.field('vat_number', 'VAT number', values.vat_number, hint='Format check only, e.g. NL123456789B01. Not validated against VIES.') }}
+      {{ ui.field('kvk_number', 'KvK number', values.kvk_number, hint='8 digits') }}
+      {{ ui.field('iban', 'IBAN', values.iban) }}
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Save</button>
+      <a class="btn btn-ghost" href="{{ '/contacts/' ~ contact.id if contact else '/contacts' }}">Cancel</a>
+    </div>
+  </div>
+</form>
+{% endblock %}

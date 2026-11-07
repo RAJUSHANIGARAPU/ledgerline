@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Profit and loss{% endblock %}
+{% block heading %}Profit and loss{% endblock %}
+{% block content %}
+{% set with_start = true %}{% include "reports/_filters.html" %}
+<div class="card"><div class="table-wrap"><table class="table">
+  {% for section in (r.revenue, r.expenses) %}
+  <thead><tr><th colspan="2">{{ section.title }}</th></tr></thead>
+  <tbody>
+    {% for row in section.rows %}
+    <tr><td><a href="/accounts/{{ row.account.id }}">{{ row.account.code }} {{ row.account.name }}</a></td><td class="num">{{ row.balance_cents|eur }}</td></tr>
+    {% else %}<tr><td class="muted" colspan="2">No activity in this period.</td></tr>{% endfor %}
+    <tr class="total-row"><td>Total {{ section.title|lower }}</td><td class="num">{{ section.total_cents|eur }}</td></tr>
+  </tbody>
+  {% endfor %}
+  <tbody><tr class="total-row"><td>Result</td><td class="num {{ 'amount-pos' if r.result_cents >= 0 else 'amount-neg' }}">{{ r.result_cents|eur }}</td></tr></tbody>
+</table></div></div>
+{% endblock %}

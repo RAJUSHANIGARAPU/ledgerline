@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Contacts{% endblock %}
+{% block heading %}Contacts{% endblock %}
+{% block actions %}<a class="btn btn-primary" href="/contacts/new">New contact</a>{% endblock %}
+{% block content %}
+<form class="toolbar" method="get" action="/contacts">
+  <input class="input" type="search" name="q" value="{{ q }}" placeholder="Search name, email, city, VAT number" aria-label="Search contacts">
+  <select class="input" name="kind" aria-label="Kind">
+    <option value="">All kinds</option>
+    {% for k in kinds %}<option value="{{ k }}" {% if kind == k %}selected{% endif %}>{{ k|capitalize }}</option>{% endfor %}
+  </select>
+  <button class="btn btn-secondary" type="submit">Filter</button>
+</form>
+{% if contacts %}
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Name</th><th>Kind</th><th>Email</th><th>City</th><th>VAT number</th></tr></thead>
+  <tbody>
+  {% for c in contacts %}
+    <tr class="is-clickable">
+      <td><a href="/contacts/{{ c.id }}">{{ c.name }}</a>{% if c.anonymised_at %} <span class="pill">anonymised</span>{% endif %}</td>
+      <td>{{ c.kind }}</td><td class="muted">{{ c.email or '' }}</td>
+      <td class="muted">{{ c.city or '' }}</td><td class="muted">{{ c.vat_number or '' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+{% else %}
+{{ ui.empty("No contacts found", "Add customers and suppliers to use them on invoices.", "/contacts/new", "New contact") }}
+{% endif %}
+{% endblock %}

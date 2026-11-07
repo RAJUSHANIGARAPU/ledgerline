@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Privacy and data{% endblock %}
+{% block heading %}Privacy and data{% endblock %}
+{% block actions %}{% if is_owner %}<a class="btn btn-primary" href="/settings/privacy/export.zip">Export administration (ZIP)</a>{% endif %}{% endblock %}
+{% block content %}
+<div class="card"><div class="card-header"><h2 class="card-title">Retention rule</h2></div>
+  <div class="card-body stack">
+    <p>Bookkeeping records are kept for {{ years }} years (10 years for records about real estate). The period starts when the data stops being current, in practice from the end of the year the record relates to. The dates below use {{ years }} years from 31 December of the year of the last record for each contact.</p>
+    <p class="fine-print">This is the project's reading of the Belastingdienst guidance, not legal advice. See docs/COMPLIANCE_NL.md.</p>
+  </div></div>
+
+<div class="card"><div class="card-header"><h2 class="card-title">Contacts</h2></div>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Contact</th><th>Last record</th><th>Retention until</th><th></th></tr></thead>
+    <tbody>{% for row in rows %}
+      <tr><td><a href="/contacts/{{ row.contact.id }}">{{ row.contact.name }}</a>{% if row.contact.anonymised_at %} <span class="pill">anonymised</span>{% endif %}</td>
+        <td>{{ row.retention.last_activity|nldate }}</td>
+        <td>{{ row.retention.until|nldate if row.retention.until else 'no records' }}</td>
+        <td>{% if is_owner %}<a class="btn btn-sm btn-secondary" href="/settings/privacy/contacts/{{ row.contact.id }}/export.json">Export JSON</a>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">No contacts.</td></tr>{% endfor %}</tbody>
+  </table></div></div>
+{% endblock %}

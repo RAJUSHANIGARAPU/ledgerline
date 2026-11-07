@@ -1,0 +1,42 @@
+{# A field change swaps only amounts and totals, so nothing typed meanwhile is overwritten. #}
+<div id="lines" hx-post="/sales/preview" hx-trigger="change" hx-include="closest form" hx-sync="this:replace"
+     hx-target="#line-summary" hx-select="#line-summary" hx-swap="outerHTML" hx-disinherit="*"
+     hx-select-oob="{% for row in rows %}#line-amount-{{ loop.index0 }}{{ ',' if not loop.last }}{% endfor %}">
+  <div class="table-wrap">
+    <table class="table line-editor">
+      <thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit price (excl.)</th><th>Revenue account</th><th>VAT</th><th class="num">Amount</th><th></th></tr></thead>
+      <tbody>
+      {% for row in rows %}
+        <tr>
+          <td><input class="input" name="line_description" value="{{ row.description }}" maxlength="500" aria-label="Description"></td>
+          <td><input class="input num" name="line_qty" value="{{ row.qty }}" inputmode="decimal" aria-label="Quantity"></td>
+          <td><input class="input num" name="line_price" value="{{ row.price }}" inputmode="decimal" aria-label="Unit price"></td>
+          <td>
+            <select class="input" name="line_account" data-role="account" aria-label="Revenue account">
+              {% for a in accounts %}<option value="{{ a.id }}" data-vat="{{ a.default_vat_code or '' }}"{% if a.id|string == row.account %} selected{% endif %}>{{ a.code }} {{ a.name }}</option>{% endfor %}
+            </select>
+          </td>
+          <td>
+            <select class="input" name="line_vat_code" data-role="vat" aria-label="VAT code">
+              {% for c in vat_codes %}<option value="{{ c.code }}"{% if c.code == row.vat_code %} selected{% endif %}>{{ c.code }} · {{ c.rate }}%</option>{% endfor %}
+            </select>
+          </td>
+          <td class="num" id="line-amount-{{ loop.index0 }}">{{ preview.excl[loop.index0]|eur }}</td>
+          <td><button type="button" class="btn btn-ghost btn-sm" hx-post="/sales/preview" hx-vals='{"remove": "{{ loop.index0 }}"}' hx-include="closest form" hx-target="#lines" hx-swap="outerHTML">Remove</button></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="row">
+    <button type="button" class="btn btn-secondary btn-sm" hx-post="/sales/preview" hx-vals='{"op": "add"}' hx-include="closest form" hx-target="#lines" hx-swap="outerHTML">Add line</button>
+    <span class="spacer"></span>
+    <div class="table-wrap" id="line-summary">
+      <table class="table table-compact">
+        <tr><td class="muted">Total excl. VAT</td><td class="num">{{ preview.total_excl|eur }}</td></tr>
+        {% for code, base, vat in preview.vat_rows %}<tr><td class="muted">VAT {{ code }} on {{ base|eur }}</td><td class="num">{{ vat|eur }}</td></tr>{% endfor %}
+        <tr class="total-row"><td>Total</td><td class="num">{{ preview.total_incl|eur }}</td></tr>
+      </table>
+    </div>
+  </div>
+</div>

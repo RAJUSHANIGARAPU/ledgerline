@@ -1,0 +1,10 @@
+<form method="get" class="toolbar">
+  {% if with_start %}
+  <label class="field"><span class="field-label">From</span><input class="input" type="date" name="start" value="{{ start or '' }}"></label>
+  {% endif %}
+  <label class="field"><span class="field-label">{{ end_label or 'To' }}</span><input class="input" type="date" name="end" value="{{ end }}"></label>
+  <button class="btn btn-secondary" type="submit">Show</button>
+  <span class="spacer"></span>
+  <label class="checkbox"><input type="checkbox" name="comma" value="1"> Decimal comma</label>
+  <button class="btn btn-ghost" type="submit" name="export" value="csv">Download CSV</button>
+</form>

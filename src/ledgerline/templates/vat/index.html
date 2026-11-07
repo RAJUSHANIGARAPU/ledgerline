@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}VAT return{% endblock %}
+{% block heading %}VAT return {{ p.label }}{% endblock %}
+{% block actions %}<a class="btn btn-secondary" href="/vat/icp?{{ p.qs }}">ICP overview</a>{% endblock %}
+{% block content %}
+<div class="flash flash-info" role="note" data-testid="vat-banner">This overview prepares your return; file it yourself in Mijn Belastingdienst Zakelijk. Ledgerline does not submit to the Belastingdienst.</div>
+{% include "vat/_period.html" %}
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Rubriek</th><th>Description</th><th class="num">Base</th><th class="num">VAT</th><th class="num">Base on form (whole &euro;)</th></tr></thead>
+  <tbody>
+  {% for line in r.lines %}
+    <tr>
+      <td><a href="/vat/lines?bucket={{ line.rubriek }}&amp;{{ p.qs }}">{{ line.rubriek }}</a>{% if line.verify %} <span class="pill" title="Mapping from secondary sources; check the official toelichting">verify</span>{% endif %}</td>
+      <td>{{ line.description }}</td>
+      <td class="num">{{ line.base_cents|eur }}</td>
+      <td class="num">{{ line.vat_cents|eur if line.has_vat else '' }}</td>
+      <td class="num">{{ whole(line.base_cents) }}</td>
+    </tr>
+  {% endfor %}
+    <tr class="total-row"><td>5a</td><td>Total VAT owed (rubrieken 1 to 4)</td><td></td><td class="num">{{ r.owed_cents|eur }}</td><td></td></tr>
+    <tr class="total-row"><td><a href="/vat/lines?bucket=5b&amp;{{ p.qs }}">5b</a></td><td>Deductible input VAT</td><td></td><td class="num">{{ r.deductible_cents|eur }}</td><td></td></tr>
+    <tr class="total-row"><td>5c <span class="pill">verify</span></td><td>{{ 'Balance to pay' if r.balance_cents >= 0 else 'Balance to claim back' }}</td><td></td>
+      <td class="num {{ 'amount-neg' if r.balance_cents > 0 else 'amount-pos' }}">{{ (r.balance_cents|abs)|eur }}</td><td></td></tr>
+  </tbody>
+</table></div></div>
+<p class="fine-print">Rubriek 1c, 1d and 3c have no VAT code yet and always show zero. On the official form, bases are entered in whole euros; the last column drops the cents, which is in your favour for amounts owed. Check this and the rubrieken marked "verify" against the Belastingdienst's current toelichting before you file.</p>
+{% if can_write %}
+<div class="card"><div class="card-header"><h2 class="card-title">VAT settlement entry</h2></div>
+  <form method="post" action="/vat/settle" class="card-body stack">
+    {{ ui.csrf() }}
+    <input type="hidden" name="kind" value="{{ p.kind }}"><input type="hidden" name="year" value="{{ p.year }}"><input type="hidden" name="number" value="{{ p.number }}">
+    {% if settlement %}
+    <p>Settled in <a href="/ledger/{{ settlement.id }}">{{ settlement.number }}</a>.</p>
+    {% else %}
+    <p class="muted">Posts one entry dated {{ p.end|nldate }} that clears the period's movement on the VAT accounts into the VAT settlement account. Optional.</p>
+    <div class="form-actions"><button class="btn btn-secondary" type="submit" data-confirm="Post the VAT settlement for {{ p.label }}?">Post VAT settlement</button></div>
+    {% endif %}
+  </form></div>
+{% endif %}
+{% endblock %}

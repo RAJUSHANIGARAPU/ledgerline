@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}{{ 'Edit account' if account else 'New account' }}{% endblock %}
+{% block heading %}{{ 'Edit account ' ~ account.code if account else 'New account' }}{% endblock %}
+{% block content %}
+{% for message in errors %}<div class="flash flash-error" role="alert">{{ message }}</div>{% endfor %}
+<div class="card"><form method="post" action="{{ '/accounts/' ~ account.id ~ '/edit' if account else '/accounts/new' }}" class="card-body stack">
+  {{ ui.csrf() }}
+  <div class="form-grid">
+    {{ ui.field("code", "Code", v.code, "text", true, "Unique within this administration.", 'maxlength="10"') }}
+    {{ ui.field("name", "Name", v.name, "text", true, None, 'maxlength="120"') }}
+    <label class="field"><span class="field-label">Type</span>
+      <select class="input" name="type">
+        {% for t in types %}<option value="{{ t }}" {% if v.type == t %}selected{% endif %}>{{ t|capitalize }}</option>{% endfor %}
+      </select>
+      {% if locked_type %}<span class="field-hint">The type is fixed once an account has journal lines or is a system account.</span>{% endif %}
+    </label>
+    <label class="field"><span class="field-label">Default VAT code</span>
+      <select class="input" name="default_vat_code">
+        <option value="">None</option>
+        {% for c in vat_codes %}<option value="{{ c.code }}" {% if v.default_vat_code == c.code %}selected{% endif %}>{{ c.code }} - {{ c.label }}</option>{% endfor %}
+      </select></label>
+    {{ ui.field("rgs_code", "RGS code", v.rgs_code, "text", false, "Free text, optional.", 'maxlength="40"') }}
+  </div>
+  <div class="form-actions"><button class="btn btn-primary" type="submit">Save</button> <a class="btn btn-ghost" href="/accounts">Cancel</a></div>
+</form></div>
+{% endblock %}

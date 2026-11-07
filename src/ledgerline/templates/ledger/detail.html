@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Entry {{ entry.number }}{% endblock %}
+{% block heading %}Entry {{ entry.number }}{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="/ledger">Back to journal</a>{% endblock %}
+{% block content %}
+<div class="card"><div class="card-body">
+  <dl class="kv">
+    <dt>Date</dt><dd>{{ entry.entry_date|nldate }}</dd>
+    <dt>Description</dt><dd>{{ entry.description }}</dd>
+    <dt>Source</dt><dd>{{ entry.source_type or 'manual' }}</dd>
+    {% if original %}<dt>Reverses</dt><dd><a href="/ledger/{{ original.id }}">{{ original.number }}</a></dd>{% endif %}
+    {% if reversal %}<dt>Reversed by</dt><dd><a href="/ledger/{{ reversal.id }}">{{ reversal.number }}</a></dd>{% endif %}
+  </dl>
+</div>
+<div class="table-wrap"><table class="table">
+  <thead><tr><th>Account</th><th>Description</th><th>VAT</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead>
+  <tbody>
+  {% for line in entry.lines %}
+    {% set a = accounts[line.account_id] %}
+    <tr><td><a href="/accounts/{{ a.id }}">{{ a.code }} {{ a.name }}</a></td><td>{{ line.description or '' }}</td>
+        <td>{% if line.vat_code %}{{ line.vat_code }} <span class="muted">{{ line.vat_role }}</span>{% endif %}</td>
+        <td class="num">{{ line.debit_cents|eur if line.debit_cents else '' }}</td>
+        <td class="num">{{ line.credit_cents|eur if line.credit_cents else '' }}</td></tr>
+  {% endfor %}
+    <tr class="total-row"><td colspan="3">Total</td><td class="num">{{ debit|eur }}</td><td class="num">{{ credit|eur }}</td></tr>
+  </tbody>
+</table></div></div>
+{% if not reversal %}
+<div class="card">
+  <div class="card-header"><h2 class="card-title">Reverse this entry</h2></div>
+  <form method="post" action="/ledger/{{ entry.id }}/reverse" class="card-body stack">
+    {{ ui.csrf() }}
+    <div class="form-grid">
+      {{ ui.field("date", "Reversal date", today.isoformat(), "date", true,
+                  "Must be after " ~ (locked_until|nldate) ~ ", the locked period." if locked_until else None) }}
+      {{ ui.field("reason", "Reason", "", "text", true, None, 'maxlength="200"') }}
+    </div>
+    <div class="form-actions"><button class="btn btn-danger" type="submit" data-confirm="Post a reversing entry for {{ entry.number }}?">Reverse entry</button></div>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Period lock{% endblock %}
+{% block heading %}Period lock{% endblock %}
+{% block content %}
+{% for message in errors %}<div class="flash flash-error" role="alert">{{ message }}</div>{% endfor %}
+<div class="card"><form method="post" action="/ledger/lock" class="card-body stack">
+  {{ ui.csrf() }}
+  <p>Entries dated on or before the lock date cannot be posted or reversed into.
+     {% if admin.locked_until %}Currently locked up to <strong>{{ admin.locked_until|nldate }}</strong>.{% else %}Nothing is locked yet.{% endif %}</p>
+  {{ ui.field("locked_until", "Lock entries up to and including", (proposed or admin.locked_until).isoformat() if (proposed or admin.locked_until) else '', "date", false, "Leave empty to remove the lock.") }}
+  {% if need_confirm %}
+  <label class="checkbox"><input type="checkbox" name="confirm" value="1"> I understand this reopens closed periods</label>
+  {% endif %}
+  <div class="form-actions"><button class="btn btn-primary" type="submit">Save lock date</button></div>
+  <p class="fine-print">Every change is recorded in the audit log.</p>
+</form></div>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}{{ 'Edit draft' if invoice else 'New purchase invoice' }}{% endblock %}
+{% block heading %}{{ 'Edit draft purchase invoice' if invoice else 'New purchase invoice' }}{% endblock %}
+{% block head %}<script src="{{ url_for('static', path='js/invoicing.js') }}" defer></script>{% endblock %}
+{% block content %}
+{% for e in errors %}<div class="flash flash-error" role="alert">{{ e }}</div>{% endfor %}
+<form method="post" action="{{ '/purchases/%d/save' % invoice.id if invoice else '/purchases/new' }}" enctype="multipart/form-data" class="stack">
+  {{ ui.csrf() }}
+  <div class="card">
+    <div class="card-body form-grid">
+      <label class="field">
+        <span class="field-label">Supplier <span aria-hidden="true">*</span></span>
+        <select class="input" name="contact_id" required>
+          <option value="">Choose a supplier</option>
+          {% for c in suppliers %}<option value="{{ c.id }}"{% if c.id|string == values.contact_id %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        </select>
+        {% if not suppliers %}<span class="field-hint">No suppliers yet. <a href="/contacts">Add one in Contacts.</a></span>{% endif %}
+      </label>
+      {{ ui.field("supplier_reference", "Supplier's invoice number", values.supplier_reference, required=true) }}
+      {{ ui.field("invoice_date", "Invoice date", values.invoice_date, "date", true) }}
+      {{ ui.field("due_date", "Due date", values.due_date, "date", true) }}
+      {{ ui.field("description", "Description", values.description) }}
+      <label class="field">
+        <span class="field-label">Attachment (PDF, PNG or JPEG)</span>
+        <input class="input" type="file" name="attachment" accept="application/pdf,image/png,image/jpeg">
+        {% if attachment %}<span class="field-hint">Current: {{ attachment.filename }}. Choosing a file replaces it.</span>{% endif %}
+      </label>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2 class="card-title">Lines</h2></div>
+    <div class="card-body">{% include "purchases/_lines.html" %}</div>
+  </div>
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">Save draft</button>
+    <a class="btn btn-ghost" href="/purchases">Cancel</a>
+  </div>
+</form>
+{% if invoice %}
+<div class="card">
+  <div class="card-body row">
+    <form method="post" action="/purchases/{{ invoice.id }}/book">{{ ui.csrf() }}
+      <button class="btn btn-secondary" type="submit" data-confirm="Book this invoice? It is posted to the journal and can no longer be edited.">Book invoice</button>
+    </form>
+    <form method="post" action="/purchases/{{ invoice.id }}/delete">{{ ui.csrf() }}
+      <button class="btn btn-danger" type="submit" data-confirm="Delete this draft?">Delete draft</button>
+    </form>
+    <span class="fine-print">Save the draft first; booking uses the saved version.</span>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

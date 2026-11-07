@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block public %}
+<div class="auth-page">
+  <form class="card auth-card" method="post" action="/login">
+    <div class="brand brand-lg">
+      <img src="{{ url_for('static', path='img/mark.svg') }}" alt="" width="36" height="36">
+      <span>Ledgerline</span>
+    </div>
+    <p class="muted">Sign in to your books.</p>
+    {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label class="field"><span class="field-label">Email</span>
+      <input class="input" type="email" name="email" autocomplete="username" required autofocus></label>
+    <label class="field"><span class="field-label">Password</span>
+      <input class="input" type="password" name="password" autocomplete="current-password" required></label>
+    <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+    <p class="fine-print">Only functional cookies are used. <a href="/legal/privacy">Privacy</a></p>
+  </form>
+</div>
+{% endblock %}

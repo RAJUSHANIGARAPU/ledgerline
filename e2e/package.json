@@ -1,0 +1,11 @@
+{
+  "name": "ledgerline-e2e",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.1"
+  }
+}

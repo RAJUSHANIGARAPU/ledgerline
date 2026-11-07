@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Bank{% endblock %}
+{% block heading %}Bank{% endblock %}
+{% block actions %}<a class="btn btn-secondary" href="/bank/sepa">SEPA payment file</a>{% endblock %}
+{% block content %}
+<div class="page-grid">
+  {% if accounts %}
+  <div class="grid grid-2">
+    {% for a in accounts %}
+    <section class="card">
+      <div class="card-header">
+        <h2 class="card-title">{{ a.name }}</h2>
+        <span class="pill">{{ a.iban }}</span>
+      </div>
+      <div class="card-body stack">
+        <p>
+          {% set n = unmatched.get(a.id, 0) %}
+          {% if n %}<a href="/bank/reconcile?account_id={{ a.id }}">{{ n }} to reconcile</a>{% else %}<span class="muted">Nothing to reconcile</span>{% endif %}
+        </p>
+        <form method="post" action="/bank/accounts/{{ a.id }}/import" enctype="multipart/form-data" class="stack">
+          {{ ui.csrf() }}
+          <label class="field">
+            <span class="field-label">Statement file (CAMT.053 or MT940)</span>
+            <input class="input" type="file" name="file" accept=".xml,.sta,.mt940,.txt,.940" required>
+            <span class="field-hint">Up to {{ max_mb }} MB. Importing does not post anything to the ledger.</span>
+          </label>
+          <div class="form-actions"><button class="btn btn-primary" type="submit">Import</button></div>
+        </form>
+        {% if n %}
+        <form method="post" action="/bank/accounts/{{ a.id }}/accept-exact">
+          {{ ui.csrf() }}
+          <button class="btn btn-secondary" type="submit">Accept all exact matches</button>
+        </form>
+        {% endif %}
+      </div>
+    </section>
+    {% endfor %}
+  </div>
+  {% else %}
+  {{ ui.empty("No bank accounts yet", "Add your business bank account to import statements.") }}
+  {% endif %}
+
+  <section class="card">
+    <div class="card-header"><h2 class="card-title">Add bank account</h2></div>
+    <div class="card-body">
+      <form method="post" action="/bank/accounts" class="stack">
+        {{ ui.csrf() }}
+        <div class="form-grid">
+          {{ ui.field("name", "Name", "", "text", True) }}
+          {{ ui.field("iban", "IBAN", "", "text", True) }}
+          <label class="field">
+            <span class="field-label">Ledger account</span>
+            <select class="input" name="ledger_account_id">
+              <option value="">Bank (default)</option>
+              {% for l in ledger_accounts %}<option value="{{ l.id }}">{{ l.code }} {{ l.name }}</option>{% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Add account</button></div>
+      </form>
+    </div>
+  </section>
+
+  {% if statements %}
+  <section class="card">
+    <div class="card-header"><h2 class="card-title">Recent imports</h2></div>
+    <div class="table-wrap">
+      <table class="table table-compact">
+        <thead><tr><th>File</th><th>Format</th><th class="num">Opening</th><th class="num">Closing</th><th>Imported</th></tr></thead>
+        <tbody>
+        {% for s in statements %}
+          <tr>
+            <td>{{ s.file_name }}</td><td>{{ s.file_format }}</td>
+            <td class="num">{{ s.opening_balance_cents|eur if s.opening_balance_cents is not none else "" }}</td>
+            <td class="num">{{ s.closing_balance_cents|eur if s.closing_balance_cents is not none else "" }}</td>
+            <td>{{ s.imported_at|nldate }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

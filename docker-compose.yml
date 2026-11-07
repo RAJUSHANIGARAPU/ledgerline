@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ledgerline
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ledgerline
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ledgerline -d ledgerline"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      LEDGERLINE_DATABASE_URL: postgresql+psycopg://ledgerline:${POSTGRES_PASSWORD}@db:5432/ledgerline
+      LEDGERLINE_SECRET_KEY: ${LEDGERLINE_SECRET_KEY:?set LEDGERLINE_SECRET_KEY in .env}
+      LEDGERLINE_COOKIE_SECURE: ${LEDGERLINE_COOKIE_SECURE:-true}
+      LEDGERLINE_SESSION_MAX_AGE_SECONDS: ${LEDGERLINE_SESSION_MAX_AGE_SECONDS:-28800}
+      LEDGERLINE_MAX_UPLOAD_BYTES: ${LEDGERLINE_MAX_UPLOAD_BYTES:-10485760}
+      LEDGERLINE_INITIAL_OWNER_EMAIL: ${LEDGERLINE_INITIAL_OWNER_EMAIL:-}
+      LEDGERLINE_INITIAL_PASSWORD: ${LEDGERLINE_INITIAL_PASSWORD:-}
+    ports:
+      - "${LEDGERLINE_BIND:-127.0.0.1:8000}:8000"
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGHOST: db
+      PGUSER: ledgerline
+      PGPASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PGDATABASE: ledgerline
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
+      BACKUP_HOUR_UTC: ${BACKUP_HOUR_UTC:-2}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          wait=$$(( ($${BACKUP_HOUR_UTC} * 3600 - $$(date -u +%s) % 86400 + 86400) % 86400 ))
+          sleep $$wait
+          f=/backups/ledgerline-$$(date -u +%Y%m%dT%H%M%SZ).dump
+          if pg_dump -Fc -f "$$f.tmp"; then mv "$$f.tmp" "$$f"; echo "backup written: $$f"; else rm -f "$$f.tmp"; echo "backup FAILED"; fi
+          find /backups -name 'ledgerline-*.dump' -mtime +$${BACKUP_KEEP_DAYS} -delete
+        done
+
+volumes:
+  pgdata:

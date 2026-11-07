@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Rubriek {{ bucket }}{% endblock %}
+{% block heading %}Rubriek {{ bucket }} · {{ p.label }}{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="/vat?{{ p.qs }}">Back to VAT return</a>{% endblock %}
+{% block content %}
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Date</th><th>Entry</th><th>Account</th><th>Code</th><th>Role</th><th class="num">Debit</th><th class="num">Credit</th><th class="num">Counts</th></tr></thead>
+  <tbody>
+  {% for line, entry, account, amount in rows %}
+    <tr><td>{{ entry.entry_date|nldate }}</td><td><a href="/ledger/{{ entry.id }}">{{ entry.number }}</a></td>
+        <td>{{ account.code }} {{ account.name }}</td><td>{{ line.vat_code }}</td><td>{{ line.vat_role }}</td>
+        <td class="num">{{ line.debit_cents|eur if line.debit_cents else '' }}</td>
+        <td class="num">{{ line.credit_cents|eur if line.credit_cents else '' }}</td>
+        <td class="num">{{ amount|eur }}</td></tr>
+  {% else %}<tr><td colspan="8" class="muted">No journal lines in this rubriek for the period.</td></tr>{% endfor %}
+  <tr class="total-row"><td colspan="7">Total</td><td class="num">{{ total|eur }}</td></tr>
+  </tbody>
+</table></div></div>
+{% endblock %}

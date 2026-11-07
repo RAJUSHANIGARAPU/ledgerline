@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Ledgerline{% endblock %} · Ledgerline</title>
+  <link rel="icon" href="{{ url_for('static', path='img/mark.svg') }}" type="image/svg+xml">
+  <meta name="htmx-config" content='{"includeIndicatorStyles": false}'>
+  <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}">
+  <script src="{{ url_for('static', path='js/htmx.min.js') }}" defer></script>
+  <script src="{{ url_for('static', path='js/app.js') }}" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
+{% if request.session.get('user_id') %}
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <a class="brand" href="/">
+      <img src="{{ url_for('static', path='img/mark.svg') }}" alt="" width="28" height="28">
+      <span>Ledgerline</span>
+    </a>
+    <nav aria-label="Main">
+      {% set nav = [
+        ('', 'Dashboard', '/'),
+        ('sales', 'Sales invoices', '/sales'),
+        ('purchases', 'Purchases', '/purchases'),
+        ('bank', 'Bank', '/bank'),
+        ('ledger', 'Journal', '/ledger'),
+        ('accounts', 'Chart of accounts', '/accounts'),
+        ('vat', 'VAT return', '/vat'),
+        ('reports', 'Reports', '/reports'),
+        ('contacts', 'Contacts', '/contacts'),
+        ('settings', 'Settings', '/settings'),
+      ] %}
+      {% for key, label, href in nav %}
+        <a href="{{ href }}" class="nav-link{% if active_nav == key or (key == '' and active_nav == 'dashboard') %} is-active{% endif %}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+    <div class="sidebar-foot">
+      <div><a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a></div>
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="link-button" type="submit">Sign out</button>
+      </form>
+    </div>
+  </aside>
+  <div class="main">
+    <header class="topbar">
+      <button class="icon-button menu-toggle" type="button" data-toggle="sidebar" aria-label="Menu">☰</button>
+      <h1 class="page-title">{% block heading %}{% endblock %}</h1>
+      <div class="topbar-actions">{% block actions %}{% endblock %}</div>
+    </header>
+    <main class="content">
+      {% for f in flashes %}<div class="flash flash-{{ f.kind }}" role="status">{{ f.message }}</div>{% endfor %}
+      {% block content %}{% endblock %}
+    </main>
+    <footer class="disclaimer">Ledgerline is bookkeeping software, not financial or tax advice. Check figures before filing with the Belastingdienst.</footer>
+  </div>
+</div>
+{% else %}
+  {% block public %}{% endblock %}
+{% endif %}
+</body>
+</html>

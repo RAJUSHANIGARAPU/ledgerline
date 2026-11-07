@@ -1,0 +1,46 @@
+{# Inputs are locked during the refresh: it re-renders them to refill the computed VAT. #}
+<div id="lines" hx-post="/purchases/preview" hx-trigger="change" hx-include="closest form" hx-target="this"
+     hx-swap="outerHTML" hx-sync="this:replace" hx-disabled-elt="find fieldset">
+  <fieldset class="plain">
+  <div class="table-wrap">
+    <table class="table line-editor">
+      <thead><tr><th>Description</th><th>Expense account</th><th class="num">Amount excl.</th><th>VAT code</th><th class="num">VAT</th><th></th></tr></thead>
+      <tbody>
+      {% for row, locked in rows %}
+        <tr>
+          <td><input class="input" name="line_description" value="{{ row.description }}" maxlength="500" aria-label="Description"></td>
+          <td>
+            <select class="input" name="line_account" data-role="account" aria-label="Expense account">
+              {% for a in accounts %}<option value="{{ a.id }}" data-vat="{{ a.default_vat_code or '' }}"{% if a.id|string == row.account %} selected{% endif %}>{{ a.code }} {{ a.name }}</option>{% endfor %}
+            </select>
+          </td>
+          <td><input class="input num" name="line_amount" value="{{ row.amount }}" inputmode="decimal" aria-label="Amount excl. VAT"></td>
+          <td>
+            <select class="input" name="line_vat_code" data-role="vat" aria-label="VAT code">
+              {% for c in vat_codes %}<option value="{{ c.code }}"{% if c.code == row.vat_code %} selected{% endif %}>{{ c.code }} · {{ c.rate }}%{% if c.reverse_charge %} (reverse charge){% endif %}</option>{% endfor %}
+            </select>
+          </td>
+          <td>
+            <input class="input num vat-input" name="line_vat" value="{{ row.vat }}" inputmode="decimal" aria-label="VAT amount"{% if locked %} readonly{% endif %}>
+            <input type="hidden" name="line_vat_auto" value="{{ '1' if locked else row.vat_auto }}">
+          </td>
+          <td><button type="button" class="btn btn-ghost btn-sm" hx-post="/purchases/preview" hx-vals='{"remove": "{{ loop.index0 }}"}' hx-include="closest form" hx-target="#lines" hx-swap="outerHTML">Remove</button></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  </fieldset>
+  <div class="row">
+    <button type="button" class="btn btn-secondary btn-sm" hx-post="/purchases/preview" hx-vals='{"op": "add"}' hx-include="closest form" hx-target="#lines" hx-swap="outerHTML">Add line</button>
+    <span class="fine-print">VAT is prefilled from the code; edit it to match the supplier's invoice to the cent. Reverse-charge VAT is always computed.</span>
+    <span class="spacer"></span>
+    <div class="table-wrap">
+      <table class="table table-compact">
+        <tr><td class="muted">Total excl. VAT</td><td class="num">{{ preview.total_excl|eur }}</td></tr>
+        <tr><td class="muted">VAT payable to supplier</td><td class="num">{{ preview.total_vat|eur }}</td></tr>
+        <tr class="total-row"><td>Total payable</td><td class="num">{{ preview.total_incl|eur }}</td></tr>
+      </table>
+    </div>
+  </div>
+</div>

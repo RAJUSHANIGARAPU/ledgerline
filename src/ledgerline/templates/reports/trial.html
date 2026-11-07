@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Trial balance{% endblock %}
+{% block heading %}Trial balance{% endblock %}
+{% block content %}
+{% set with_start = true %}{% include "reports/_filters.html" %}
+<div class="card"><div class="table-wrap"><table class="table">
+  <thead><tr><th>Account</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr><td><a href="/accounts/{{ row.account.id }}">{{ row.account.code }} {{ row.account.name }}</a></td>
+        <td class="num">{{ row.debit_cents|eur if row.debit_cents else '' }}</td>
+        <td class="num">{{ row.credit_cents|eur if row.credit_cents else '' }}</td></tr>
+    {% else %}<tr><td class="muted" colspan="3">No activity.</td></tr>{% endfor %}
+    <tr class="total-row"><td>Total</td><td class="num">{{ debit|eur }}</td><td class="num">{{ credit|eur }}</td></tr>
+  </tbody>
+</table></div></div>
+{% endblock %}

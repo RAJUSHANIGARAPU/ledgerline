@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
+  <BkToCstmrStmt>
+    <Stmt>
+      <Id>STMT-3</Id>
+      <Acct><Id><IBAN>NL91ABNA0417164300</IBAN></Id></Acct>
+      <Bal><Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">1050.00</Amt><CdtDbtInd>CRDT</CdtDbtInd></Bal>
+      <Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">971.00</Amt><CdtDbtInd>CRDT</CdtDbtInd></Bal>
+      <Ntry>
+        <Amt Ccy="EUR">50.00</Amt><CdtDbtInd>DBIT</CdtDbtInd>
+        <BookgDt><Dt>2026-06-03</Dt></BookgDt><AcctSvcrRef>REF-B</AcctSvcrRef>
+        <NtryDtls><TxDtls><RltdPties><Cdtr><Nm>Leverancier BV</Nm></Cdtr></RltdPties><RmtInf><Strd><CdtrRefInf><Ref>INK-77</Ref></CdtrRefInf></Strd></RmtInf></TxDtls></NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="EUR">29.00</Amt><CdtDbtInd>DBIT</CdtDbtInd>
+        <BookgDt><Dt>2026-06-04</Dt></BookgDt><AcctSvcrRef>REF-C</AcctSvcrRef>
+        <NtryDtls><TxDtls><RmtInf><Ustrd>Bankkosten</Ustrd></RmtInf></TxDtls></NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

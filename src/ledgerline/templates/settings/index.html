@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Settings{% endblock %}
+{% block heading %}Settings{% endblock %}
+{% block actions %}<a class="btn btn-secondary" href="/settings/privacy">Privacy and data</a>{% endblock %}
+{% block content %}
+{% if errors %}<div class="flash flash-error" role="alert"><ul>{% for msg in errors.values() %}<li>{{ msg }}</li>{% endfor %}</ul></div>{% endif %}
+
+<div class="card"><div class="card-header"><h2 class="card-title">Administrations</h2></div>
+  <div class="card-body stack">
+    <form class="row" method="post" action="/administration/switch">
+      {{ ui.csrf() }}
+      <select class="input" name="administration_id" aria-label="Administration">
+        {% for a in administrations %}<option value="{{ a.id }}" {% if a.id == admin.id %}selected{% endif %}>{{ a.name }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-secondary" type="submit">Switch</button>
+    </form>
+    {% if is_owner %}
+    <form class="row" method="post" action="/settings/administrations">
+      {{ ui.csrf() }}
+      <input class="input" name="new_name" placeholder="New administration name" required aria-label="New administration name">
+      <select class="input" name="new_legal_form" aria-label="Legal form">{% for f in legal_forms %}<option value="{{ f }}">{{ f }}</option>{% endfor %}</select>
+      <button class="btn btn-primary" type="submit">Create administration</button>
+    </form>
+    {% endif %}
+  </div></div>
+
+{% if is_owner %}
+<form class="card" method="post" action="/settings">
+  <div class="card-header"><h2 class="card-title">{{ admin.name }}</h2></div>
+  <div class="card-body stack">
+    {{ ui.csrf() }}
+    <div class="form-grid">
+      {{ ui.field('name', 'Name', values.name, required=True) }}
+      <label class="field"><span class="field-label">Legal form</span>
+        <select class="input" name="legal_form">{% for f in legal_forms %}<option value="{{ f }}" {% if values.legal_form == f %}selected{% endif %}>{{ f }}</option>{% endfor %}</select></label>
+      {{ ui.field('kvk_number', 'KvK number', values.kvk_number, hint='8 digits') }}
+      {{ ui.field('vat_number', 'VAT number', values.vat_number, hint='e.g. NL123456789B01') }}
+      {{ ui.field('iban', 'IBAN', values.iban) }}
+      {{ ui.field('bic', 'BIC', values.bic) }}
+      {{ ui.field('email', 'Email', values.email, 'email') }}
+      {{ ui.field('address_line', 'Address', values.address_line) }}
+      {{ ui.field('postcode', 'Postcode', values.postcode) }}
+      {{ ui.field('city', 'City', values.city) }}
+      {{ ui.field('country', 'Country (ISO-2)', values.country, attrs='maxlength="2"') }}
+      {{ ui.field('invoice_prefix', 'Invoice number prefix', values.invoice_prefix, hint='Optional, up to 10 characters') }}
+      {{ ui.field('payment_terms_days', 'Payment terms (days)', values.payment_terms_days, 'number', attrs='min="0" max="365"') }}
+    </div>
+    <label class="checkbox"><input type="checkbox" name="kor" {% if values.kor %}checked{% endif %}> Small business scheme (KOR)</label>
+    <p class="field-hint">With the KOR you do not charge VAT and cannot deduct input VAT. It applies if your turnover is at most €20,000 per calendar year; registration is done with the Belastingdienst, not in this app. This switch only records your choice.</p>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Save settings</button></div>
+  </div>
+</form>
+{% else %}
+<div class="card"><div class="card-header"><h2 class="card-title">{{ admin.name }}</h2></div>
+  <div class="card-body"><dl class="kv">
+    <dt>Legal form</dt><dd>{{ admin.legal_form }}</dd><dt>KvK</dt><dd>{{ admin.kvk_number or '-' }}</dd>
+    <dt>VAT number</dt><dd>{{ admin.vat_number or '-' }}</dd><dt>IBAN</dt><dd>{{ admin.iban or '-' }}</dd>
+    <dt>KOR</dt><dd>{{ 'yes' if admin.kor else 'no' }}</dd>
+  </dl><p class="fine-print">Read-only account: only the owner can change settings.</p></div></div>
+{% endif %}
+
+<form class="card" method="post" action="/settings/password">
+  <div class="card-header"><h2 class="card-title">Change your password</h2></div>
+  <div class="card-body stack">
+    {{ ui.csrf() }}
+    <div class="form-grid">
+      <label class="field"><span class="field-label">Current password</span><input class="input" type="password" name="current" autocomplete="current-password" required></label>
+      <span></span>
+      <label class="field"><span class="field-label">New password</span><input class="input" type="password" name="password" minlength="12" autocomplete="new-password" required><span class="field-hint">At least 12 characters.</span></label>
+      <label class="field"><span class="field-label">Repeat new password</span><input class="input" type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Change password</button></div>
+  </div>
+</form>
+
+{% if is_owner %}
+<div class="card"><div class="card-header"><h2 class="card-title">Users</h2></div>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+    <tbody>{% for u in users %}
+      <tr><td>{{ u.email }}</td><td>{{ u.role }}</td><td>{{ 'active' if u.is_active else 'deactivated' }}</td>
+        <td>{% if u.is_active and u.id != request.session.get('user_id') %}
+          <form method="post" action="/settings/users/{{ u.id }}/deactivate">{{ ui.csrf() }}<button class="btn btn-sm btn-danger" type="submit">Deactivate</button></form>{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  <form class="card-body stack" method="post" action="/settings/users">
+    {{ ui.csrf() }}
+    <h3 class="section-title">Add a user</h3>
+    <div class="form-grid">
+      {{ ui.field('email', 'Email', '', 'email', True) }}
+      <label class="field"><span class="field-label">Role</span><select class="input" name="role"><option value="accountant">Accountant (read-only)</option><option value="owner">Owner</option></select></label>
+      <label class="field"><span class="field-label">Password</span><input class="input" type="password" name="password" minlength="12" autocomplete="new-password" required><span class="field-hint">Set by you, at least 12 characters. Share it through a safe channel.</span></label>
+      <label class="field"><span class="field-label">Repeat password</span><input class="input" type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Create user</button></div>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

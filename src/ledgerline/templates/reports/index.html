@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block heading %}Reports{% endblock %}
+{% block content %}
+<div class="grid grid-3">
+  {% for href, title, text in [
+    ('/reports/pnl', 'Profit and loss', 'Revenue and expenses over a period.'),
+    ('/reports/balance', 'Balance sheet', 'Assets, liabilities and equity on a date.'),
+    ('/reports/trial', 'Trial balance', 'Debit and credit totals per account.'),
+    ('/reports/aging/receivables', 'Aged receivables', 'Open sales invoices by days past due.'),
+    ('/reports/aging/payables', 'Aged payables', 'Open purchase invoices by days past due.'),
+  ] %}
+  <a class="card" href="{{ href }}"><div class="card-body"><h2 class="card-title">{{ title }}</h2><p class="muted">{{ text }}</p></div></a>
+  {% endfor %}
+</div>
+{% endblock %}

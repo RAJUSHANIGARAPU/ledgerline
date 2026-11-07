@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Chart of accounts{% endblock %}
+{% block heading %}Chart of accounts{% endblock %}
+{% block actions %}<a class="btn btn-primary" href="/accounts/new">New account</a>{% endblock %}
+{% block content %}
+{% for kind, rows in groups %}{% if rows %}
+<div class="card">
+  <div class="card-header"><h2 class="card-title">{{ kind|capitalize }}</h2></div>
+  <div class="table-wrap"><table class="table">
+    <thead><tr><th>Code</th><th>Name</th><th>VAT</th><th class="num">Balance</th><th></th></tr></thead>
+    <tbody>
+    {% for b in rows %}{% set a = b.account %}
+      <tr>
+        <td>{{ a.code }}</td>
+        <td><a href="/accounts/{{ a.id }}">{{ a.name }}</a>{% if a.system_role %} <span class="pill">system</span>{% endif %}{% if not a.is_active %} <span class="badge badge-cancelled">inactive</span>{% endif %}</td>
+        <td class="muted">{{ a.default_vat_code or '' }}</td>
+        <td class="num">{{ b.balance_cents|eur }}</td>
+        <td class="row">
+          <a class="btn btn-ghost btn-sm" href="/accounts/{{ a.id }}/edit">Edit</a>
+          {% if a.is_active and not a.system_role %}
+          <form method="post" action="/accounts/{{ a.id }}/deactivate"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button" type="submit">Deactivate</button></form>
+          {% elif not a.is_active %}
+          <form method="post" action="/accounts/{{ a.id }}/activate"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button class="link-button" type="submit">Activate</button></form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endif %}{% endfor %}
+{% endblock %}

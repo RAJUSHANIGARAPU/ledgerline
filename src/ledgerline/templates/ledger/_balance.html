@@ -1,0 +1,4 @@
+<span class="pill {{ 'amount-pos' if balanced else 'amount-neg' }}" role="status">
+  Debit {{ debit|eur }} · Credit {{ credit|eur }} ·
+  {% if unreadable %}check the amounts{% elif balanced %}balanced{% else %}difference {{ diff|eur }}{% endif %}
+</span>

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Sales invoices{% endblock %}
+{% block heading %}Sales invoices{% endblock %}
+{% block actions %}<a class="btn btn-primary" href="/sales/new">New invoice</a>{% endblock %}
+{% block content %}
+<div class="tabs">
+  <a class="tab{% if not status %} is-active{% endif %}" href="/sales">All</a>
+  {% for f in filters %}<a class="tab{% if status == f %} is-active{% endif %}" href="/sales?status={{ f }}">{{ f|capitalize }}</a>{% endfor %}
+</div>
+{% if rows %}
+<div class="card">
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Number</th><th>Customer</th><th>Date</th><th>Due</th><th class="num">Total</th><th class="num">Open</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for inv, shown in rows %}
+        <tr>
+          <td><a href="/sales/{{ inv.id }}">{{ inv.number or 'Draft' }}</a>{% if inv.credit_note_of_id %} <span class="pill">credit</span>{% endif %}</td>
+          <td>{{ inv.contact.name }}</td>
+          <td>{{ inv.issue_date|nldate }}</td>
+          <td>{{ inv.due_date|nldate }}</td>
+          <td class="num">{{ inv.total_incl_cents|eur }}</td>
+          <td class="num">{% if inv.number and inv.status != 'cancelled' %}{{ (inv.total_incl_cents - inv.paid_cents)|eur }}{% endif %}</td>
+          <td>{{ ui.badge(shown) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+{{ ui.empty("No invoices here", "Create a draft, review it, then issue it to give it a number and book it.", "/sales/new", "New invoice") }}
+{% endif %}
+{% endblock %}

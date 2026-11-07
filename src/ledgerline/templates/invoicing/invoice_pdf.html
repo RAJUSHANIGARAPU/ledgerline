@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<title>{{ 'Creditnota' if is_credit else 'Factuur' }} {{ invoice.number }}</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm 20mm 16mm;
+    @bottom-center { content: "pagina " counter(page) " van " counter(pages); font: 8pt Helvetica, Arial, sans-serif; color: #7a8594; } }
+  * { box-sizing: border-box; }
+  body { font: 9.5pt/1.45 Helvetica, Arial, sans-serif; color: #17212b; margin: 0; }
+  .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2pt solid #0f766e; padding-bottom: 8mm; }
+  .doc-title { font-size: 22pt; font-weight: 700; color: #0f766e; letter-spacing: .5pt; margin: 0; text-transform: uppercase; }
+  .doc-number { font-size: 11pt; color: #44505e; margin-top: 1mm; }
+  .seller { text-align: right; font-size: 9pt; color: #44505e; }
+  .seller strong { display: block; font-size: 12pt; color: #17212b; margin-bottom: 1mm; }
+  .parties { display: flex; justify-content: space-between; margin: 9mm 0 7mm; }
+  .label { font-size: 7.5pt; text-transform: uppercase; letter-spacing: .8pt; color: #7a8594; margin-bottom: 1mm; }
+  .party p { margin: 0; }
+  .meta { border-collapse: collapse; }
+  .meta td { padding: 0.6mm 0 0.6mm 6mm; }
+  .meta td:first-child { color: #7a8594; padding-left: 0; }
+  table.lines { width: 100%; border-collapse: collapse; margin-top: 4mm; }
+  table.lines th { text-align: left; font-size: 8pt; text-transform: uppercase; letter-spacing: .6pt; color: #44505e; border-bottom: 1pt solid #17212b; padding: 2mm 1.5mm; }
+  table.lines td { padding: 2mm 1.5mm; border-bottom: 0.5pt solid #d8dee6; vertical-align: top; }
+  .r { text-align: right; font-variant-numeric: tabular-nums; }
+  .totals { width: 80mm; margin: 6mm 0 0 auto; border-collapse: collapse; page-break-inside: avoid; }
+  .totals td { padding: 1.2mm 1.5mm; }
+  .totals .grand td { border-top: 1.5pt solid #0f766e; font-weight: 700; font-size: 11pt; padding-top: 2.5mm; }
+  .vat-table { border-collapse: collapse; margin-top: 8mm; font-size: 8.5pt; color: #44505e; page-break-inside: avoid; }
+  .vat-table th, .vat-table td { padding: 1mm 4mm 1mm 0; text-align: left; }
+  .vat-table th { font-weight: 600; color: #7a8594; }
+  .vat-table .r { text-align: right; }
+  .note { margin-top: 6mm; padding: 3mm 4mm; background: #f1f5f4; border-left: 2pt solid #0f766e; font-weight: 600; }
+  .pay { margin-top: 8mm; font-size: 9pt; page-break-inside: avoid; }
+  .pay p { margin: 0 0 1mm; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <div>
+      <h1 class="doc-title">{{ 'Creditnota' if is_credit else 'Factuur' }}</h1>
+      <div class="doc-number">{{ invoice.number }}</div>
+    </div>
+    <div class="seller">
+      <strong>{{ admin.name }}</strong>
+      {{ admin.address_line }}<br>
+      {{ admin.postcode }} {{ admin.city }}<br>
+      {% if admin.email %}{{ admin.email }}<br>{% endif %}
+      {% if admin.kvk_number %}KvK {{ admin.kvk_number }}<br>{% endif %}
+      {% if admin.vat_number %}BTW {{ admin.vat_number }}{% endif %}
+    </div>
+  </div>
+
+  <div class="parties">
+    <div class="party">
+      <div class="label">Aan</div>
+      <p><strong>{{ invoice.contact.name }}</strong></p>
+      <p>{{ invoice.contact.address_line }}</p>
+      <p>{{ invoice.contact.postcode }} {{ invoice.contact.city }}</p>
+      {% if invoice.contact.country and invoice.contact.country != 'NL' %}<p>{{ invoice.contact.country }}</p>{% endif %}
+      {% if invoice.contact.vat_number %}<p>BTW {{ invoice.contact.vat_number }}</p>{% endif %}
+    </div>
+    <table class="meta">
+      <tr><td>{{ 'Creditnotadatum' if is_credit else 'Factuurdatum' }}</td><td>{{ invoice.issue_date|nldate }}</td></tr>
+      <tr><td>Leveringsdatum</td><td>{{ (invoice.supply_date or invoice.issue_date)|nldate }}</td></tr>
+      {% if not is_credit %}<tr><td>Vervaldatum</td><td>{{ invoice.due_date|nldate }}</td></tr>{% endif %}
+      {% if is_credit and original_number %}<tr><td>Betreft factuur</td><td>{{ original_number }}</td></tr>{% endif %}
+      {% if invoice.reference %}<tr><td>Uw referentie</td><td>{{ invoice.reference }}</td></tr>{% endif %}
+    </table>
+  </div>
+
+  <table class="lines">
+    <thead><tr><th>Omschrijving</th><th class="r">Aantal</th><th class="r">Prijs</th><th class="r">btw</th><th class="r">Bedrag excl.</th></tr></thead>
+    <tbody>
+    {% for line in invoice.lines %}
+      <tr>
+        <td>{{ line.description }}</td>
+        <td class="r">{{ line.quantity.normalize()|string|replace('.', ',') }}</td>
+        <td class="r">{{ line.unit_price_cents|eur }}</td>
+        <td class="r">{{ rates[line.vat_code] }}%</td>
+        <td class="r">{{ line.line_excl_cents|eur }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals">
+    <tr><td>Totaal excl. btw</td><td class="r">{{ invoice.total_excl_cents|eur }}</td></tr>
+    <tr><td>btw</td><td class="r">{{ invoice.total_vat_cents|eur }}</td></tr>
+    <tr class="grand"><td>{{ 'Te verrekenen' if is_credit else 'Te betalen' }}</td><td class="r">{{ invoice.total_incl_cents|eur }}</td></tr>
+  </table>
+
+  <table class="vat-table">
+    <tr><th>btw-overzicht</th><th class="r">Tarief</th><th class="r">Grondslag</th><th class="r">btw</th></tr>
+    {% for row in vat_summary %}
+      <tr><td>{{ row.code }}</td><td class="r">{{ row.rate|string }}%</td><td class="r">{{ row.base|eur }}</td><td class="r">{{ row.vat|eur }}</td></tr>
+    {% endfor %}
+  </table>
+
+  {% for note in notes %}<div class="note">{{ note }}</div>{% endfor %}
+  {% if invoice.notes %}<p>{{ invoice.notes }}</p>{% endif %}
+
+  {% if not is_credit %}
+  <div class="pay">
+    <p>Gelieve te betalen vóór <strong>{{ invoice.due_date|nldate }}</strong>{% if admin.iban %} op <strong>{{ admin.iban }}</strong>{% endif %} t.n.v. {{ admin.name }}, onder vermelding van <strong>{{ invoice.number }}</strong>.</p>
+  </div>
+  {% endif %}
+</body>
+</html>

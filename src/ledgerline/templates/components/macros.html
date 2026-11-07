@@ -1,0 +1,29 @@
+{# Shared UI building blocks. Import with: {% import "components/macros.html" as ui with context %} #}
+
+{% macro csrf() %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endmacro %}
+
+{% macro stat(label, value, hint=None, tone=None) %}
+<div class="stat{% if tone %} stat-{{ tone }}{% endif %}">
+  <div class="stat-label">{{ label }}</div>
+  <div class="stat-value num">{{ value }}</div>
+  {% if hint %}<div class="stat-hint">{{ hint }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro badge(status) %}<span class="badge badge-{{ status }}">{{ status|replace('_', ' ') }}</span>{% endmacro %}
+
+{% macro field(name, label, value='', type='text', required=False, hint=None, attrs='') %}
+<label class="field">
+  <span class="field-label">{{ label }}{% if required %} <span aria-hidden="true">*</span>{% endif %}</span>
+  <input class="input" type="{{ type }}" name="{{ name }}" value="{{ value if value is not none else '' }}" {% if required %}required{% endif %} {{ attrs|safe }}>
+  {% if hint %}<span class="field-hint">{{ hint }}</span>{% endif %}
+</label>
+{% endmacro %}
+
+{% macro empty(title, text, href=None, cta=None) %}
+<div class="empty">
+  <h3>{{ title }}</h3>
+  <p>{{ text }}</p>
+  {% if href %}<a class="btn btn-primary" href="{{ href }}">{{ cta }}</a>{% endif %}
+</div>
+{% endmacro %}

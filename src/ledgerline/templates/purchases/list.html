@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Purchases{% endblock %}
+{% block heading %}Purchase invoices{% endblock %}
+{% block actions %}<a class="btn btn-primary" href="/purchases/new">New purchase invoice</a>{% endblock %}
+{% block content %}
+<div class="tabs">
+  <a class="tab{% if not status %} is-active{% endif %}" href="/purchases">All</a>
+  {% for f in filters %}<a class="tab{% if status == f %} is-active{% endif %}" href="/purchases?status={{ f }}">{{ f|capitalize }}</a>{% endfor %}
+</div>
+{% if rows %}
+<div class="card">
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Supplier</th><th>Their number</th><th>Date</th><th>Due</th><th class="num">Total</th><th class="num">Open</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for inv, shown in rows %}
+        <tr>
+          <td><a href="/purchases/{{ inv.id }}">{{ inv.contact.name }}</a></td>
+          <td>{{ inv.supplier_reference }}</td>
+          <td>{{ inv.invoice_date|nldate }}</td>
+          <td>{{ inv.due_date|nldate }}</td>
+          <td class="num">{{ inv.total_incl_cents|eur }}</td>
+          <td class="num">{% if inv.status in ('open', 'paid') %}{{ (inv.total_incl_cents - inv.paid_cents)|eur }}{% endif %}</td>
+          <td>{{ ui.badge(shown) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+{{ ui.empty("No purchase invoices here", "Register a supplier's invoice, attach the PDF, then book it.", "/purchases/new", "New purchase invoice") }}
+{% endif %}
+{% endblock %}

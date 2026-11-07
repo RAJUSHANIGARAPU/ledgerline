@@ -1,0 +1,18 @@
+<tr>
+  <td><select class="input" name="account_id" aria-label="Account">
+    <option value="">Choose account</option>
+    {% for a in accounts %}<option value="{{ a.id }}" {% if line.account_id == a.id|string %}selected{% endif %}>{{ a.code }} {{ a.name }}</option>{% endfor %}
+  </select></td>
+  <td><input class="input num" name="debit" inputmode="decimal" value="{{ line.debit }}" aria-label="Debit"></td>
+  <td><input class="input num" name="credit" inputmode="decimal" value="{{ line.credit }}" aria-label="Credit"></td>
+  <td><input class="input" name="line_description" value="{{ line.description }}" aria-label="Line description"></td>
+  <td><select class="input" name="vat_code" aria-label="VAT code">
+    <option value="">No VAT</option>
+    {% for c in vat_codes %}<option value="{{ c.code }}" {% if line.vat_code == c.code %}selected{% endif %}>{{ c.code }}</option>{% endfor %}
+  </select></td>
+  <td><select class="input" name="vat_role" aria-label="VAT role">
+    <option value="base" {% if line.vat_role == 'base' %}selected{% endif %}>base</option>
+    <option value="vat" {% if line.vat_role == 'vat' %}selected{% endif %}>vat</option>
+  </select></td>
+  <td><button type="button" class="btn btn-ghost btn-sm" hx-get="/ledger/new/remove" hx-target="closest tr" hx-swap="outerHTML" aria-label="Remove line">Remove</button></td>
+</tr>

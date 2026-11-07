@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}{{ 'Edit draft' if invoice else 'New invoice' }}{% endblock %}
+{% block heading %}{{ 'Edit draft invoice' if invoice else 'New sales invoice' }}{% endblock %}
+{% block head %}<script src="{{ url_for('static', path='js/invoicing.js') }}" defer></script>{% endblock %}
+{% block content %}
+{% for e in errors %}<div class="flash flash-error" role="alert">{{ e }}</div>{% endfor %}
+{% if kor %}<div class="flash flash-info">Small business scheme (KOR) is active: all lines are booked as VKOR.</div>{% endif %}
+<form method="post" action="{{ '/sales/%d/save' % invoice.id if invoice else '/sales/new' }}" class="stack">
+  {{ ui.csrf() }}
+  <div class="card">
+    <div class="card-body form-grid">
+      <label class="field">
+        <span class="field-label">Customer <span aria-hidden="true">*</span></span>
+        <select class="input" name="contact_id" required>
+          <option value="">Choose a customer</option>
+          {% for c in customers %}<option value="{{ c.id }}"{% if c.id|string == values.contact_id %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+        </select>
+        {% if not customers %}<span class="field-hint">No customers yet. <a href="/contacts">Add one in Contacts.</a></span>{% endif %}
+      </label>
+      {{ ui.field("reference", "Your reference", values.reference, hint="Shown on the invoice, e.g. a PO number") }}
+      {{ ui.field("issue_date", "Invoice date", values.issue_date, "date", true) }}
+      {{ ui.field("due_date", "Due date", values.due_date, "date", true) }}
+      {{ ui.field("supply_date", "Supply date", values.supply_date, "date", hint="Leave empty if it equals the invoice date") }}
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h2 class="card-title">Lines</h2></div>
+    <div class="card-body">{% include "sales/_lines.html" %}</div>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <label class="field">
+        <span class="field-label">Notes</span>
+        <textarea class="input" name="notes" rows="3">{{ values.notes }}</textarea>
+      </label>
+    </div>
+  </div>
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">Save draft</button>
+    <a class="btn btn-ghost" href="/sales">Cancel</a>
+  </div>
+</form>
+{% if invoice %}
+<div class="card">
+  <div class="card-body row">
+    <form method="post" action="/sales/{{ invoice.id }}/issue">{{ ui.csrf() }}
+      <button class="btn btn-secondary" type="submit" data-confirm="Issue this invoice? It gets a number and can no longer be edited.">Issue invoice</button>
+    </form>
+    <form method="post" action="/sales/{{ invoice.id }}/delete">{{ ui.csrf() }}
+      <button class="btn btn-danger" type="submit" data-confirm="Delete this draft?">Delete draft</button>
+    </form>
+    <span class="fine-print">Save the draft first; issuing uses the saved version.</span>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

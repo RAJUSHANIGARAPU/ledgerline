@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}New journal entry{% endblock %}
+{% block heading %}New journal entry{% endblock %}
+{% block content %}
+{% for message in errors %}<div class="flash flash-error" role="alert">{{ message }}</div>{% endfor %}
+<form method="post" action="/ledger/new" id="entry-form" class="card">
+  {{ ui.csrf() }}
+  <div class="card-body stack">
+    <div class="form-grid">
+      {{ ui.field("date", "Date", form.date, "date", true) }}
+      {{ ui.field("description", "Description", form.description, "text", true, None, 'maxlength="300"') }}
+    </div>
+    <div class="table-wrap"><table class="table line-editor">
+      <thead><tr><th>Account</th><th class="num">Debit</th><th class="num">Credit</th><th>Description</th><th>VAT code</th><th>Role</th><th></th></tr></thead>
+      <tbody id="lines">
+        {% for line in form.lines %}{% include "ledger/_line.html" %}{% endfor %}
+      </tbody>
+    </table></div>
+    <div class="row">
+      <button type="button" class="btn btn-secondary btn-sm" hx-get="/ledger/new/line" hx-target="#lines" hx-swap="beforeend">Add line</button>
+      <span class="spacer"></span>
+      <span id="balance-box" hx-get="/ledger/new/balance" hx-include="#entry-form" hx-trigger="load, input from:#entry-form delay:200ms, click from:#entry-form delay:300ms" hx-swap="innerHTML"><span class="pill">Debit and credit must balance</span></span>
+    </div>
+    <p class="fine-print">Posted entries cannot be edited. Correct a mistake by reversing the entry.</p>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Post entry</button> <a class="btn btn-ghost" href="/ledger">Cancel</a></div>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,26 @@
+<div class="flash flash-info" role="note">TEMPLATE. This text is a starting point and must be reviewed, completed and adapted by the operator of this installation before it is relied on. It is not legal advice.</div>
+
+<h2 class="section-title">1. Who is responsible</h2>
+<p>The controller for personal data processed in this installation of Ledgerline is <strong>[CONTROLLER NAME]</strong>, [ADDRESS], KvK [KVK NUMBER]. Contact for privacy questions: <strong>[PRIVACY CONTACT EMAIL]</strong>.</p>
+
+<h2 class="section-title">2. What data is processed and why</h2>
+<ul>
+  <li>Account data of users: email address, password hash (argon2), role, sign-in and change events. Purpose: access control and an audit trail.</li>
+  <li>Contact data of customers and suppliers: name, email, address, VAT number, KvK number, IBAN. Purpose: issuing and booking invoices and matching bank payments.</li>
+  <li>Bookkeeping records: invoices, journal entries, bank transactions, attachments. Purpose: keeping the administration as the law requires.</li>
+</ul>
+
+<h2 class="section-title">3. Legal basis</h2>
+<p>[TO BE CONFIRMED BY THE CONTROLLER] Typically: performance of a contract (invoicing customers), a legal obligation (the fiscal duty to keep records) and legitimate interest (security logging).</p>
+
+<h2 class="section-title">4. Retention</h2>
+<p>Bookkeeping records are kept for 7 years (10 years for records about real estate), counted from when the data stops being current. Personal data that is not part of a bookkeeping record is removed or anonymised on request.</p>
+
+<h2 class="section-title">5. Recipients and hosting</h2>
+<p>Data is stored in a PostgreSQL database on infrastructure chosen by the operator: [HOSTING PROVIDER]. A data processing agreement with the hosting provider is needed where the provider can access the data. The application makes no calls to third-party services and loads no external scripts, fonts or trackers.</p>
+
+<h2 class="section-title">6. Your rights</h2>
+<p>You can ask for access, correction, export, restriction and erasure, and you can object to processing. The operator can export all data held on a contact and can anonymise a contact. Erasure is limited where a legal retention duty applies: the bookkeeping records stay until the retention period ends. Complaints can be sent to the Autoriteit Persoonsgegevens.</p>
+
+<h2 class="section-title">7. Security</h2>
+<p>Passwords are hashed with argon2, sessions use signed cookies, forms are protected against cross-site request forgery, and the application sets restrictive security headers. See SECURITY.md in the project.</p>
