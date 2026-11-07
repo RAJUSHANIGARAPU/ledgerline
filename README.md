@@ -44,6 +44,9 @@ Security notes: [docs/SECURITY.md](docs/SECURITY.md).
 Requires Python 3.13, [uv](https://docs.astral.sh/uv/), Docker (tests start a throw-away
 PostgreSQL) and Pango for PDF rendering (`brew install pango` on macOS).
 
+On macOS, a uv-managed Python cannot see Homebrew's libraries; `.python-version` pins 3.13 so
+uv uses Homebrew's interpreter, or run with `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`.
+
 ```bash
 uv sync
 uv run ruff check src tests
