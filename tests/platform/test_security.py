@@ -95,3 +95,10 @@ def test_accountant_can_read_contacts_and_settings(readonly_client, session, adm
     session.commit()
     assert "Leesbaar" in readonly_client.get("/contacts").text
     assert "Read-only account" in readonly_client.get("/settings").text
+
+
+def test_every_page_links_to_its_source_code(client):
+    # AGPL-3.0 section 13: network users must be offered the source.
+    page = client.get("/settings")
+    assert 'href="https://github.com/RAJUSHANIGARAPU/ledgerline"' in page.text
+    assert ">Source code<" in page.text

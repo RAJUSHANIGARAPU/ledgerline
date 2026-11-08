@@ -1,6 +1,6 @@
 # Third-party notices
 
-Ledgerline is MIT-licensed (see LICENSE). It depends on the components below. Versions are those pinned in `uv.lock`. Licences were read from the installed package metadata (`importlib.metadata`) on 2026-11-07 (anthropic, pypdf and their dependencies on 2026-11-08), then corrected from the package's own licence files where the metadata field was empty or a long text. Two Linux-only runtime packages (brotlicffi, tzdata) are not installed on the host used for this check; their entries come from PyPI metadata and are marked unverified.
+Ledgerline is licensed under AGPL-3.0-only (see LICENSE); all components below are compatible with it. It depends on the components below. Versions are those pinned in `uv.lock`. Licences were read from the installed package metadata (`importlib.metadata`) on 2026-11-07 (anthropic, pypdf and their dependencies on 2026-11-08), then corrected from the package's own licence files where the metadata field was empty or a long text. Two Linux-only runtime packages (brotlicffi, tzdata) are not installed on the host used for this check; their entries come from PyPI metadata and are marked unverified.
 
 ## Copyleft and weak-copyleft components (read this first)
 

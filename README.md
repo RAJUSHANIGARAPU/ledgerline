@@ -89,5 +89,12 @@ into a purchase. It expects a freshly seeded database. CI runs all three layers.
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE). Third-party components and their licences:
+Copyright (c) 2026 Raju Shanigarapu. Licensed under the GNU Affero General Public License v3.0 only
+([LICENSE](LICENSE)). If you run a modified version for other people over a network, you must offer
+them its source code; the app links to it from the sidebar (`LEDGERLINE_SOURCE_URL`).
+
+Versions published before the commit that introduced the AGPL remain available under the MIT
+licence they were released with. See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request.
+
+Third-party components and their licences:
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

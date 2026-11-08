@@ -32,3 +32,9 @@ Send details privately to the maintainer (see the repository profile) rather tha
 - Do not publish the database port. Compose does not expose it.
 - Keep Docker images updated (`docker compose pull && docker compose up -d --build`) and test restores (BACKUP_RESTORE.md).
 - Copy backups off the host and treat them as personal data.
+
+## Reporting a vulnerability
+
+Please report security problems privately through GitHub: the repository's **Security** tab, then
+**Report a vulnerability**. Do not open a public issue. Include the steps to reproduce and the
+version (commit) you tested.
