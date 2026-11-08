@@ -87,6 +87,8 @@ into a purchase. It expects a freshly seeded database. CI runs all three layers.
   inline scripts or styles, no external hosts, only functional cookies.
 - **One database holds everything**, attachments included, so one `pg_dump` is a full backup.
 
+Architecture decisions are recorded in [docs/adr](docs/adr).
+
 ## Licence
 
 Copyright (c) 2026 Raju Shanigarapu. Licensed under the GNU Affero General Public License v3.0 only
