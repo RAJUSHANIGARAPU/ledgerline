@@ -51,6 +51,7 @@ jobs:
           POSTGRES_PASSWORD=$(openssl rand -hex 16)
           LEDGERLINE_APP_DB_PASSWORD=$(openssl rand -hex 16)
           LEDGERLINE_COOKIE_SECURE=false
+          LEDGERLINE_ENVIRONMENT=development
           LEDGERLINE_INITIAL_OWNER_EMAIL=demo@ledgerline.example
           LEDGERLINE_INITIAL_PASSWORD=demo-password-123
           LEDGERLINE_BIND=127.0.0.1:8765

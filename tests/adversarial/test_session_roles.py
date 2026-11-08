@@ -49,12 +49,7 @@ def test_downgrade_applies_to_every_write_route_immediately(client, owner, owner
         ("/contacts/new", {"name": "x", "kind": "customer"}),
         (
             "/settings/users",
-            {
-                "email": "z@example.com",
-                "role": "owner",
-                "password": "a long enough password",
-                "confirm": "a long enough password",
-            },
+            {"email": "z@example.com", "role": "owner"},
         ),
         ("/settings/devices", {"name": "p"}),
     ):
@@ -82,13 +77,8 @@ def test_bookkeeper_cannot_export_or_anonymise_or_manage(bookkeeper_client, seed
 def test_bookkeeper_cannot_add_user_even_as_owner(bookkeeper_client, q):
     r = bookkeeper_client.post(
         "/settings/users",
-        data={
-            "email": "pwn@example.com",
-            "role": "owner",
-            "password": "a long enough password",
-            "confirm": "a long enough password",
-            "csrf_token": bookkeeper_client.csrf,
-        },
+        data={"email": "pwn@example.com", "role": "owner",
+              "csrf_token": bookkeeper_client.csrf},
         follow_redirects=False,
     )
     assert r.status_code == 403
@@ -160,27 +150,22 @@ def test_foreign_and_nonexistent_ids_are_indistinguishable_on_every_id_route(
     assert not diffs, diffs
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="known limitation: user creation answers 'already exists'"
-    " across tenants; invitations are future work",
-)
 def test_add_user_does_not_reveal_that_an_email_exists_in_another_tenant(client, other_owner, q):
-    """Account-existence oracle across tenants: 'already exists' vs success."""
+    """Account-existence oracle across tenants: the invitation answer must be identical."""
+    from ledgerline.accounts import ratelimit
+
+    ratelimit.reset_all()
 
     def attempt(email):
         r = client.post(
             "/settings/users",
-            data={
-                "email": email,
-                "role": "accountant",
-                "password": "a long enough password",
-                "confirm": "a long enough password",
-                "csrf_token": client.csrf,
-            },
-            follow_redirects=True,
+            data={"email": email, "role": "accountant", "csrf_token": client.csrf},
+            follow_redirects=False,
         )
-        return "already exists" in r.text
+        page = client.get(r.headers["location"]).text
+        marker = '<div class="flash flash-success" role="status">'
+        flash = page.split(marker)[1].split("</div>")[0] if marker in page else page[:200]
+        return r.status_code, flash.replace(email, "ADDRESS")
 
     assert attempt(other_owner.email) == attempt("nobody-here@example.com")
 

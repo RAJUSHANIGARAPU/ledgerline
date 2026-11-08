@@ -55,6 +55,17 @@ class Settings(BaseSettings):
     health_require_offsite_backup: bool = False
     health_rate_limit_per_minute: int = 30
 
+    # Outbound email (invitations, password reset). Empty host = email off.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    # "starttls" (port 587), "ssl" (port 465) or "none" (trusted local relay only).
+    smtp_tls: str = "starttls"
+    # "development" prints links to the server log when SMTP is not configured.
+    environment: str = "production"
+
     @property
     def owner_database_url(self) -> str:
         return self.migration_database_url or self.database_url

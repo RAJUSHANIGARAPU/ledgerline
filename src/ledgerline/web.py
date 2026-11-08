@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ledgerline.accounts import totp
 from ledgerline.config import get_settings
 from ledgerline.db import get_session, set_tenant
 from ledgerline.models import WRITE_ROLES, Administration, Membership, Role, Tenant, User
@@ -23,6 +24,10 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 class LoginRequired(Exception):
     """Raised for anonymous requests; the app turns it into a redirect to /login."""
+
+
+class TwoFactorRequired(Exception):
+    """The tenant requires two-factor login and this user has not enrolled yet."""
 
 
 class TenantRequired(Exception):
@@ -56,7 +61,8 @@ def login_user(request: Request, session: SessionDep) -> User:
     """The signed-in user, with no tenant needed (login follow-up and tenant selection)."""
     user_id = request.session.get("user_id")
     user = session.get(User, user_id) if user_id else None
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or request.session.get("sv") != user.session_version:
+        request.session.clear()
         raise LoginRequired
     return user
 
@@ -69,7 +75,9 @@ def current_user(request: Request, session: SessionDep, user: LoginDep) -> User:
     and is the only source of the role; the database context is set from it, not from the cookie."""
     tenant_id = request.session.get("tenant_id")
     membership = session.scalar(
-        select(Membership).where(Membership.user_id == user.id, Membership.tenant_id == tenant_id)
+        select(Membership).where(
+            Membership.user_id == user.id, Membership.tenant_id == tenant_id,
+            Membership.status == "active")
     ) if tenant_id else None
     if membership is None:
         request.session.pop("tenant_id", None)
@@ -80,8 +88,11 @@ def current_user(request: Request, session: SessionDep, user: LoginDep) -> User:
     request.state.role = membership.role
     request.state.tenant = session.get(Tenant, membership.tenant_id)
     request.state.tenant_count = session.scalar(
-        select(func.count()).select_from(Membership).where(Membership.user_id == user.id)
+        select(func.count()).select_from(Membership).where(
+            Membership.user_id == user.id, Membership.status == "active")
     )
+    if request.state.tenant.require_2fa and totp.enabled(session, user.id) is None:
+        raise TwoFactorRequired
     return user
 
 

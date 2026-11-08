@@ -100,6 +100,7 @@ class Tenant(Base):
     __tablename__ = "tenants"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
+    require_2fa: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     created_at: Mapped[datetime] = _now()
 
 
@@ -109,6 +110,8 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(254), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Bumped on password change, reset and "sign out everywhere"; sessions carry the value.
+    session_version: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
     created_at: Mapped[datetime] = _now()
     # Not a column: the request fills it in from the membership of the selected tenant.
     role = None
@@ -120,6 +123,7 @@ class Membership(Base):
         UniqueConstraint("user_id", "tenant_id", name="uq_memberships_user_tenant"),
         CheckConstraint("role IN ('owner', 'bookkeeper', 'accountant')",
                         name="ck_memberships_role"),
+        CheckConstraint("status IN ('active', 'pending')", name="ck_memberships_status"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
@@ -127,8 +131,50 @@ class Membership(Base):
         ForeignKey("tenants.id", ondelete="CASCADE"), index=True
     )
     role: Mapped[str] = mapped_column(String(20))
+    # 'pending' = invited, not yet accepted; grants no access.
+    status: Mapped[str] = mapped_column(String(10), default="active", server_default="active")
     created_at: Mapped[datetime] = _now()
     tenant: Mapped[Tenant] = relationship(lazy="joined")
+
+
+class AuthToken(Base):
+    """Single-use invite or password-reset token. Only the sha256 of the token is stored."""
+
+    __tablename__ = "auth_tokens"
+    __table_args__ = (
+        CheckConstraint("purpose IN ('invite', 'reset')", name="ck_auth_tokens_purpose"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    membership_id: Mapped[int | None] = mapped_column(
+        ForeignKey("memberships.id", ondelete="CASCADE"))
+    purpose: Mapped[str] = mapped_column(String(10))
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _now()
+
+
+class UserTotp(Base):
+    """A user's authenticator secret (Fernet-encrypted). Active once enabled_at is set."""
+
+    __tablename__ = "user_totp"
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"),
+                                         primary_key=True)
+    secret_enc: Mapped[str] = mapped_column(Text)
+    enabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_used_step: Mapped[int] = mapped_column(BigInteger, default=0, server_default=text("0"))
+    created_at: Mapped[datetime] = _now()
+
+
+class RecoveryCode(Base):
+    __tablename__ = "recovery_codes"
+    __table_args__ = (UniqueConstraint("user_id", "code_hash", name="uq_recovery_codes_user_hash"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    code_hash: Mapped[str] = mapped_column(String(64))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = _now()
 
 
 class Administration(TenantScoped, Base):

@@ -1,0 +1,47 @@
+{% import "components/macros.html" as ui with context %}
+{% for f in flashes %}<div class="flash flash-{{ f.kind }}" role="status">{{ f.message }}</div>{% endfor %}
+<div class="stack">
+  {% if pending %}
+  <div class="card"><div class="card-header"><h2 class="card-title">Invitations</h2></div>
+    <div class="card-body stack">
+      {% for m in pending %}
+      <div class="row"><span>{{ m.tenant.name }} <span class="muted">({{ m.role }})</span></span><span class="spacer"></span>
+        <form method="post" action="/account/invitations/{{ m.id }}/accept">{{ ui.csrf() }}<button class="btn btn-sm btn-primary" type="submit">Accept</button></form>
+        <form method="post" action="/account/invitations/{{ m.id }}/decline">{{ ui.csrf() }}<button class="btn btn-sm btn-secondary" type="submit">Decline</button></form>
+      </div>
+      {% endfor %}
+    </div></div>
+  {% endif %}
+
+  <div class="card"><div class="card-header"><h2 class="card-title">Your account</h2></div>
+    <div class="card-body stack">
+      <p>{{ user.email }}</p>
+      <p>Two-factor login: <strong>{{ 'on' if two_factor else 'off' }}</strong> · <a href="/account/security">Manage</a></p>
+      <table class="table table-compact"><thead><tr><th>Workspace</th><th>Role</th></tr></thead>
+        <tbody>{% for m in memberships %}<tr><td>{{ m.tenant.name }}</td><td>{{ m.role }}</td></tr>{% endfor %}</tbody></table>
+    </div></div>
+
+  <form class="card" method="post" action="/account/password">
+    <div class="card-header"><h2 class="card-title">Change your password</h2></div>
+    <div class="card-body stack">
+      {{ ui.csrf() }}
+      <div class="form-grid">
+        <label class="field"><span class="field-label">Current password</span><input class="input" type="password" name="current" autocomplete="current-password" required></label>
+        <span></span>
+        <label class="field"><span class="field-label">New password</span><input class="input" type="password" name="password" minlength="12" autocomplete="new-password" required><span class="field-hint">At least 12 characters.</span></label>
+        <label class="field"><span class="field-label">Repeat new password</span><input class="input" type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Change password</button></div>
+    </div>
+  </form>
+
+  <form class="card" method="post" action="/account/sign-out-everywhere">
+    <div class="card-header"><h2 class="card-title">Sessions</h2></div>
+    <div class="card-body stack">
+      {{ ui.csrf() }}
+      <p class="field-hint">Ends every session on every device, including this one.</p>
+      <div class="form-actions"><button class="btn btn-secondary" type="submit">Sign out everywhere</button></div>
+    </div>
+  </form>
+  <p><a href="/">Back to the books</a></p>
+</div>

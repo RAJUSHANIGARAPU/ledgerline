@@ -72,7 +72,9 @@ cd e2e && npm ci && npx playwright install chromium && npx playwright test
 
 The suite signs in, renders every page on desktop and mobile with zero console or CSP errors,
 creates, issues and downloads an invoice through the UI, and turns an uploaded supplier PDF
-into a purchase. It expects a freshly seeded database. CI runs all three layers.
+into a purchase, and invites a user, accepts the invitation and enrols two-factor login (it reads the
+invitation link from the app log, so start the stack with `LEDGERLINE_ENVIRONMENT=development`). It
+expects a freshly seeded database. CI runs all three layers.
 
 ## Design decisions
 
@@ -89,6 +91,15 @@ into a purchase. It expects a freshly seeded database. CI runs all three layers.
 - **One database holds everything**, attachments included, so one `pg_dump` is a full backup.
 
 Architecture decisions are recorded in [docs/adr](docs/adr).
+
+## Running a pilot
+
+Documents for onboarding a first client onto a hosted installation:
+
+- [Acceptance test](docs/ACCEPTANCE_TEST.md): the script run on the production server before each onboarding, also the release checklist (sample bank file in `docs/samples/`).
+- [Data processing agreement (template)](docs/pilot/VERWERKERSOVEREENKOMST.md): Dutch, with an English summary, for review by a lawyer.
+- [Pilot agreement (template)](docs/pilot/PILOT_AGREEMENT.md): short pilot terms in Dutch and English.
+- [Onboarding runbook](docs/pilot/ONBOARDING_RUNBOOK.md): what the operator does per client, up to offboarding.
 
 ## Licence
 

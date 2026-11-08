@@ -80,6 +80,23 @@ deploy/hetzner/update.sh v1.2.0
 
 It backs up, deploys, waits for `/healthz` and rolls back to the previous commit and images when the new version does not become healthy (see OPERATIONS.md for its limits). The manual form is `git pull && docker compose up -d --build` after a backup (`scripts/backup.sh`). Migrations are applied on start. Upgrading an existing single-owner installation to multi-tenancy needs one new variable, `LEDGERLINE_APP_DB_PASSWORD`, in `.env`; the migration moves all data into tenant 1 and gives every existing user a membership there with their old role.
 
+## Outbound email (invitations and password reset)
+
+Set these in `.env` (compose passes them to the app):
+
+| Variable | Meaning |
+|---|---|
+| `LEDGERLINE_SMTP_HOST` | SMTP server. Empty = email off. |
+| `LEDGERLINE_SMTP_PORT` | 587 (default, STARTTLS) or 465 (SSL). |
+| `LEDGERLINE_SMTP_TLS` | `starttls` (default), `ssl` or `none` (trusted local relay only). |
+| `LEDGERLINE_SMTP_USER`, `LEDGERLINE_SMTP_PASSWORD` | Login, if the server needs one. |
+| `LEDGERLINE_SMTP_FROM` | Sender address, for example `Ledgerline <noreply@books.example.com>`. Required. |
+| `LEDGERLINE_ENVIRONMENT` | `production` (default) or `development`. |
+
+Links in the emails use `LEDGERLINE_PUBLIC_BASE_URL`, so set it to your HTTPS address. With SMTP off the app logs a warning and sends nothing; owners see an error when they try to invite someone. In `development` the invitation and reset links are also written to the server log (`docker compose logs app`) so you can test without a mail server. Never use `development` on a server with real users.
+
+Two-factor secrets are encrypted with a key derived from `LEDGERLINE_SECRET_KEY`. Changing that key (it also signs sessions) makes enrolled authenticator secrets and recovery codes unreadable, so users with two-factor login are locked out at the second step until an operator deletes their `user_totp` row. Rotate it deliberately.
+
 ## Operations notes
 
 - Logs: `docker compose logs -f app`.

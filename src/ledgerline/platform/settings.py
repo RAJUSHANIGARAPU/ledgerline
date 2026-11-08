@@ -1,11 +1,10 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 
 from ledgerline import audit
-from ledgerline.auth import hash_password, hasher
 from ledgerline.config import get_settings
 from ledgerline.inbox.email_intake import inbox_address
 from ledgerline.ledger.chart import create_administration
@@ -25,7 +24,6 @@ from ledgerline.web import (
     UserDep,
     flash,
     render,
-    verify_csrf,
 )
 
 router = APIRouter(prefix="/settings")
@@ -49,7 +47,8 @@ def _context(session, user, admin, **extra) -> dict:
     }
     if user.role == Role.OWNER:
         ctx["users"] = session.execute(
-            select(User, Membership.role).join(Membership, Membership.user_id == User.id)
+            select(User, Membership.role, Membership.status)
+            .join(Membership, Membership.user_id == User.id)
             .where(Membership.tenant_id == tenant_id).order_by(User.id)).all()
     ctx.update(extra)
     return ctx
@@ -152,33 +151,6 @@ def regenerate_inbox_address(request: Request, session: SessionDep, user: Manage
     return RedirectResponse("/settings", 303)
 
 
-@router.post("/users")
-def add_user(request: Request, session: SessionDep, user: ManagerDep, admin: AdminDep,
-             email: Annotated[str, Form()] = "", role: Annotated[str, Form()] = "accountant",
-             password: Annotated[str, Form()] = "", confirm: Annotated[str, Form()] = ""):
-    address, err = v.check_email(email)
-    err = err or (None if address else "Email is required.")
-    err = err or v.check_password(password, confirm)
-    if role not in set(Role):
-        err = "Unknown role."
-    if not err and session.scalar(select(User.id).where(
-            func.lower(User.email) == (address or "").lower())):
-        err = "A user with this email already exists."
-    if err:
-        flash(request, err, "error")
-        return RedirectResponse("/settings", 303)
-    created = User(email=(address or "").lower(), password_hash=hash_password(password),
-                   is_active=True)
-    session.add(created)
-    session.flush()
-    session.add(Membership(user_id=created.id, tenant_id=admin.tenant_id, role=role))
-    audit.record(session, "user.create", user_id=user.id, administration_id=admin.id,
-                 entity_type="user", entity_id=created.id, details={"role": role})
-    session.commit()
-    flash(request, f"User {created.email} created as {role}.")
-    return RedirectResponse("/settings", 303)
-
-
 @router.post("/users/{user_id}/deactivate")
 def deactivate_user(request: Request, user_id: int, session: SessionDep, user: ManagerDep,
                     admin: AdminDep):
@@ -199,26 +171,4 @@ def deactivate_user(request: Request, user_id: int, session: SessionDep, user: M
                      entity_type="user", entity_id=target.id)
         session.commit()
         flash(request, f"{target.email} deactivated.")
-    return RedirectResponse("/settings", 303)
-
-
-@router.post("/password", dependencies=[Depends(verify_csrf)])
-def change_password(request: Request, session: SessionDep, user: UserDep,
-                    current: Annotated[str, Form()] = "", password: Annotated[str, Form()] = "",
-                    confirm: Annotated[str, Form()] = ""):
-    try:
-        hasher.verify(user.password_hash, current)
-        ok = True
-    except Exception:
-        ok = False
-    err = None if ok else "Current password is wrong."
-    err = err or v.check_password(password, confirm)
-    if err:
-        flash(request, err, "error")
-        return RedirectResponse("/settings", 303)
-    user.password_hash = hash_password(password)
-    audit.record(session, "user.password_change", user_id=user.id, entity_type="user",
-                 entity_id=user.id)
-    session.commit()
-    flash(request, "Password changed.")
     return RedirectResponse("/settings", 303)
