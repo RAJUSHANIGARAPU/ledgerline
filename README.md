@@ -89,6 +89,15 @@ into a purchase. It expects a freshly seeded database. CI runs all three layers.
 
 Architecture decisions are recorded in [docs/adr](docs/adr).
 
+## Running a pilot
+
+Documents for onboarding a first client onto a hosted installation:
+
+- [Acceptance test](docs/ACCEPTANCE_TEST.md): the script run on the production server before each onboarding, also the release checklist (sample bank file in `docs/samples/`).
+- [Data processing agreement (template)](docs/pilot/VERWERKERSOVEREENKOMST.md): Dutch, with an English summary, for review by a lawyer.
+- [Pilot agreement (template)](docs/pilot/PILOT_AGREEMENT.md): short pilot terms in Dutch and English.
+- [Onboarding runbook](docs/pilot/ONBOARDING_RUNBOOK.md): what the operator does per client, up to offboarding.
+
 ## Licence
 
 Copyright (c) 2026 Raju Shanigarapu. Licensed under the GNU Affero General Public License v3.0 only

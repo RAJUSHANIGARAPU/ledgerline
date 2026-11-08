@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
+  <BkToCstmrStmt>
+    <GrpHdr><MsgId>ACCEPT-1</MsgId><CreDtTm>2026-11-21T08:00:00</CreDtTm></GrpHdr>
+    <Stmt>
+      <Id>ACCEPT-STMT-1</Id>
+      <Acct><Id><IBAN>NL91ABNA0417164300</IBAN></Id><Ccy>EUR</Ccy></Acct>
+      <Bal><Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">5000.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-11-19</Dt></Dt></Bal>
+      <Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">5713.50</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-11-20</Dt></Dt></Bal>
+      <Ntry>
+        <Amt Ccy="EUR">1210.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-11-20</Dt></BookgDt><ValDt><Dt>2026-11-20</Dt></ValDt>
+        <AcctSvcrRef>ACCEPT-REF-1</AcctSvcrRef>
+        <NtryDtls><TxDtls>
+          <Refs><EndToEndId>ACCEPT-E2E-1</EndToEndId></Refs>
+          <RltdPties>
+            <Dbtr><Nm>Acceptatie Klant BV</Nm></Dbtr>
+            <DbtrAcct><Id><IBAN>NL02ABNA0123456789</IBAN></Id></DbtrAcct>
+          </RltdPties>
+          <RmtInf><Ustrd>Betaling factuur acceptatietest</Ustrd></RmtInf>
+        </TxDtls></NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="EUR">484.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-11-20</Dt></BookgDt><ValDt><Dt>2026-11-20</Dt></ValDt>
+        <AcctSvcrRef>ACCEPT-REF-2</AcctSvcrRef>
+        <NtryDtls><TxDtls>
+          <Refs><EndToEndId>ACCEPT-E2E-2</EndToEndId></Refs>
+          <RltdPties>
+            <Cdtr><Nm>Acceptatie Leverancier BV</Nm></Cdtr>
+            <CdtrAcct><Id><IBAN>NL86INGB0002445588</IBAN></Id></CdtrAcct>
+          </RltdPties>
+          <RmtInf><Ustrd>Factuur ACC-2026-01</Ustrd></RmtInf>
+        </TxDtls></NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="EUR">12.50</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-11-20</Dt></BookgDt><ValDt><Dt>2026-11-20</Dt></ValDt>
+        <AcctSvcrRef>ACCEPT-REF-3</AcctSvcrRef>
+        <NtryDtls><TxDtls>
+          <Refs><EndToEndId>NOTPROVIDED</EndToEndId></Refs>
+          <RmtInf><Ustrd>Kosten betaalpakket november</Ustrd></RmtInf>
+        </TxDtls></NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
