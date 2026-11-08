@@ -25,7 +25,9 @@ CATEGORY = {
     "V0": ("Z", None),
     "VRV": ("AE", "Reverse charge (btw verlegd)"),
     "VEU": ("K", "Intra-community supply (btw verlegd)"),
+    "VEUG": ("K", "Intra-community supply of goods"),
     "VEX": ("G", "Export outside the EU"),
+    "VNEU": ("G", "Service to a customer outside the EU"),
     "VVR": ("E", "Exempt from VAT"),
     "VKOR": ("E", "Exempt from VAT under the small business scheme (KOR)"),
 }

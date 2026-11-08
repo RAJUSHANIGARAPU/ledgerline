@@ -1,6 +1,6 @@
 """Assembles the figures for the btw-aangifte from tagged journal lines."""
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from enum import StrEnum
 
 from sqlalchemy import select
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ledgerline.models import Account, JournalEntry, JournalLine, SystemRole
 from ledgerline.vat.codes import VAT_CODES, Direction
+from ledgerline.vat.sources import SOURCES
 
 PAYABLE_ROLES = {
     SystemRole.VAT_PAYABLE_HIGH,
@@ -15,22 +16,23 @@ PAYABLE_ROLES = {
     SystemRole.VAT_PAYABLE_REVERSE,
 }
 
-# Rubrieken in form order: (rubriek, description, has a base amount, has a VAT amount, verify note)
-RUBRIEKEN: list[tuple[str, str, bool, bool, bool]] = [
-    ("1a", "Supplies and services at 21%", True, True, False),
-    ("1b", "Supplies and services at 9%", True, True, True),
-    ("1c", "Supplies and services at other rates", True, True, False),
-    ("1d", "Private use", True, True, False),
-    ("1e", "Supplies at 0% or not taxed in NL", True, False, True),
-    ("2a", "Domestic reverse charge (VAT shifted to you)", True, True, False),
-    ("3a", "Supplies outside the EU (export)", True, False, True),
-    ("3b", "Supplies to EU businesses", True, False, True),
-    ("3c", "Installation and distance sales within the EU", True, False, False),
-    ("4a", "Purchases from outside the EU", True, True, False),
-    ("4b", "Purchases from within the EU", True, True, False),
+# Rubrieken in form order: (rubriek, description, has a base amount, has a VAT amount)
+RUBRIEKEN: list[tuple[str, str, bool, bool]] = [
+    ("1a", "Supplies and services at 21%", True, True),
+    ("1b", "Supplies and services at 9%", True, True),
+    ("1c", "Supplies and services at other rates (not 0%)", True, True),
+    ("1d", "Private use", False, True),
+    ("1e", "Supplies at 0% or not taxed in NL (incl. reverse charge to Dutch customers)",
+     True, False),
+    ("2a", "Domestic reverse charge (VAT shifted to you)", True, True),
+    ("3a", "Export of goods outside the EU", True, False),
+    ("3b", "Supplies of goods and services to EU businesses", True, False),
+    ("3c", "Installation and distance sales within the EU", True, False),
+    ("4a", "Purchases from outside the EU", True, True),
+    ("4b", "Purchases from within the EU", True, True),
 ]
 
-VERIFY = {r[0] for r in RUBRIEKEN if r[4]} | {"5c"}
+VERIFY = {rubriek for rubriek, (status, _url) in SOURCES.items() if status != "current"}
 
 
 class Kind(StrEnum):
@@ -59,6 +61,10 @@ class RubriekLine:
     has_vat: bool = True
     verify: bool = False
 
+    @property
+    def form_vat_euros(self) -> int:
+        return euros_down(self.vat_cents)
+
 
 @dataclass
 class VatReturn:
@@ -76,10 +82,41 @@ class VatReturn:
     def line(self, rubriek: str) -> RubriekLine:
         return next(line for line in self.lines if line.rubriek == rubriek)
 
+    # The form takes whole euros, rounded in the taxpayer's favour (SOURCES["rounding"]):
+    # VAT owed per rubriek down, deductible VAT up. 5a is the sum of the rounded rubrieken.
+    @property
+    def form_owed_euros(self) -> int:
+        return sum(line.form_vat_euros for line in self.lines)
+
+    @property
+    def form_deductible_euros(self) -> int:
+        return euros_up(self.deductible_cents)
+
+    @property
+    def form_balance_euros(self) -> int:
+        return self.form_owed_euros - self.form_deductible_euros
+
 
 def whole_euros(cents: int) -> int:
-    """Cents to whole euros, dropping the cents (towards zero)."""
+    """Cents to whole euros, dropping the cents (towards zero); used for the base column."""
     return int(abs(cents) // 100) * (1 if cents >= 0 else -1)
+
+
+def euros_down(cents: int) -> int:
+    return cents // 100
+
+
+def euros_up(cents: int) -> int:
+    return -(-cents // 100)
+
+
+def filing_deadline(kind: str, end: date) -> date | None:
+    """Last day of the month after a month or quarter (SOURCES["deadline"]); None for a year."""
+    if kind not in ("month", "quarter"):
+        return None
+    year, month = (end.year + 1, 1) if end.month == 12 else (end.year, end.month + 1)
+    following = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    return following - timedelta(days=1)
 
 
 def contribution(
@@ -106,7 +143,7 @@ def build_return(rows: list[Row], start: date, end: date) -> VatReturn:
     result = VatReturn(
         start,
         end,
-        [RubriekLine(r, d, has_base=b, has_vat=v, verify=n) for r, d, b, v, n in RUBRIEKEN],
+        [RubriekLine(r, d, has_base=b, has_vat=v, verify=r in VERIFY) for r, d, b, v in RUBRIEKEN],
     )
     by_rubriek = {line.rubriek: line for line in result.lines}
     for row in rows:
