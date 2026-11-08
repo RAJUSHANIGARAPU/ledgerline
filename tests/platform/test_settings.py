@@ -1,7 +1,7 @@
 from sqlalchemy import select
 
 from ledgerline.auth import hasher
-from ledgerline.models import Administration, Role, User
+from ledgerline.models import Administration, Membership, Role, User
 from tests.conftest import OWNER_PASSWORD
 
 ADMIN_FORM = {"name": "Nieuwe Naam BV", "legal_form": "bv", "kvk_number": "99887766",
@@ -59,7 +59,8 @@ def test_owner_creates_accountant_who_is_read_only(client, session, admin):
         "csrf_token": client.csrf}, follow_redirects=False)
     assert r.status_code == 303
     user = session.scalar(select(User).where(User.email == "boekhouder@example.com"))
-    assert user.role == Role.ACCOUNTANT
+    membership = session.scalar(select(Membership).where(Membership.user_id == user.id))
+    assert membership.role == Role.ACCOUNTANT and membership.tenant_id == admin.tenant_id
     hasher.verify(user.password_hash, "twelve-chars-ok")
 
 
@@ -71,8 +72,10 @@ def test_short_password_rejected_for_new_user(client, session, admin):
 
 
 def test_deactivate_user_but_not_self(client, session, admin, owner):
-    other = User(email="weg@example.com", password_hash="x", role=Role.ACCOUNTANT)
+    other = User(email="weg@example.com", password_hash="x")
     session.add(other)
+    session.flush()
+    session.add(Membership(user_id=other.id, tenant_id=admin.tenant_id, role=Role.ACCOUNTANT))
     session.commit()
     client.post(f"/settings/users/{other.id}/deactivate", data={"csrf_token": client.csrf})
     client.post(f"/settings/users/{owner.id}/deactivate", data={"csrf_token": client.csrf})

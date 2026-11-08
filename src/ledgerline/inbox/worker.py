@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ledgerline.config import get_settings
-from ledgerline.db import get_sessionmaker
+from ledgerline.db import for_each_tenant, get_sessionmaker
 from ledgerline.inbox import email_intake
 from ledgerline.inbox.extract import pipeline
 from ledgerline.models import InboxDocument, InboxStatus
@@ -82,8 +82,11 @@ def run_forever(
     while not stop.is_set():
         busy = False
         try:
-            with factory() as session:
-                busy = process_pending(session) > 0
+            for tenant_id, session in for_each_tenant(factory):
+                try:
+                    busy = process_pending(session) > 0 or busy
+                except Exception:
+                    log.exception("extraction pass failed for tenant %s", tenant_id)
             if heartbeat:
                 heartbeat.touch()
         except Exception:

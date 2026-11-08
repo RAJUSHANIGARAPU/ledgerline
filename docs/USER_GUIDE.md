@@ -65,8 +65,11 @@ VRV and VEU need the customer's VAT number; without it the invoice is not issued
 
 Four ways in, all ending as a purchase invoice you book:
 
-1. Email: forward or have suppliers send invoices to the Ledgerline mailbox (set up by whoever runs
-   the server, see `LEDGERLINE_IMAP_*` in `.env.example`). Attachments land in the [Inbox](/inbox).
+1. Email: forward or have suppliers send invoices to your administration's private address
+   (`mailbox+<token>@domain`, shown on the [Inbox](/inbox) page and in [Settings](/settings); the
+   mailbox itself is set up by whoever runs the server, see `LEDGERLINE_IMAP_*` in `.env.example`).
+   Keep the address private; the owner can create a new one in Settings, which disables the old one.
+   Attachments land in the Inbox.
 2. Upload: drop PDFs, photos or e-invoice (UBL/XML) files on the [Inbox](/inbox) page.
 3. Phone: open [Capture](/capture) on your phone and take a photo, or use the "Send to Ledgerline"
    share-sheet shortcut. Create its upload key under [Phone devices](/settings/devices); the steps
@@ -118,7 +121,7 @@ On [Reports](/reports): profit and loss, balance sheet, trial balance, aged rece
 
 ## Accountant access
 
-Settings, Users: create a user with role accountant. That user can read everything and change nothing. Send reports as CSV, or the full administration ZIP from [Privacy and data](/settings/privacy) (owner only).
+Settings, Users: create a user with role accountant. That user can read everything and change nothing. The bookkeeper role can write the books but cannot manage users or phone tokens; only the owner can. Send reports as CSV, or the full administration ZIP from [Privacy and data](/settings/privacy) (owner only).
 
 ## Privacy requests
 

@@ -12,7 +12,7 @@ from ledgerline.db import get_sessionmaker
 from ledgerline.inbox import service as inbox
 from ledgerline.mobile import tokens
 from ledgerline.models import ApiToken
-from ledgerline.web import AdminDep, OwnerDep, SessionDep, UserDep, flash, render
+from ledgerline.web import AdminDep, ManagerDep, OwnerDep, SessionDep, UserDep, flash, render
 
 router = APIRouter()
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -147,13 +147,18 @@ def _store(token_value: str, filename: str, content: bytes) -> JSONResponse:
 
 @router.post("/api/v1/inbox", include_in_schema=False)
 async def api_upload(request: Request):
+    client = request.client.host if request.client else "unknown"
+    if tokens.too_many_failures(client):
+        return JSONResponse({"detail": "too many attempts"}, 429, headers={"Retry-After": "600"})
     value = _bearer(request)
     if value is None:
+        tokens.record_failure(client)
         return _unauthorized()
     with get_sessionmaker()() as session:
         token = tokens.authenticate(session, value)
         token_id = token.id if token else None
     if token_id is None:
+        tokens.record_failure(client)
         return _unauthorized()
     if not tokens.allow_request(token_id):
         return JSONResponse({"detail": "rate limit exceeded"}, 429, headers={"Retry-After": "60"})
@@ -168,7 +173,7 @@ async def api_upload(request: Request):
 
 
 @router.get("/settings/devices")
-def devices(request: Request, user: OwnerDep, admin: AdminDep, session: SessionDep):
+def devices(request: Request, user: ManagerDep, admin: AdminDep, session: SessionDep):
     return _devices_page(request, session, admin)
 
 
@@ -194,7 +199,7 @@ def _devices_page(request: Request, session, admin, new_token: str | None = None
 @router.post("/settings/devices")
 def create_device(
     request: Request,
-    user: OwnerDep,
+    user: ManagerDep,
     admin: AdminDep,
     session: SessionDep,
     name: str = Form(""),
@@ -208,7 +213,7 @@ def create_device(
 def revoke_device(
     token_id: int,
     request: Request,
-    user: OwnerDep,
+    user: ManagerDep,
     admin: AdminDep,
     session: SessionDep,
 ):

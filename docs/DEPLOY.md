@@ -1,6 +1,6 @@
 # Deploying Ledgerline
 
-Ledgerline runs as three containers: the app, PostgreSQL 16 and a nightly backup job. Everything is free software; no paid service is needed.
+Ledgerline runs as the app, the background worker, PostgreSQL 16 and a nightly backup job, plus a one-shot `migrate` container that runs migrations at every start and exits. Everything is free software; no paid service is needed.
 
 ## Local, one command
 
@@ -8,12 +8,12 @@ Requires Docker with the Compose plugin.
 
 ```sh
 cp .env.example .env
-# edit .env: set LEDGERLINE_SECRET_KEY and POSTGRES_PASSWORD
+# edit .env: set LEDGERLINE_SECRET_KEY, POSTGRES_PASSWORD and LEDGERLINE_APP_DB_PASSWORD
 # for plain http://localhost also set LEDGERLINE_COOKIE_SECURE=false
 docker compose up -d --build
 ```
 
-Open http://127.0.0.1:8000. The app refuses to start without `LEDGERLINE_SECRET_KEY`, and compose refuses to start without both secrets.
+Open http://127.0.0.1:8000. The app refuses to start without `LEDGERLINE_SECRET_KEY`, and compose refuses to start without the three secrets. Generate each with `openssl rand -hex 24` (hex keeps the passwords safe inside database URLs).
 
 Create the first owner, either by setting `LEDGERLINE_INITIAL_OWNER_EMAIL` and `LEDGERLINE_INITIAL_PASSWORD` in `.env` before the first start, or afterwards:
 
@@ -23,11 +23,30 @@ docker compose exec -e LEDGERLINE_INITIAL_PASSWORD='a-long-passphrase' app \
 docker compose exec app ledgerline create-administration --name "My Company" --legal-form eenmanszaak
 ```
 
+A fresh installation has one tenant (id 1), so `--tenant` can be left out. With several tenants, create one with `ledgerline create-tenant --name "Client BV"` and pass `--tenant <id>` to `create-user` and `create-administration`. `ledgerline add-membership --email a@b.example --tenant 2 --role bookkeeper` gives an existing login access to another tenant (roles: `owner`, `bookkeeper`, `accountant`). `ledgerline seed-demo --email you@example.com` loads demo data into its own tenant and makes that user its owner.
+
 Remove `LEDGERLINE_INITIAL_PASSWORD` from `.env` once the owner exists.
 
 `LEDGERLINE_COOKIE_SECURE=false` is for local http only. With it on (the default), browsers drop the session cookie over plain http and you cannot sign in.
 
-Migrations run automatically on every start (`ledgerline migrate`).
+Migrations run automatically on every `docker compose up`, in the one-shot `migrate` service; app and worker start only after it completed successfully.
+
+## Database roles
+
+Tenant isolation relies on PostgreSQL row-level security (docs/adr/0001-multi-tenancy.md), and superusers and `BYPASSRLS` roles ignore it. So there are two roles:
+
+| Role | Used by | Notes |
+|---|---|---|
+| `ledgerline` (`POSTGRES_USER`, the owner) | migrations, `ensure-app-role`, the backup service | superuser in the compose database; never used by the running app |
+| `ledgerline_app` | app and worker | `NOSUPERUSER NOBYPASSRLS`, data privileges only; password from `LEDGERLINE_APP_DB_PASSWORD` |
+
+On every `docker compose up` the `migrate` service runs `ledgerline migrate` and `ledgerline ensure-app-role` with the owner URL (`LEDGERLINE_MIGRATION_DATABASE_URL`) and exits. App and worker depend on it (`service_completed_successfully`) and receive only the app role URL (`LEDGERLINE_DATABASE_URL`); the owner credentials are not in their environment at all.
+
+`ensure-app-role` grants data access only on tables that have row-level security enabled and forced and a `tenant_isolation` policy, plus `users`, `tenants` and `memberships`. A table without that policy stays inaccessible to the app role (fail closed), and no default privileges exist for future tables. Developers adding a table must give it `tenant_id` and a forced policy, otherwise the app gets "permission denied". Changing `LEDGERLINE_APP_DB_PASSWORD` and restarting rotates the password.
+
+Without compose: set `LEDGERLINE_MIGRATION_DATABASE_URL` to the owner and `LEDGERLINE_DATABASE_URL` to `ledgerline_app`, run `ledgerline migrate` then `ledgerline ensure-app-role` (with `LEDGERLINE_APP_DB_PASSWORD`) as the owner. If `LEDGERLINE_MIGRATION_DATABASE_URL` is unset, migrations use `LEDGERLINE_DATABASE_URL`, which only makes sense for local development where a single superuser does everything (the isolation tests then do not apply to that setup).
+
+The owner role must be a superuser or hold `BYPASSRLS`; the migration refuses to run otherwise. The backup (`pg_dump`) and the two `SECURITY DEFINER` lookup functions (inbox address routing, phone tokens) read tables that have forced policies.
 
 ## A VPS with HTTPS (Caddy)
 
@@ -56,12 +75,14 @@ git pull
 docker compose up -d --build
 ```
 
-Take a backup first (`scripts/backup.sh`). Migrations are applied on start.
+Take a backup first (`scripts/backup.sh`). Migrations are applied on start. Upgrading an existing single-owner installation to multi-tenancy needs one new variable, `LEDGERLINE_APP_DB_PASSWORD`, in `.env`; the migration moves all data into tenant 1 and gives every existing user a membership there with their old role.
 
 ## Operations notes
 
 - Logs: `docker compose logs -f app`.
 - Health: `GET /healthz` (also the container HEALTHCHECK).
 - Data lives in the `pgdata` volume. Attachments are stored in the database, so one dump contains everything.
+- Backups: see BACKUP_RESTORE.md. They are taken as the owner role and contain every tenant.
+- Background work: the worker visits every tenant on each pass, one transaction per tenant.
 - Backups: see BACKUP_RESTORE.md. A backup stored on the same machine is not a disaster backup; copy `./backups` off the host.
 - Hosting provider: if a third party hosts the server, a data processing agreement is needed (see COMPLIANCE_NL.md).

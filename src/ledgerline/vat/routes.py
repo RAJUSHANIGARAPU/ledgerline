@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 
 from ledgerline import audit
 from ledgerline.ledger.service import LedgerError, LineSpec, post_entry, system_account
-from ledgerline.models import JournalEntry, JournalLine, SystemRole
+from ledgerline.models import WRITE_ROLES, JournalEntry, JournalLine, SystemRole
 from ledgerline.reports.export import Cents, csv_response
 from ledgerline.reports.params import parse_int
 from ledgerline.vat.icp import icp_overview
@@ -75,7 +75,7 @@ def vat_overview(request: Request, session: SessionDep, user: UserDep, admin: Ad
         "p": p, "r": result, "whole": whole_euros, "verify": VERIFY, "sources": SOURCES,
         "deadline": filing_deadline(p["kind"], p["end"]), "kor": admin.kor,
         "settlement": _existing_settlement(session, admin, p["label"]),
-        "can_write": user.role == "owner", "years": _years(),
+        "can_write": user.role in WRITE_ROLES, "years": _years(),
     })
 
 

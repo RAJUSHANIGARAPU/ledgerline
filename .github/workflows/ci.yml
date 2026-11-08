@@ -49,13 +49,14 @@ jobs:
           cat > .env <<EOF
           LEDGERLINE_SECRET_KEY=$(openssl rand -hex 32)
           POSTGRES_PASSWORD=$(openssl rand -hex 16)
+          LEDGERLINE_APP_DB_PASSWORD=$(openssl rand -hex 16)
           LEDGERLINE_COOKIE_SECURE=false
           LEDGERLINE_INITIAL_OWNER_EMAIL=demo@ledgerline.example
           LEDGERLINE_INITIAL_PASSWORD=demo-password-123
           LEDGERLINE_BIND=127.0.0.1:8765
           EOF
           docker compose up -d --build --wait app
-          docker compose exec -T app ledgerline seed-demo
+          docker compose exec -T app ledgerline seed-demo --email demo@ledgerline.example
       - uses: actions/setup-node@v4
         with:
           node-version: 22

@@ -90,6 +90,8 @@ img { max-width: 100%; }
 .nav-link.is-active { background: var(--accent-soft); color: var(--text); }
 .sidebar-foot { margin-top: auto; font-size: 12px; color: var(--text-muted); padding: 0 0.4rem; display: grid; gap: 0.4rem; }
 .sidebar-foot a { color: var(--text-muted); }
+.tenant-name { font-size: 12px; padding: 0 0.4rem 0.6rem; color: var(--text-muted); }
+.tenant-name a { color: var(--text-muted); }
 .main { display: flex; flex-direction: column; min-width: 0; }
 .topbar {
   position: sticky; top: 0; z-index: 5;

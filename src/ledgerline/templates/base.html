@@ -16,13 +16,14 @@
   {% block head %}{% endblock %}
 </head>
 <body hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
-{% if request.session.get('user_id') %}
+{% if request.session.get('user_id') and request.session.get('tenant_id') %}
 <div class="shell">
   <aside class="sidebar" id="sidebar">
     <a class="brand" href="/">
       <img src="{{ url_for('static', path='img/mark.svg') }}" alt="" width="28" height="28">
       <span>Ledgerline</span>
     </a>
+    {% if current_tenant %}<div class="tenant-name"><span class="muted">{{ current_tenant.name }}</span>{% if can_switch_tenant %} · <a href="/tenants">switch</a>{% endif %}</div>{% endif %}
     <nav aria-label="Main">
       {% set nav = [
         ('', 'Dashboard', '/'),
@@ -42,7 +43,7 @@
       {% endfor %}
     </nav>
     <div class="sidebar-foot">
-      <div><a href="/help">Help</a>{% if request.session.get('role') == 'owner' %} · <a href="/setup">Setup</a>{% endif %}</div>
+      <div><a href="/help">Help</a>{% if can_write %} · <a href="/setup">Setup</a>{% endif %}</div>
       <div><a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a> · <a href="{{ source_url }}" rel="noopener">Source code</a></div>
       <form method="post" action="/logout">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

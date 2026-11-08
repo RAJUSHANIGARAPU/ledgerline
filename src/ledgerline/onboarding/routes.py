@@ -8,13 +8,13 @@ from sqlalchemy import select
 
 from ledgerline import audit
 from ledgerline.banking import service as banking
-from ledgerline.models import BankAccount, Role, User
+from ledgerline.models import WRITE_ROLES, BankAccount, User
 from ledgerline.money import MoneyError, to_cents
 from ledgerline.onboarding import service
 from ledgerline.onboarding.markdown import render_markdown
 from ledgerline.platform import validation as v
 from ledgerline.platform.settings import FORM_KEYS, parse_admin
-from ledgerline.web import AdminDep, OwnerDep, SessionDep, UserDep, flash, render
+from ledgerline.web import AdminDep, ManagerDep, OwnerDep, SessionDep, UserDep, flash, render
 
 router = APIRouter()
 
@@ -26,8 +26,8 @@ BUSINESS_FORM_KEYS = ("name", "legal_form", "kvk_number", "vat_number", "address
 
 
 def owner_page(user: UserDep) -> User:
-    if user.role != Role.OWNER:
-        raise HTTPException(403, "the setup wizard is for the owner")
+    if user.role not in WRITE_ROLES:
+        raise HTTPException(403, "the setup wizard needs a write role")
     return user
 
 
@@ -91,7 +91,7 @@ def setup_step(key: str, request: Request, session: SessionDep, user: OwnerPage,
 
 
 @router.post("/setup/business")
-def save_business(request: Request, session: SessionDep, user: OwnerDep, admin: AdminDep,
+def save_business(request: Request, session: SessionDep, user: ManagerDep, admin: AdminDep,
                   name: Annotated[str, Form()] = "", legal_form: Annotated[str, Form()] = "",
                   kvk_number: Annotated[str, Form()] = "", vat_number: Annotated[str, Form()] = "",
                   address_line: Annotated[str, Form()] = "", postcode: Annotated[str, Form()] = "",
@@ -117,7 +117,7 @@ def save_business(request: Request, session: SessionDep, user: OwnerDep, admin: 
 
 
 @router.post("/setup/vat")
-def save_vat(request: Request, session: SessionDep, user: OwnerDep, admin: AdminDep,
+def save_vat(request: Request, session: SessionDep, user: ManagerDep, admin: AdminDep,
              scheme: Annotated[str, Form()] = ""):
     if scheme not in ("regular", "kor"):
         return _page(request, session, admin, "vat", 422,

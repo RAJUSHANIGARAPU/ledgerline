@@ -5,12 +5,12 @@ from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ledgerline.config import get_settings
-from ledgerline.db import get_session
-from ledgerline.models import Administration, Role, User
+from ledgerline.db import get_session, set_tenant
+from ledgerline.models import WRITE_ROLES, Administration, Membership, Role, Tenant, User
 from ledgerline.money import format_eur
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -23,6 +23,10 @@ SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 class LoginRequired(Exception):
     """Raised for anonymous requests; the app turns it into a redirect to /login."""
+
+
+class TenantRequired(Exception):
+    """Signed in, but no tenant selected (or the membership is gone): redirect to /tenants."""
 
 
 def csrf_token(request: Request) -> str:
@@ -48,7 +52,8 @@ async def verify_csrf(request: Request) -> None:
 SessionDep = Annotated[Session, Depends(get_session)]
 
 
-def current_user(request: Request, session: SessionDep) -> User:
+def login_user(request: Request, session: SessionDep) -> User:
+    """The signed-in user, with no tenant needed (login follow-up and tenant selection)."""
     user_id = request.session.get("user_id")
     user = session.get(User, user_id) if user_id else None
     if user is None or not user.is_active:
@@ -56,17 +61,51 @@ def current_user(request: Request, session: SessionDep) -> User:
     return user
 
 
+LoginDep = Annotated[User, Depends(login_user)]
+
+
+def current_user(request: Request, session: SessionDep, user: LoginDep) -> User:
+    """The user acting for the selected tenant. The membership is re-checked on every request
+    and is the only source of the role; the database context is set from it, not from the cookie."""
+    tenant_id = request.session.get("tenant_id")
+    membership = session.scalar(
+        select(Membership).where(Membership.user_id == user.id, Membership.tenant_id == tenant_id)
+    ) if tenant_id else None
+    if membership is None:
+        request.session.pop("tenant_id", None)
+        request.session.pop("administration_id", None)
+        raise TenantRequired
+    set_tenant(session, membership.tenant_id)
+    user.role = membership.role
+    request.state.role = membership.role
+    request.state.tenant = session.get(Tenant, membership.tenant_id)
+    request.state.tenant_count = session.scalar(
+        select(func.count()).select_from(Membership).where(Membership.user_id == user.id)
+    )
+    return user
+
+
 UserDep = Annotated[User, Depends(current_user)]
 
 
-def require_owner(user: UserDep, _: None = Depends(verify_csrf)) -> User:
-    """For every state-changing route: owner role and a valid CSRF token."""
-    if user.role != Role.OWNER:
+def require_writer(user: UserDep, _: None = Depends(verify_csrf)) -> User:
+    """For every state-changing route: owner or bookkeeper role and a valid CSRF token."""
+    if user.role not in WRITE_ROLES:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "read-only account")
     return user
 
 
-OwnerDep = Annotated[User, Depends(require_owner)]
+OwnerDep = Annotated[User, Depends(require_writer)]
+
+
+def require_manager(user: UserDep, _: None = Depends(verify_csrf)) -> User:
+    """User, device and token management: owners only."""
+    if user.role != Role.OWNER:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "owner access required")
+    return user
+
+
+ManagerDep = Annotated[User, Depends(require_manager)]
 
 
 def current_administration(request: Request, session: SessionDep, user: UserDep) -> Administration:
@@ -95,5 +134,8 @@ def render(request: Request, template: str, context: dict | None = None, status_
     ctx.setdefault("csrf_token", csrf_token(request))
     ctx.setdefault("source_url", get_settings().source_url)
     ctx.setdefault("flashes", request.session.pop("flash", []))
+    ctx.setdefault("current_tenant", getattr(request.state, "tenant", None))
+    ctx.setdefault("can_write", getattr(request.state, "role", None) in WRITE_ROLES)
+    ctx.setdefault("can_switch_tenant", getattr(request.state, "tenant_count", 0) > 1)
     ctx.setdefault("active_nav", template.split("/")[0])
     return templates.TemplateResponse(request, template, ctx, status_code=status_code)

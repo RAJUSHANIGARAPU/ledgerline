@@ -10,5 +10,9 @@ export async function signIn(page: Page) {
   await page.getByLabel('Email').fill(OWNER.email);
   await page.getByLabel('Password').fill(OWNER.password);
   await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.waitForURL(/\/(tenants)?$/);
+  if (page.url().endsWith('/tenants')) {
+    await page.getByRole('button', { name: /Noordlicht/ }).click();
+  }
   await expect(page).toHaveURL('/');
 }

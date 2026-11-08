@@ -61,6 +61,20 @@
   </dl><p class="fine-print">Read-only account: only the owner can change settings.</p></div></div>
 {% endif %}
 
+{% if inbox_address %}
+<div class="card"><div class="card-header"><h2 class="card-title">Inbox email address</h2></div>
+  <div class="card-body stack">
+    <code>{{ inbox_address }}</code>
+    <p class="field-hint">Invoices sent to this address land in the inbox of {{ admin.name }}. Keep it private.</p>
+    {% if is_owner %}
+    <form method="post" action="/settings/inbox-address">{{ ui.csrf() }}
+      <button class="btn btn-secondary" type="submit">Create a new address</button>
+      <span class="field-hint">The current address stops working immediately.</span>
+    </form>
+    {% endif %}
+  </div></div>
+{% endif %}
+
 <form class="card" method="post" action="/settings/password">
   <div class="card-header"><h2 class="card-title">Change your password</h2></div>
   <div class="card-body stack">
@@ -79,8 +93,8 @@
 <div class="card"><div class="card-header"><h2 class="card-title">Users</h2></div>
   <div class="table-wrap"><table class="table">
     <thead><tr><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
-    <tbody>{% for u in users %}
-      <tr><td>{{ u.email }}</td><td>{{ u.role }}</td><td>{{ 'active' if u.is_active else 'deactivated' }}</td>
+    <tbody>{% for u, member_role in users %}
+      <tr><td>{{ u.email }}</td><td>{{ member_role }}</td><td>{{ 'active' if u.is_active else 'deactivated' }}</td>
         <td>{% if u.is_active and u.id != request.session.get('user_id') %}
           <form method="post" action="/settings/users/{{ u.id }}/deactivate">{{ ui.csrf() }}<button class="btn btn-sm btn-danger" type="submit">Deactivate</button></form>{% endif %}</td></tr>
     {% endfor %}</tbody>
@@ -90,7 +104,7 @@
     <h3 class="section-title">Add a user</h3>
     <div class="form-grid">
       {{ ui.field('email', 'Email', '', 'email', True) }}
-      <label class="field"><span class="field-label">Role</span><select class="input" name="role"><option value="accountant">Accountant (read-only)</option><option value="owner">Owner</option></select></label>
+      <label class="field"><span class="field-label">Role</span><select class="input" name="role"><option value="accountant">Accountant (read-only)</option><option value="bookkeeper">Bookkeeper (writes, no user management)</option><option value="owner">Owner</option></select></label>
       <label class="field"><span class="field-label">Password</span><input class="input" type="password" name="password" minlength="12" autocomplete="new-password" required><span class="field-hint">Set by you, at least 12 characters. Share it through a safe channel.</span></label>
       <label class="field"><span class="field-label">Repeat password</span><input class="input" type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
     </div>

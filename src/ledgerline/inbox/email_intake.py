@@ -13,16 +13,18 @@ from email.parser import BytesParser
 from email.utils import getaddresses, parseaddr
 from typing import Protocol
 
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from ledgerline.config import Settings, get_settings
+from ledgerline.db import set_tenant
 from ledgerline.inbox import service
-from ledgerline.models import Administration
+from ledgerline.models import Administration, Tenant
 
 log = logging.getLogger(__name__)
 WANTED_SUFFIXES = (".pdf", ".xml", ".jpg", ".jpeg", ".png")
 WANTED_TYPES = {"application/pdf", "application/xml", "text/xml", "image/jpeg", "image/png"}
-PLUS_ADDRESS = re.compile(r"^([^+@]+)\+(\d+)@", re.IGNORECASE)
+PLUS_ADDRESS = re.compile(r"^([^+@]+)\+([a-z0-9]{20,64})@", re.IGNORECASE)
 
 
 class Mailbox(Protocol):
@@ -117,18 +119,45 @@ def sender_allowed(sender: str, allowed: str) -> bool:
     )
 
 
+def inbox_address(settings: Settings, token: str) -> str | None:
+    """The address that routes mail to the administration with this token."""
+    local, _, domain = settings.imap_user.partition("@")
+    return f"{local}+{token}@{domain}" if local and domain else None
+
+
+def route_token(session: Session, token: str) -> tuple[int, int] | None:
+    """(administration id, tenant id) for an exact inbox token, through the definer function."""
+    row = session.execute(
+        text("SELECT administration_id, tenant_id FROM ledgerline_route_inbox_token(:t)"),
+        {"t": token},
+    ).first()
+    return (row[0], row[1]) if row else None
+
+
+def _default_administration(session: Session, settings: Settings) -> int | None:
+    """Single-tenant installs keep the configured default; with several tenants, none."""
+    tenant_ids = list(session.scalars(select(Tenant.id)))
+    if len(tenant_ids) != 1:
+        return None
+    set_tenant(session, tenant_ids[0])
+    default = settings.imap_default_administration_id
+    return default if session.get(Administration, default) is not None else None
+
+
 def route_administration(
     session: Session, message: EmailMessage, settings: Settings
 ) -> int | None:
+    """The administration a mail belongs to; the session is moved into that tenant."""
     base = settings.imap_user.split("@")[0].lower() if "@" in settings.imap_user else None
     headers = [message.get_all(h, []) for h in ("To", "Delivered-To", "X-Original-To", "Cc")]
     for _, address in getaddresses([str(v) for group in headers for v in group]):
         match = PLUS_ADDRESS.match(address)
-        if (match and (base is None or match.group(1).lower() == base)
-                and session.get(Administration, int(match.group(2))) is not None):
-            return int(match.group(2))
-    default = settings.imap_default_administration_id
-    return default if session.get(Administration, default) is not None else None
+        if match and (base is None or match.group(1).lower() == base):
+            routed = route_token(session, match.group(2).lower())
+            if routed is not None:
+                set_tenant(session, routed[1])
+                return routed[0]
+    return _default_administration(session, settings)
 
 
 def _attachments(message: EmailMessage):
@@ -167,6 +196,9 @@ def process_message(
         return "rejected"
     admin_id = route_administration(session, message, settings)
     if admin_id is None:
+        if session.scalar(select(func.count()).select_from(Tenant)) > 1:
+            log.info("mail without a valid inbox address was set aside")
+            return "rejected"
         log.warning("no administration to route mail to; leaving it in the mailbox")
         return "skipped"
     subject = _clean_header(message.get("Subject"))

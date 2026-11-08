@@ -9,6 +9,13 @@
 {% for d in duplicates %}
 <div class="flash flash-info" role="status">{{ names.get(d.attachment_id, 'This file') }} is already in your inbox: <a href="/inbox/{{ d.id }}">open it</a>.</div>
 {% endfor %}
+{% if inbox_address %}
+<div class="card"><div class="card-body stack">
+  <span class="field-label">Email address for this administration</span>
+  <code>{{ inbox_address }}</code>
+  <span class="field-hint">Forward or send invoices as attachments to this address. Keep it private: anyone who knows it can add documents to this inbox. The owner can create a new one under Settings.</span>
+</div></div>
+{% endif %}
 <div class="card">
   <div class="card-body">
     <form method="post" action="/inbox/upload" enctype="multipart/form-data" class="stack" id="upload-form">

@@ -6,7 +6,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="LEDGERLINE_", env_file=".env", extra="ignore")
 
+    # Application and worker connection: the restricted `ledgerline_app` role.
     database_url: str = "postgresql+psycopg://ledgerline:ledgerline@localhost:5432/ledgerline"
+    # Migrations and `ensure-app-role` connect as the database owner. Unset = use database_url,
+    # which only works for local development where one superuser role does everything.
+    migration_database_url: str | None = None
+    # Password given to the `ledgerline_app` role by `ledgerline ensure-app-role`.
+    app_db_password: str = ""
     secret_key: str
     session_max_age_seconds: int = 8 * 60 * 60
     cookie_secure: bool = True
@@ -24,7 +30,8 @@ class Settings(BaseSettings):
     imap_folder: str = "INBOX"
     imap_processed_folder: str = "Ledgerline/Processed"
     imap_poll_seconds: int = 300
-    # Mail to user+<administration id>@domain goes to that administration; otherwise this one.
+    # Mail to user+<inbox token>@domain goes to that administration. Mail without a valid token
+    # goes to this one on single-tenant installs and is rejected when several tenants exist.
     imap_default_administration_id: int = 1
     # Only accept mail from these senders (comma-separated addresses or @domains); empty = any.
     imap_allowed_senders: str = ""
@@ -34,6 +41,11 @@ class Settings(BaseSettings):
     extraction_provider: str = "none"
     extraction_model: str = "claude-opus-5-5"
     extraction_monthly_limit: int = 200
+
+
+    @property
+    def owner_database_url(self) -> str:
+        return self.migration_database_url or self.database_url
 
 
 @lru_cache
