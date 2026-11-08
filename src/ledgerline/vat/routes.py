@@ -13,10 +13,12 @@ from ledgerline.models import JournalEntry, JournalLine, SystemRole
 from ledgerline.reports.export import Cents, csv_response
 from ledgerline.reports.params import parse_int
 from ledgerline.vat.icp import icp_overview
+from ledgerline.vat.sources import SOURCES
 from ledgerline.vat.vat_return import (
     RUBRIEKEN,
     VERIFY,
     compute_vat_return,
+    filing_deadline,
     lines_for_bucket,
     period_bounds,
     whole_euros,
@@ -70,7 +72,8 @@ def vat_overview(request: Request, session: SessionDep, user: UserDep, admin: Ad
     p = _period(kind, year, number)
     result = compute_vat_return(session, admin.id, p["start"], p["end"])
     return render(request, "vat/index.html", {
-        "p": p, "r": result, "whole": whole_euros, "verify": VERIFY,
+        "p": p, "r": result, "whole": whole_euros, "verify": VERIFY, "sources": SOURCES,
+        "deadline": filing_deadline(p["kind"], p["end"]), "kor": admin.kor,
         "settlement": _existing_settlement(session, admin, p["label"]),
         "can_write": user.role == "owner", "years": _years(),
     })

@@ -95,8 +95,11 @@ Always check the amounts and the VAT code before booking. Reverse-charge codes (
 Open [VAT return](/vat). Choose Period (month, quarter or year), the year and the number, then Show.
 
 - The table lists each rubriek (1a, 1b, 2a, 3a, 3b, 4a, 4b, 5b ...) with the base and the VAT. Click a rubriek to see the lines behind it.
-- Rubrieken marked "verify" use a mapping from secondary sources. Check them against the Belastingdienst's current explanation before you file. 1c, 1d and 3c are not supported yet and show zero.
-- The last column shows bases in whole euros, as the official form asks.
+- Each rubriek links to the belastingdienst.nl page it was checked against. Four rubrieken (1b, 1c, 2a, 3c) are marked "verify": only the 2012 explanation of the form was found for them, so check those against the current one. 1c and 3c have no VAT code and show zero.
+- The two right-hand columns are what you type into the form: whole euros, with VAT rounded in your favour (owed down, deductible up), as the Belastingdienst allows. Rubriek 5a is filled in for you in the online return.
+- The page shows the deadline for filing and paying: the last day of the month after the quarter.
+- Private use of business assets (rubriek 1d): book a journal entry on the VAT payable account with VAT code VPRIV, usually in the last return of the year.
+- Under the KOR you normally file no VAT return; the page says so when KOR is switched on.
 - File the return yourself in Mijn Belastingdienst Zakelijk (DigiD, eHerkenning or a European login). Ledgerline does not submit it. See the [Belastingdienst page](https://www.belastingdienst.nl/wps/wcm/connect/nl/btw/content/ik-moet-btw-aangifte-doen-hoe-vul-ik-die-in).
 - Optional: Post VAT settlement books one entry that clears the period's VAT accounts into the VAT settlement account. When you pay (or get a refund), book that bank transaction to the VAT settlement account.
 - After filing, lock the period on the [period lock](/ledger/lock) page: entries on or before that date can no longer be posted. Moving the lock back needs a confirmation and is audited.

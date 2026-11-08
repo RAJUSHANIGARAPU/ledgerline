@@ -1,9 +1,6 @@
 """BTW codes and their place on the Dutch VAT return (btw-aangifte).
 
-Rubriek mapping status (checked 2026-11-07):
-- 1a, 5a, 5b and the reverse-charge routing to 2a/4a/4b are confirmed on belastingdienst.nl.
-- 1b, 1e, 3a, 3b are taken from secondary sources; re-check against the official
-  toelichting before relying on them for a real return.
+Each rubriek's source is listed in ledgerline.vat.vat_return.SOURCES (checked 2026-11-08).
 """
 from dataclasses import dataclass
 from decimal import Decimal
@@ -13,6 +10,8 @@ from enum import StrEnum
 class Direction(StrEnum):
     SALES = "sales"
     PURCHASE = "purchase"
+    # Year-end corrections booked by hand in the journal, never on an invoice.
+    CORRECTION = "correction"
 
 
 @dataclass(frozen=True)
@@ -41,9 +40,14 @@ _CODES = [
     VatCode("V0", "Sales 0% / not taxed in NL", Direction.SALES, Decimal(0), "1e", None),
     VatCode("VRV", "Sales, domestic reverse charge", Direction.SALES, Decimal(0), "1e", None,
             invoice_note="btw verlegd"),
-    VatCode("VEU", "Sales to EU business (ICP)", Direction.SALES, Decimal(0), "3b", None,
+    VatCode("VEU", "Services to EU business (ICP)", Direction.SALES, Decimal(0), "3b", None,
             icp=True, invoice_note="btw verlegd"),
-    VatCode("VEX", "Export outside the EU", Direction.SALES, Decimal(0), "3a", None),
+    VatCode("VEUG", "Goods to EU business (ICP)", Direction.SALES, Decimal(0), "3b", None,
+            icp=True, invoice_note="intracommunautaire levering"),
+    VatCode("VEX", "Export of goods outside the EU", Direction.SALES, Decimal(0), "3a", None),
+    # Services taxed in the customer's non-EU country are not reported on the return.
+    VatCode("VNEU", "Services to customers outside the EU", Direction.SALES, Decimal(0),
+            None, None),
     VatCode("VVR", "Sales exempt from VAT", Direction.SALES, Decimal(0), None, None),
     VatCode("VKOR", "Sales under the KOR", Direction.SALES, Decimal(0), None, None,
             invoice_note="vrijgesteld van btw (KOR)"),
@@ -58,6 +62,8 @@ _CODES = [
             deductible=True, reverse_charge=True),
     VatCode("INEU21", "Purchase from outside the EU 21%", Direction.PURCHASE, Decimal(21),
             "4a", "4a", deductible=True, reverse_charge=True),
+    # BTW owed on private use of business assets; the turnover column of 1d stays empty.
+    VatCode("VPRIV", "Private use correction", Direction.CORRECTION, Decimal(21), None, "1d"),
 ]
 
 VAT_CODES: dict[str, VatCode] = {c.code: c for c in _CODES}

@@ -56,6 +56,7 @@ ignore = ["S101", "B008"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S105", "S106", "S311"]
 "migrations/**" = ["E501"]
+"src/ledgerline/vat/sources.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
