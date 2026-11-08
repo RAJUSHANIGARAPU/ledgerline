@@ -95,8 +95,8 @@ Always check the amounts and the VAT code before booking. Reverse-charge codes (
 Open [VAT return](/vat). Choose Period (month, quarter or year), the year and the number, then Show.
 
 - The table lists each rubriek (1a, 1b, 2a, 3a, 3b, 4a, 4b, 5b ...) with the base and the VAT. Click a rubriek to see the lines behind it.
-- Each rubriek links to the belastingdienst.nl page it was checked against. Four rubrieken (1b, 1c, 2a, 3c) are marked "verify": only the 2012 explanation of the form was found for them, so check those against the current one. 1c and 3c have no VAT code and show zero.
-- The two right-hand columns are what you type into the form: whole euros, with VAT rounded in your favour (owed down, deductible up), as the Belastingdienst allows. Rubriek 5a is filled in for you in the online return.
+- Each rubriek links to the belastingdienst.nl page it was checked against. 1c (sports canteens at 13%) and 3c (installation or distance sales in other EU countries) have no VAT code and show zero.
+- The two right-hand columns are what you type into the form: whole euros, rounded in your favour as the Belastingdienst allows (amounts owed and bases down, deductible VAT up; negative amounts keep the minus sign). Rubriek 5a is filled in for you in the online return.
 - The page shows the deadline for filing and paying: the last day of the month after the quarter.
 - Private use of business assets (rubriek 1d): book a journal entry on the VAT payable account with VAT code VPRIV, usually in the last return of the year.
 - Under the KOR you normally file no VAT return; the page says so when KOR is switched on.

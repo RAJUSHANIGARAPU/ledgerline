@@ -24,14 +24,15 @@ def _return(*rows):
 
 
 def test_every_rubriek_and_rule_has_a_primary_source():
-    needed = {r[0] for r in RUBRIEKEN} | {"5b", "rounding", "deadline", "kor"}
+    needed = {r[0] for r in RUBRIEKEN} | {"5b", "rounding", "rounding_all", "deadline", "kor"}
     assert needed <= SOURCES.keys()
     urls = [url for _, url in SOURCES.values()]
     assert all(url.startswith("https://") and "belastingdienst.nl" in url for url in urls)
+    assert all(status == "current" for status, _ in SOURCES.values())
 
 
-def test_only_rubrieken_without_a_current_source_keep_the_verify_mark():
-    assert {"1b", "1c", "2a", "3c"} == VERIFY
+def test_every_rubriek_is_backed_by_a_current_page():
+    assert set() == VERIFY
 
 
 @pytest.mark.parametrize(("cents", "down", "up"), [
@@ -49,6 +50,7 @@ def test_form_rounds_vat_owed_down_and_deductible_vat_up():
     )
     assert (result.line("1a").form_vat_euros, result.line("1b").form_vat_euros) == (210, 45)
     assert result.form_owed_euros == 255
+    assert result.line("1a").form_base_euros == 0
     assert result.form_deductible_euros == 31
     assert result.form_balance_euros == 224
 
@@ -94,7 +96,7 @@ def test_private_use_correction_fills_1d_vat_only():
 def test_vat_page_shows_deadline_sources_and_kor_notice(client, session, admin):
     page = client.get("/vat?kind=quarter&year=2026&number=1")
     assert "30-04-2026" in page.text
-    assert SOURCES["rounding"][1] in page.text
+    assert SOURCES["rounding_all"][1] in page.text
     assert 'data-testid="kor-banner"' not in page.text
     admin.kor = True
     session.commit()

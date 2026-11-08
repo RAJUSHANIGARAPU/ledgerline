@@ -65,6 +65,10 @@ class RubriekLine:
     def form_vat_euros(self) -> int:
         return euros_down(self.vat_cents)
 
+    @property
+    def form_base_euros(self) -> int:
+        return euros_down(self.base_cents)
+
 
 @dataclass
 class VatReturn:
@@ -82,8 +86,8 @@ class VatReturn:
     def line(self, rubriek: str) -> RubriekLine:
         return next(line for line in self.lines if line.rubriek == rubriek)
 
-    # The form takes whole euros, rounded in the taxpayer's favour (SOURCES["rounding"]):
-    # VAT owed per rubriek down, deductible VAT up. 5a is the sum of the rounded rubrieken.
+    # The form takes whole euros for every amount, rounded in the taxpayer's favour
+    # (SOURCES["rounding_all"]): VAT owed and bases down, deductible VAT up.
     @property
     def form_owed_euros(self) -> int:
         return sum(line.form_vat_euros for line in self.lines)
