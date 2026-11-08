@@ -82,16 +82,25 @@ The aim is to trust the figures before the first filing.
 1. Confirm the choice in writing (convert, export or delete).
 2. **Export:** the owner downloads the full administration ZIP from Settings, Privacy and data (Export administration (ZIP)); you check it opens. Optionally also hand over the CSV reports.
 3. **Revoke access:** deactivate the client's users in Settings, Users (Deactivate), revoke phone tokens under Phone devices, and create a new inbox address so the old one stops working.
-4. **Delete the data:** **tenant deletion is not built.** There is no CLI command or screen that removes a tenant, and the journal and audit tables are append-only by database trigger, so a plain `DELETE` is refused. That is a gap, not a procedure. What exists today:
-   - Until a deletion command exists: deactivate the users (the data remains in the database and in the backups, and is now inaccessible through the app), tell the client honestly that deletion is not complete, and record the date.
-   - Complete deletion today means dropping data directly in PostgreSQL as the owner role (the migration role), which has to bypass the triggers and the row-level security and must clear every tenant table, the attachments inside the database and all backups taken so far. This is destructive and error-prone and must not be improvised for a client; write and test the procedure on a drill copy first, or build a `delete-tenant` command with tests (see Gaps).
-   - The backups age out after `BACKUP_KEEP_DAYS` (default 30). Off-site copies are yours to purge.
+4. **Delete the data** on the server, as the owner role (the `migrate` service has it):
+   ```
+   docker compose run --rm -v "$PWD/offboarding:/export" migrate \
+     ledgerline delete-tenant --tenant <id> --confirm "<exact tenant name>" --export-dir /export
+   ```
+   The command refuses unless `--confirm` is the tenant's exact name, writes one export ZIP per
+   administration first, then deletes every row of that tenant (bookkeeping, attachments, inbox,
+   tokens, memberships) and the logins that belonged to no other tenant, and checks that nothing
+   is left. Hand the ZIPs to the client, then delete your copy.
+   - **Backups still contain the data** until their retention ends (off-site: up to 14 daily,
+     8 weekly, 24 monthly and 8 yearly snapshots; local dumps: `BACKUP_KEEP_DAYS`). Individual
+     tenants cannot be removed from a whole-database snapshot. State this in the confirmation.
+   - **Keep an offboarding log outside the database** (tenant id, name, date). After any restore
+     from backup, run `delete-tenant` again for every tenant in that log, otherwise deleted clients
+     come back.
 5. Write the confirmation of deletion required by article 12.3 of the data processing agreement only for what is actually deleted.
 6. Keep the signed paperwork for as long as your own obligations require.
 
 ## Gaps this runbook exposes
 
-- No `delete-tenant` (and no administration delete): offboarding cannot honestly end with "deleted".
-- No per-tenant database dump: the `backup` service dumps the whole database; a per-client export beyond the ZIP needs a script.
-- No invitation flow, 2FA or password reset until the account-security work merges (see the verify markers).
-- Account-existence oracle when adding a user that is registered in another tenant (docs/SECURITY.md): when you onboard a person who already has a login, use `add-membership`, not `create-user`.
+- No per-tenant database dump: backups cover the whole database; the export ZIP is the per-client copy.
+- Deleted tenants remain in backups until the backups expire (see step 4 of offboarding).
