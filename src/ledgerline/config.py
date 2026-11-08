@@ -42,6 +42,19 @@ class Settings(BaseSettings):
     extraction_model: str = "claude-opus-5-5"
     extraction_monthly_limit: int = 200
 
+    # Operations: files shared between app, worker and backup job (a compose volume).
+    ops_dir: str = "/var/lib/ledgerline/ops"
+    # Dead-man's-switch URL the worker pings every healthcheck_ping_seconds (empty = off).
+    healthcheck_ping_url: str = ""
+    healthcheck_ping_seconds: int = 300
+    # /healthz/deep thresholds.
+    health_worker_max_age_seconds: int = 120
+    health_backup_max_age_hours: int = 26
+    health_min_free_disk_percent: int = 10
+    # Fail the deep check when the last backup did not reach the off-site repository.
+    health_require_offsite_backup: bool = False
+    health_rate_limit_per_minute: int = 30
+
     # Outbound email (invitations, password reset). Empty host = email off.
     smtp_host: str = ""
     smtp_port: int = 587
