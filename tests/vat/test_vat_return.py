@@ -139,13 +139,14 @@ def test_period_bounds_rejects_bad_numbers():
 
 # ---- routes
 
-def test_overview_shows_banner_rubrieken_and_verify_notes(client, session, admin):
+def test_overview_shows_banner_rubrieken_and_source_links(client, session, admin):
     _book_every_code(session, admin)
     page = client.get("/vat?kind=quarter&year=2026&number=1")
     assert page.status_code == 200
     assert "Ledgerline does not submit to the Belastingdienst" in page.text
     assert "/vat/lines?bucket=1a&amp;kind=quarter" in page.text
-    assert page.text.count(">verify<") >= 4
+    assert page.text.count(">verify<") == 0
+    assert page.text.count(">source<") == 12
     assert format_eur(780) in page.text
 
 

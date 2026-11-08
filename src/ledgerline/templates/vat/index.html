@@ -12,11 +12,11 @@
   <tbody>
   {% for line in r.lines %}
     <tr>
-      <td><a href="/vat/lines?bucket={{ line.rubriek }}&amp;{{ p.qs }}">{{ line.rubriek }}</a>{% if line.verify %} <a class="pill" href="{{ sources[line.rubriek][1] }}" rel="noopener" title="Only the 2012 explanation of the form was found for this rubriek; check the current one">verify</a>{% elif sources.get(line.rubriek) %} <a class="pill" href="{{ sources[line.rubriek][1] }}" rel="noopener" title="Checked against belastingdienst.nl">source</a>{% endif %}</td>
+      <td><a href="/vat/lines?bucket={{ line.rubriek }}&amp;{{ p.qs }}">{{ line.rubriek }}</a>{% if line.verify %} <a class="pill" href="{{ sources[line.rubriek][1] }}" rel="noopener" title="No current source was found for this rubriek; check it before filing">verify</a>{% elif sources.get(line.rubriek) %} <a class="pill" href="{{ sources[line.rubriek][1] }}" rel="noopener" title="Checked against belastingdienst.nl">source</a>{% endif %}</td>
       <td>{{ line.description }}</td>
       <td class="num">{{ line.base_cents|eur if line.has_base else '' }}</td>
       <td class="num">{{ line.vat_cents|eur if line.has_vat else '' }}</td>
-      <td class="num">{{ whole(line.base_cents) if line.has_base else '' }}</td>
+      <td class="num">{{ line.form_base_euros if line.has_base else '' }}</td>
       <td class="num">{{ line.form_vat_euros if line.has_vat else '' }}</td>
     </tr>
   {% endfor %}
@@ -26,7 +26,7 @@
       <td class="num">{{ (r.balance_cents|abs)|eur }}</td><td></td><td class="num {{ 'amount-neg' if r.form_balance_euros > 0 else 'amount-pos' }}">{{ r.form_balance_euros|abs }}</td></tr>
   </tbody>
 </table></div></div>
-<p class="fine-print">The form takes whole euros. VAT is rounded in your favour, as <a href="{{ sources.rounding[1] }}" rel="noopener">the Belastingdienst allows</a>: VAT owed down per rubriek, deductible VAT up. Bases drop their cents; the source does not say which way bases may be rounded. Rubriek 1d is filled by booking a private-use correction with VAT code VPRIV in the journal. Rubrieken 1c and 3c have no VAT code. Rubrieken marked "verify" were only found in the 2012 explanation of the form.</p>
+<p class="fine-print">The form takes whole euros for every amount, rounded in your favour as <a href="{{ sources.rounding_all[1] }}" rel="noopener">the Belastingdienst allows</a>: VAT owed and bases down, deductible VAT up; negative amounts keep their minus sign. Rubriek 1d (private use) goes in the last return of the year: book a correction with VAT code VPRIV in the journal. Rubriek 1c is only for a sports canteen at the flat 13% rate and 3c only for installation in, or distance sales above the EU threshold to, other EU countries without the Unieregeling; Ledgerline has no VAT codes for those.</p>
 {% if can_write %}
 <div class="card"><div class="card-header"><h2 class="card-title">VAT settlement entry</h2></div>
   <form method="post" action="/vat/settle" class="card-body stack">
