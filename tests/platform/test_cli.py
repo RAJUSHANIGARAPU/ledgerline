@@ -3,19 +3,20 @@ from sqlalchemy import select
 
 from ledgerline import cli
 from ledgerline.auth import hasher
-from ledgerline.models import Administration, Role, User
+from ledgerline.models import Administration, Membership, Role, User
 
 
-def test_create_user_uses_env_password(session, monkeypatch):
+def test_create_user_uses_env_password(session, tenant, monkeypatch):
     monkeypatch.setenv("LEDGERLINE_INITIAL_PASSWORD", "initial-password-123")
     assert cli.main(["create-user", "--email", "Boss@Example.com", "--role", "owner"]) == 0
     session.expire_all()
     user = session.scalar(select(User).where(User.email == "boss@example.com"))
-    assert user.role == Role.OWNER
+    membership = session.scalar(select(Membership).where(Membership.user_id == user.id))
+    assert membership.role == Role.OWNER and membership.tenant_id == tenant.id
     hasher.verify(user.password_hash, "initial-password-123")
 
 
-def test_create_user_rejects_short_password_and_duplicates(session, monkeypatch, capsys):
+def test_create_user_rejects_short_password_and_duplicates(session, tenant, monkeypatch, capsys):
     monkeypatch.setenv("LEDGERLINE_INITIAL_PASSWORD", "short")
     assert cli.main(["create-user", "--email", "a@example.com"]) == 1
     assert "at least 12" in capsys.readouterr().err
@@ -24,7 +25,7 @@ def test_create_user_rejects_short_password_and_duplicates(session, monkeypatch,
     assert cli.main(["create-user", "--email", "A@example.com"]) == 1
 
 
-def test_create_administration_seeds_chart(session):
+def test_create_administration_seeds_chart(session, tenant):
     assert cli.main(["create-administration", "--name", "CLI BV", "--legal-form", "bv"]) == 0
     session.expire_all()
     admin = session.scalar(select(Administration).where(Administration.name == "CLI BV"))

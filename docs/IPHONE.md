@@ -68,7 +68,7 @@ A raw body works too: `POST /api/v1/inbox?filename=receipt.jpg` with the file by
 
 ## 3. Email forwarding
 
-If the mailbox intake is configured (the `LEDGERLINE_IMAP_*` settings), forward or send invoices as attachments to the mailbox address. PDFs, JPEG and PNG attachments are picked up every few minutes. If you run several administrations, use `address+<administration id>@domain` to pick which one receives the mail. This works from any mail app, with no setup on the phone.
+If the mailbox intake is configured (the `LEDGERLINE_IMAP_*` settings), forward or send invoices as attachments to the mailbox address. PDFs, JPEG and PNG attachments are picked up every few minutes. Each administration has its own private address, `mailbox+<token>@domain`, shown on the Inbox page and under Settings (owners and bookkeepers see it; the owner can create a new one, after which the old one stops working). With several customers on one server, mail without a valid token is moved to the Rejected folder instead of being delivered. This works from any mail app, with no setup on the phone.
 
 ## Security
 

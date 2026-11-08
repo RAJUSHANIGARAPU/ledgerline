@@ -17,12 +17,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ledgerline.config import get_settings
-from ledgerline.db import get_sessionmaker
-from ledgerline.inbox import review, service, worker
+from ledgerline.db import tenant_session
+from ledgerline.inbox import email_intake, review, service, worker
 from ledgerline.inbox.extract import pipeline
 from ledgerline.invoicing import forms
 from ledgerline.invoicing.calc import InvoiceError
 from ledgerline.models import (
+    WRITE_ROLES,
     Account,
     AccountType,
     Attachment,
@@ -62,8 +63,8 @@ def _document_or_404(session: Session, admin_id: int, document_id: int) -> Inbox
     return document
 
 
-def _process_in_background(ids: list[int]) -> None:
-    with get_sessionmaker()() as session:
+def _process_in_background(tenant_id: int, ids: list[int]) -> None:
+    with tenant_session(tenant_id) as session:
         worker.process_all_pending(session, ids)
 
 
@@ -90,6 +91,8 @@ def inbox_list(request: Request, session: SessionDep, user: UserDep, admin: Admi
         "documents": documents, "tab": tab, "tabs": TABS, "counts": counts,
         "duplicates": duplicates, "names": names, "labels": review.METHODS,
         "max_mb": get_settings().max_upload_bytes // (1024 * 1024),
+        "inbox_address": email_intake.inbox_address(get_settings(), admin.inbox_token)
+        if user.role in WRITE_ROLES else None,
     })
 
 
@@ -113,7 +116,7 @@ def inbox_upload(request: Request, session: SessionDep, owner: OwnerDep, admin: 
     session.commit()
     if new_ids:
         flash(request, f"{len(new_ids)} document(s) received.")
-        background.add_task(_process_in_background, new_ids)
+        background.add_task(_process_in_background, admin.tenant_id, new_ids)
     if duplicate_ids:
         return _redirect("/inbox?dup=" + ",".join(map(str, duplicate_ids)))
     return _redirect("/inbox?tab=new" if new_ids else "/inbox")

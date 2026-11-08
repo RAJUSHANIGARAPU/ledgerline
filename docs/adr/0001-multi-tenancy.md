@@ -48,8 +48,8 @@ risk, a missing filter, is moved from the application into the database.
 3. **No bypass switch.** There is no setting that turns the policies off; a flag the application
    role can set would let any code path (or an injection) disable isolation. Work that spans
    tenants (the background worker, email routing) loops over tenants and sets each one in turn.
-   Looking up the tenant of an administration from an email address uses a narrow
-   `SECURITY DEFINER` function that returns only the tenant id.
+   Routing an email to its tenant uses a narrow `SECURITY DEFINER` function that maps an exact
+   inbox token to an administration and tenant (see the implementation notes).
 4. **New rows get their tenant from the database.** `tenant_id` has a server default of the
    current setting, so service code does not pass it and cannot pass the wrong one; the
    `WITH CHECK` clause rejects a mismatch.
@@ -93,3 +93,52 @@ risk, a missing filter, is moved from the application into the database.
 - The silo option stays open: a dedicated deployment is the same image with one tenant.
 - Moving to hosted billing and sign-up later builds on `tenants` without schema changes to the
   books.
+
+## Implementation notes
+
+- A second `SECURITY DEFINER` function, `ledgerline_tenant_of_api_token(sha256)`, returns only the
+  tenant id of a phone upload token. The token is the only credential that arrives without a
+  session, so the tenant has to be found before the policies allow reading `api_tokens`.
+- The tenant context of a web request is set from the verified membership, not from the cookie.
+- The migration role must be a superuser or hold `BYPASSRLS`, because the definer functions and
+  `pg_dump` read tables with forced policies; the migration refuses to run otherwise.
+- Removing a user in a tenant deletes the membership; the login is deactivated only when no
+  membership is left, so one tenant cannot lock a user out of another.
+
+Hardening after adversarial review (migration 0005):
+
+1. **Inbox address.** Mail is routed by `user+<inbox_token>@domain`. `administrations.inbox_token`
+   is random (32 lowercase hex characters), unique and generated for existing rows. The definer
+   function `ledgerline_route_inbox_token(token)` returns `(administration_id, tenant_id)` for an
+   exact match and nothing otherwise; numeric `+<id>` routing and
+   `ledgerline_tenant_of_administration` are gone. The address is shown to owners and bookkeepers
+   on the Inbox page and in Settings; the owner can regenerate it, which retires the old one.
+2. **Unrouted mail.** With more than one tenant, mail without a valid token is moved to the
+   Rejected folder and never delivered to `imap_default_administration_id`. Single-tenant
+   installs keep that default.
+3. **Fail-closed grants.** No default privileges exist for `ledgerline_app`. `ledgerline
+   ensure-app-role` revokes everything and grants only tables with enabled and forced row-level
+   security and a `tenant_isolation` policy, plus `users`, `tenants` and `memberships`; their
+   sequences; and the `ledgerline_*` functions. Any other table is "permission denied" for the app.
+4. **Composite foreign keys.** Every tenant table that is referenced has `UNIQUE (tenant_id, id)`,
+   and every reference between two tenant tables is a `(tenant_id, x_id) -> (tenant_id, id)`
+   foreign key with unchanged delete behaviour (nullable references stay optional). References
+   to `users` stay single-column. A catalog test fails if a single-column foreign key between
+   tenant tables reappears.
+5. **Definer functions** use `SET search_path = pg_catalog, public, pg_temp` and schema-qualified
+   tables, so a temporary table cannot shadow them.
+6. **Owner-only settings.** Business settings (including the IBAN), the setup steps for business
+   and VAT, creating administrations and the inbox address need the owner role. The bookkeeper
+   keeps write access to the books.
+7. **Phone API.** Failed token attempts are counted per client address (20 in 10 minutes, then
+   429) before the token lookup; successful requests are not affected. The address is
+   `request.client.host`, so it relies on the proxy-headers setup.
+8. **One-shot `migrate` service.** Compose runs migrations and `ensure-app-role` in a `migrate`
+   container that exits; app and worker wait for `service_completed_successfully` and only receive
+   the app role URL.
+
+Accepted residual risks and known limitations (see docs/SECURITY.md): the tenant selector is a
+setting the app role can set (RLS guards against a missing filter, not SQL injection; a test
+guards against raw SQL built from variables); `users` and `memberships` are readable by the app
+role, including password hashes; adding a user reveals that an email exists in another tenant
+(invitations are future work); global sequences leak overall volume (public ids are future work).

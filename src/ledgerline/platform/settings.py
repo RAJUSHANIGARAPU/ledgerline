@@ -6,12 +6,21 @@ from sqlalchemy import func, select
 
 from ledgerline import audit
 from ledgerline.auth import hash_password, hasher
+from ledgerline.config import get_settings
+from ledgerline.inbox.email_intake import inbox_address
 from ledgerline.ledger.chart import create_administration
-from ledgerline.models import Administration, Role, User
+from ledgerline.models import (
+    WRITE_ROLES,
+    Administration,
+    Membership,
+    Role,
+    User,
+    new_inbox_token,
+)
 from ledgerline.platform import validation as v
 from ledgerline.web import (
     AdminDep,
-    OwnerDep,
+    ManagerDep,
     SessionDep,
     UserDep,
     flash,
@@ -28,15 +37,20 @@ FORM_KEYS = ["name", "legal_form", "kvk_number", "vat_number", "iban", "bic", "e
 
 
 def _context(session, user, admin, **extra) -> dict:
+    tenant_id = admin.tenant_id
     ctx = {
         "admin": admin, "legal_forms": LEGAL_FORMS, "errors": {}, "values": None,
         "is_owner": user.role == Role.OWNER,
         "administrations": session.scalars(
             select(Administration).order_by(Administration.id)).all(),
         "users": [],
+        "inbox_address": inbox_address(get_settings(), admin.inbox_token)
+        if user.role in WRITE_ROLES else None,
     }
     if user.role == Role.OWNER:
-        ctx["users"] = session.scalars(select(User).order_by(User.id)).all()
+        ctx["users"] = session.execute(
+            select(User, Membership.role).join(Membership, Membership.user_id == User.id)
+            .where(Membership.tenant_id == tenant_id).order_by(User.id)).all()
     ctx.update(extra)
     return ctx
 
@@ -83,7 +97,7 @@ def parse_admin(raw: dict[str, str]) -> tuple[dict, dict[str, str]]:
 
 
 @router.post("")
-def save_settings(request: Request, session: SessionDep, user: OwnerDep, admin: AdminDep,
+def save_settings(request: Request, session: SessionDep, user: ManagerDep, admin: AdminDep,
                   name: Annotated[str, Form()] = "", legal_form: Annotated[str, Form()] = "",
                   kvk_number: Annotated[str, Form()] = "", vat_number: Annotated[str, Form()] = "",
                   iban: Annotated[str, Form()] = "", bic: Annotated[str, Form()] = "",
@@ -110,7 +124,7 @@ def save_settings(request: Request, session: SessionDep, user: OwnerDep, admin: 
 
 
 @router.post("/administrations")
-def add_administration(request: Request, session: SessionDep, user: OwnerDep,
+def add_administration(request: Request, session: SessionDep, user: ManagerDep,
                        new_name: Annotated[str, Form()] = "",
                        new_legal_form: Annotated[str, Form()] = "eenmanszaak"):
     name = v.clean(new_name)
@@ -127,14 +141,25 @@ def add_administration(request: Request, session: SessionDep, user: OwnerDep,
     return RedirectResponse("/settings", 303)
 
 
+@router.post("/inbox-address")
+def regenerate_inbox_address(request: Request, session: SessionDep, user: ManagerDep,
+                             admin: AdminDep):
+    admin.inbox_token = new_inbox_token()
+    audit.record(session, "administration.inbox_token_regenerate", user_id=user.id,
+                 administration_id=admin.id, entity_type="administration", entity_id=admin.id)
+    session.commit()
+    flash(request, "New inbox address created. The old address no longer works.")
+    return RedirectResponse("/settings", 303)
+
+
 @router.post("/users")
-def add_user(request: Request, session: SessionDep, user: OwnerDep, admin: AdminDep,
+def add_user(request: Request, session: SessionDep, user: ManagerDep, admin: AdminDep,
              email: Annotated[str, Form()] = "", role: Annotated[str, Form()] = "accountant",
              password: Annotated[str, Form()] = "", confirm: Annotated[str, Form()] = ""):
     address, err = v.check_email(email)
     err = err or (None if address else "Email is required.")
     err = err or v.check_password(password, confirm)
-    if role not in (Role.OWNER, Role.ACCOUNTANT):
+    if role not in set(Role):
         err = "Unknown role."
     if not err and session.scalar(select(User.id).where(
             func.lower(User.email) == (address or "").lower())):
@@ -143,9 +168,10 @@ def add_user(request: Request, session: SessionDep, user: OwnerDep, admin: Admin
         flash(request, err, "error")
         return RedirectResponse("/settings", 303)
     created = User(email=(address or "").lower(), password_hash=hash_password(password),
-                   role=role, is_active=True)
+                   is_active=True)
     session.add(created)
     session.flush()
+    session.add(Membership(user_id=created.id, tenant_id=admin.tenant_id, role=role))
     audit.record(session, "user.create", user_id=user.id, administration_id=admin.id,
                  entity_type="user", entity_id=created.id, details={"role": role})
     session.commit()
@@ -154,15 +180,21 @@ def add_user(request: Request, session: SessionDep, user: OwnerDep, admin: Admin
 
 
 @router.post("/users/{user_id}/deactivate")
-def deactivate_user(request: Request, user_id: int, session: SessionDep, user: OwnerDep,
+def deactivate_user(request: Request, user_id: int, session: SessionDep, user: ManagerDep,
                     admin: AdminDep):
-    target = session.get(User, user_id)
-    if target is None:
+    membership = session.scalar(select(Membership).where(
+        Membership.user_id == user_id, Membership.tenant_id == admin.tenant_id))
+    if membership is None:
         raise HTTPException(404, "user not found")
+    target = session.get(User, user_id)
     if target.id == user.id:
         flash(request, "You cannot deactivate your own account.", "error")
     else:
-        target.is_active = False
+        session.delete(membership)
+        session.flush()
+        if session.scalar(select(func.count()).select_from(Membership).where(
+                Membership.user_id == target.id)) == 0:
+            target.is_active = False
         audit.record(session, "user.deactivate", user_id=user.id, administration_id=admin.id,
                      entity_type="user", entity_id=target.id)
         session.commit()

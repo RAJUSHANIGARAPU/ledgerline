@@ -116,7 +116,7 @@ def test_database_refuses_unbalanced_entry_at_commit(session, admin):
 def test_database_refuses_changes_to_posted_entries(session, admin, statement):
     _sale(session, admin)
     session.commit()
-    with pytest.raises(DBAPIError, match="append-only"):
+    with pytest.raises(DBAPIError, match="append-only|permission denied"):
         session.execute(text(statement))
     session.rollback()
 
@@ -137,7 +137,7 @@ def test_audit_events_are_append_only(session, admin):
 
     audit.record(session, "test", administration_id=admin.id)
     session.commit()
-    with pytest.raises(DBAPIError, match="append-only"):
+    with pytest.raises(DBAPIError, match="append-only|permission denied"):
         session.execute(text("UPDATE audit_events SET action = 'x'"))
     session.rollback()
 

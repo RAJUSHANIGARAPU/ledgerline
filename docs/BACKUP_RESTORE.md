@@ -14,7 +14,7 @@ Manual backup at any time: `scripts/backup.sh` (writes to `./backups`, or `$BACK
 scripts/restore.sh backups/ledgerline-20261107T020000Z.dump
 ```
 
-The script asks you to type `restore` unless you pass `--yes`. It stops the app, runs `pg_restore --clean --if-exists --no-owner` into the compose database, then starts the app again. Existing data is replaced.
+Restoring on a new server: start the stack once so `ledgerline ensure-app-role` recreates the `ledgerline_app` role and its grants after the restore (restart the app container). The script asks you to type `restore` unless you pass `--yes`. It stops the app, runs `pg_restore --clean --if-exists --no-owner` into the compose database, then starts the app again. Existing data is replaced.
 
 ## Off-site copy
 

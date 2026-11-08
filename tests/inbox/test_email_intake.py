@@ -84,14 +84,16 @@ def test_plus_address_routes_to_that_administration(session, admin, settings):
     other = create_administration(session, name="Tweede BV")
     session.commit()
     mailbox = FakeMailbox(
-        {"1": eml(to=f"invoices+{other.id}@jouwbedrijf.example", attachments=[PDF])}
+        {"1": eml(to=f"invoices+{other.inbox_token}@jouwbedrijf.example", attachments=[PDF])}
     )
     poll(session, mailbox, settings)
     assert session.scalars(select(InboxDocument)).one().administration_id == other.id
 
 
-def test_unknown_plus_id_falls_back_to_the_default(session, admin, settings):
-    mailbox = FakeMailbox({"1": eml(to="invoices+999@jouwbedrijf.example", attachments=[PDF])})
+def test_unknown_token_falls_back_to_the_default_on_a_single_tenant(session, admin, settings):
+    mailbox = FakeMailbox(
+        {"1": eml(to="invoices+0123456789abcdef0123456789@jouwbedrijf.example", attachments=[PDF])}
+    )
     poll(session, mailbox, settings)
     assert session.scalars(select(InboxDocument)).one().administration_id == admin.id
 
@@ -100,7 +102,7 @@ def test_plus_address_of_another_mailbox_is_not_a_routing_hint(session, admin, s
     other = create_administration(session, name="Tweede BV")
     session.commit()
     mailbox = FakeMailbox(
-        {"1": eml(to=f"someone+{other.id}@jouwbedrijf.example", attachments=[PDF])}
+        {"1": eml(to=f"someone+{other.inbox_token}@jouwbedrijf.example", attachments=[PDF])}
     )
     poll(session, mailbox, settings)
     assert session.scalars(select(InboxDocument)).one().administration_id == admin.id

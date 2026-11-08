@@ -1,4 +1,5 @@
 """The full schema. Amounts are integer cents; quantities and rates are Numeric."""
+import secrets
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -17,6 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -25,8 +27,14 @@ from ledgerline.db import Base
 
 
 class Role(StrEnum):
+    """A user's role inside one tenant (memberships.role)."""
+
     OWNER = "owner"
+    BOOKKEEPER = "bookkeeper"  # writes the books, no user or device management
     ACCOUNTANT = "accountant"  # read-only
+
+
+WRITE_ROLES = (Role.OWNER, Role.BOOKKEEPER)
 
 
 class AccountType(StrEnum):
@@ -76,17 +84,54 @@ def _now() -> Mapped[datetime]:
     return mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
+def new_inbox_token() -> str:
+    return secrets.token_hex(16)
+
+
+class TenantScoped:
+    """Mixin for every table that holds one tenant's data; the database fills in the tenant."""
+
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id"), index=True, server_default=text("ledgerline_current_tenant()")
+    )
+
+
+class Tenant(Base):
+    __tablename__ = "tenants"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = _now()
+
+
 class User(Base):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(254), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
-    role: Mapped[str] = mapped_column(String(20), default=Role.OWNER)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = _now()
+    # Not a column: the request fills it in from the membership of the selected tenant.
+    role = None
 
 
-class Administration(Base):
+class Membership(Base):
+    __tablename__ = "memberships"
+    __table_args__ = (
+        UniqueConstraint("user_id", "tenant_id", name="uq_memberships_user_tenant"),
+        CheckConstraint("role IN ('owner', 'bookkeeper', 'accountant')",
+                        name="ck_memberships_role"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    tenant_id: Mapped[int] = mapped_column(
+        ForeignKey("tenants.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime] = _now()
+    tenant: Mapped[Tenant] = relationship(lazy="joined")
+
+
+class Administration(TenantScoped, Base):
     """One set of books (one business)."""
 
     __tablename__ = "administrations"
@@ -107,10 +152,16 @@ class Administration(Base):
     kor: Mapped[bool] = mapped_column(Boolean, default=False)
     # Entries dated on or before this date are refused (closed period).
     locked_until: Mapped[date | None] = mapped_column(Date)
+    # Random part of the email address that routes mail to this administration.
+    inbox_token: Mapped[str] = mapped_column(
+        String(64), unique=True, default=new_inbox_token,
+        server_default=text(
+            "left(replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''), 32)"),
+    )
     created_at: Mapped[datetime] = _now()
 
 
-class Account(Base):
+class Account(TenantScoped, Base):
     __tablename__ = "accounts"
     __table_args__ = (UniqueConstraint("administration_id", "code"),)
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -124,7 +175,7 @@ class Account(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
-class Contact(Base):
+class Contact(TenantScoped, Base):
     __tablename__ = "contacts"
     id: Mapped[int] = mapped_column(primary_key=True)
     administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
@@ -143,7 +194,7 @@ class Contact(Base):
     created_at: Mapped[datetime] = _now()
 
 
-class JournalEntry(Base):
+class JournalEntry(TenantScoped, Base):
     """Immutable once inserted; corrections are reversing entries."""
 
     __tablename__ = "journal_entries"
@@ -163,7 +214,7 @@ class JournalEntry(Base):
     )
 
 
-class JournalLine(Base):
+class JournalLine(TenantScoped, Base):
     __tablename__ = "journal_lines"
     __table_args__ = (
         CheckConstraint("debit_cents >= 0 AND credit_cents >= 0", name="ck_line_non_negative"),
@@ -184,7 +235,7 @@ class JournalLine(Base):
     entry: Mapped[JournalEntry] = relationship(back_populates="lines")
 
 
-class NumberSequence(Base):
+class NumberSequence(TenantScoped, Base):
     """Gap-free counters (invoice numbers, journal numbers) per administration and year."""
 
     __tablename__ = "number_sequences"
@@ -196,7 +247,7 @@ class NumberSequence(Base):
     last_value: Mapped[int] = mapped_column(Integer, default=0)
 
 
-class Attachment(Base):
+class Attachment(TenantScoped, Base):
     __tablename__ = "attachments"
     id: Mapped[int] = mapped_column(primary_key=True)
     administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
@@ -209,7 +260,7 @@ class Attachment(Base):
     created_at: Mapped[datetime] = _now()
 
 
-class SalesInvoice(Base):
+class SalesInvoice(TenantScoped, Base):
     __tablename__ = "sales_invoices"
     __table_args__ = (UniqueConstraint("administration_id", "number"),)
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -238,7 +289,7 @@ class SalesInvoice(Base):
     contact: Mapped[Contact] = relationship(lazy="joined")
 
 
-class SalesInvoiceLine(Base):
+class SalesInvoiceLine(TenantScoped, Base):
     __tablename__ = "sales_invoice_lines"
     id: Mapped[int] = mapped_column(primary_key=True)
     invoice_id: Mapped[int] = mapped_column(ForeignKey("sales_invoices.id"), index=True)
@@ -252,7 +303,7 @@ class SalesInvoiceLine(Base):
     invoice: Mapped[SalesInvoice] = relationship(back_populates="lines")
 
 
-class PurchaseInvoice(Base):
+class PurchaseInvoice(TenantScoped, Base):
     __tablename__ = "purchase_invoices"
     id: Mapped[int] = mapped_column(primary_key=True)
     administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
@@ -276,7 +327,7 @@ class PurchaseInvoice(Base):
     contact: Mapped[Contact] = relationship(lazy="joined")
 
 
-class PurchaseInvoiceLine(Base):
+class PurchaseInvoiceLine(TenantScoped, Base):
     __tablename__ = "purchase_invoice_lines"
     id: Mapped[int] = mapped_column(primary_key=True)
     invoice_id: Mapped[int] = mapped_column(ForeignKey("purchase_invoices.id"), index=True)
@@ -290,7 +341,7 @@ class PurchaseInvoiceLine(Base):
     invoice: Mapped[PurchaseInvoice] = relationship(back_populates="lines")
 
 
-class BankAccount(Base):
+class BankAccount(TenantScoped, Base):
     __tablename__ = "bank_accounts"
     __table_args__ = (UniqueConstraint("administration_id", "iban"),)
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -300,7 +351,7 @@ class BankAccount(Base):
     ledger_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
 
 
-class BankStatement(Base):
+class BankStatement(TenantScoped, Base):
     """One imported file. The hash stops the same file being imported twice."""
 
     __tablename__ = "bank_statements"
@@ -315,7 +366,7 @@ class BankStatement(Base):
     imported_at: Mapped[datetime] = _now()
 
 
-class BankTransaction(Base):
+class BankTransaction(TenantScoped, Base):
     __tablename__ = "bank_transactions"
     __table_args__ = (UniqueConstraint("bank_account_id", "dedupe_key"),)
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -336,7 +387,7 @@ class BankTransaction(Base):
     journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"))
 
 
-class PaymentAllocation(Base):
+class PaymentAllocation(TenantScoped, Base):
     __tablename__ = "payment_allocations"
     __table_args__ = (
         CheckConstraint(
@@ -351,7 +402,7 @@ class PaymentAllocation(Base):
     amount_cents: Mapped[int] = mapped_column(BigInteger)
 
 
-class AuditEvent(Base):
+class AuditEvent(TenantScoped, Base):
     """Append-only (enforced by a database trigger)."""
 
     __tablename__ = "audit_events"
@@ -372,7 +423,7 @@ class InboxStatus(StrEnum):
     REJECTED = "rejected"
 
 
-class InboxDocument(Base):
+class InboxDocument(TenantScoped, Base):
     """A received document (email attachment, upload, phone) on its way to becoming a purchase."""
 
     __tablename__ = "inbox_documents"
@@ -396,7 +447,7 @@ class InboxDocument(Base):
     reviewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
 
-class ApiToken(Base):
+class ApiToken(TenantScoped, Base):
     """Upload-only token for the phone shortcut. Only the SHA-256 of the token is stored."""
 
     __tablename__ = "api_tokens"
