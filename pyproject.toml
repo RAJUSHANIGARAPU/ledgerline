@@ -3,7 +3,7 @@ name = "ledgerline"
 version = "0.1.0"
 description = "Self-hosted double-entry bookkeeping for Dutch small businesses"
 readme = "README.md"
-license = "MIT"
+license = "AGPL-3.0-only"
 authors = [{ name = "Raju Shanigarapu" }]
 requires-python = ">=3.12"
 dependencies = [

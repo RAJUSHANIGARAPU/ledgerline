@@ -43,7 +43,7 @@
     </nav>
     <div class="sidebar-foot">
       <div><a href="/help">Help</a>{% if request.session.get('role') == 'owner' %} · <a href="/setup">Setup</a>{% endif %}</div>
-      <div><a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a></div>
+      <div><a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a> · <a href="{{ source_url }}" rel="noopener">Source code</a></div>
       <form method="post" action="/logout">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button class="link-button" type="submit">Sign out</button>

@@ -8,6 +8,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ledgerline.config import get_settings
 from ledgerline.db import get_session
 from ledgerline.models import Administration, Role, User
 from ledgerline.money import format_eur
@@ -92,6 +93,7 @@ def render(request: Request, template: str, context: dict | None = None, status_
     """Render with the common layout context (user, administrations, CSRF, flashes)."""
     ctx = dict(context or {})
     ctx.setdefault("csrf_token", csrf_token(request))
+    ctx.setdefault("source_url", get_settings().source_url)
     ctx.setdefault("flashes", request.session.pop("flash", []))
     ctx.setdefault("active_nav", template.split("/")[0])
     return templates.TemplateResponse(request, template, ctx, status_code=status_code)

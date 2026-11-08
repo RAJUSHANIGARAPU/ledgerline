@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 10 * 1024 * 1024
     # Public HTTPS address, used in the phone shortcut instructions.
     public_base_url: str = "http://127.0.0.1:8000"
+    # Source link shown to users (AGPL-3.0 section 13); point it at your fork if you modify it.
+    source_url: str = "https://github.com/RAJUSHANIGARAPU/ledgerline"
 
     # Mailbox polled for incoming invoices (empty host = email intake off).
     imap_host: str = ""
