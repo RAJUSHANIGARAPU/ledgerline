@@ -52,25 +52,6 @@ def test_create_additional_administration_and_switch(client, session, admin):
     assert f'value="{admin.id}" selected' in client.get("/settings").text
 
 
-def test_owner_creates_accountant_who_is_read_only(client, session, admin):
-    r = client.post("/settings/users", data={
-        "email": "Boekhouder@Example.com", "role": "accountant",
-        "password": "twelve-chars-ok", "confirm": "twelve-chars-ok",
-        "csrf_token": client.csrf}, follow_redirects=False)
-    assert r.status_code == 303
-    user = session.scalar(select(User).where(User.email == "boekhouder@example.com"))
-    membership = session.scalar(select(Membership).where(Membership.user_id == user.id))
-    assert membership.role == Role.ACCOUNTANT and membership.tenant_id == admin.tenant_id
-    hasher.verify(user.password_hash, "twelve-chars-ok")
-
-
-def test_short_password_rejected_for_new_user(client, session, admin):
-    client.post("/settings/users", data={"email": "x@example.com", "role": "accountant",
-                                         "password": "short", "confirm": "short",
-                                         "csrf_token": client.csrf})
-    assert session.scalar(select(User).where(User.email == "x@example.com")) is None
-
-
 def test_deactivate_user_but_not_self(client, session, admin, owner):
     other = User(email="weg@example.com", password_hash="x")
     session.add(other)
@@ -86,7 +67,7 @@ def test_deactivate_user_but_not_self(client, session, admin, owner):
 
 def test_change_own_password(client, session, owner):
     new = "a-brand-new-passphrase"
-    r = client.post("/settings/password", data={"current": OWNER_PASSWORD, "password": new,
+    r = client.post("/account/password", data={"current": OWNER_PASSWORD, "password": new,
                                                 "confirm": new, "csrf_token": client.csrf},
                     follow_redirects=False)
     assert r.status_code == 303
@@ -96,7 +77,7 @@ def test_change_own_password(client, session, owner):
 
 def test_change_password_needs_current_password(client, session, owner):
     before = owner.password_hash
-    client.post("/settings/password", data={"current": "wrong-wrong-wrong", "password": "x" * 14,
+    client.post("/account/password", data={"current": "wrong-wrong-wrong", "password": "x" * 14,
                                             "confirm": "x" * 14, "csrf_token": client.csrf})
     session.expire_all()
     assert session.get(User, owner.id).password_hash == before
@@ -104,7 +85,7 @@ def test_change_password_needs_current_password(client, session, owner):
 
 def test_accountant_may_change_own_password(readonly_client, session):
     new = "accountant-new-pass"
-    r = readonly_client.post("/settings/password", data={
+    r = readonly_client.post("/account/password", data={
         "current": OWNER_PASSWORD, "password": new, "confirm": new,
         "csrf_token": readonly_client.csrf}, follow_redirects=False)
     assert r.status_code == 303

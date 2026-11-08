@@ -48,6 +48,7 @@ def database_url(owner_url):
     os.environ["LEDGERLINE_MIGRATION_DATABASE_URL"] = owner_url
     os.environ.setdefault("LEDGERLINE_SECRET_KEY", "test-secret-key-not-for-production")
     os.environ["LEDGERLINE_COOKIE_SECURE"] = "false"
+    os.environ["LEDGERLINE_ENVIRONMENT"] = "development"
     from ledgerline.config import get_settings
     from ledgerline.db import get_engine, get_sessionmaker
 
@@ -199,8 +200,11 @@ def readonly_client(session, admin, owner):
 
 @pytest.fixture(autouse=True)
 def _fresh_token_limits():
+    from ledgerline.accounts import ratelimit
     from ledgerline.mobile import tokens
 
     tokens.reset_rate_limits()
+    ratelimit.reset_all()
     yield
     tokens.reset_rate_limits()
+    ratelimit.reset_all()

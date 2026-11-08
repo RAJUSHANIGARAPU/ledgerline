@@ -7,11 +7,12 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from ledgerline.config import get_settings
-from ledgerline.web import LoginRequired, TenantRequired
+from ledgerline.web import LoginRequired, TenantRequired, TwoFactorRequired
 
 # Each module exposes `router`. Order sets nothing but readability.
 MODULES = [
     "ledgerline.auth",
+    "ledgerline.accounts.routes",
     "ledgerline.reports.routes",
     "ledgerline.ledger.routes",
     "ledgerline.invoicing.routes",
@@ -65,6 +66,13 @@ def create_app() -> FastAPI:
         if request.headers.get("hx-request"):
             return RedirectResponse("/tenants", 303, headers={"HX-Redirect": "/tenants"})
         return RedirectResponse("/tenants", 303)
+
+    @app.exception_handler(TwoFactorRequired)
+    async def to_two_factor_setup(request: Request, _exc: TwoFactorRequired):
+        target = "/account/security?required=1"
+        if request.headers.get("hx-request"):
+            return RedirectResponse(target, 303, headers={"HX-Redirect": target})
+        return RedirectResponse(target, 303)
 
     @app.get("/healthz", include_in_schema=False)
     def healthz():

@@ -115,7 +115,9 @@ GRANT USAGE ON SCHEMA public TO ledgerline_app;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ledgerline_app;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM ledgerline_app;
 """
-SHARED_TABLES = ("users", "tenants", "memberships")
+SHARED_TABLES = (
+    "users", "tenants", "memberships", "auth_tokens", "user_totp", "recovery_codes",
+)
 PROTECTED_TABLES = """
 SELECT c.relname FROM pg_class c
 WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'r'

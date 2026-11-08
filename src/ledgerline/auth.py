@@ -3,12 +3,13 @@ from collections import defaultdict, deque
 from typing import Annotated
 
 from argon2 import PasswordHasher
-from argon2.exceptions import VerificationError
+from argon2.exceptions import InvalidHashError, VerificationError
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 
 from ledgerline import audit
+from ledgerline.accounts import events, ratelimit, totp
 from ledgerline.db import set_tenant
 from ledgerline.models import Administration, Membership, User
 from ledgerline.web import LoginDep, SessionDep, UserDep, render, verify_csrf
@@ -19,6 +20,7 @@ hasher = PasswordHasher()
 MAX_FAILURES = 5
 FAILURE_WINDOW_SECONDS = 15 * 60
 _failures: dict[str, deque[float]] = defaultdict(deque)
+DUMMY_HASH = hasher.hash("not-a-real-password-for-timing")
 
 
 def hash_password(password: str) -> str:
@@ -40,6 +42,18 @@ def login_form(request: Request):
     return render(request, "auth/login.html")
 
 
+def _password_ok(user: User | None, password: str) -> bool:
+    """Verify in constant shape: an unknown or invitation-only user costs one hash too."""
+    candidate = user.password_hash if user is not None and user.is_active else DUMMY_HASH
+    if not candidate.startswith("$argon2"):
+        candidate = DUMMY_HASH
+    try:
+        hasher.verify(candidate, password)
+    except (VerificationError, InvalidHashError):
+        return False
+    return user is not None and user.is_active and candidate == user.password_hash
+
+
 @router.post("/login", dependencies=[Depends(verify_csrf)])
 def login(
     request: Request,
@@ -48,29 +62,42 @@ def login(
     password: Annotated[str, Form()],
 ):
     key = email.strip().lower()
-    if _locked_out(key):
+    ip = request.client.host if request.client else "unknown"
+    if _locked_out(key) or ratelimit.password_failures_by_ip.blocked(ip):
         return render(request, "auth/login.html",
                       {"error": "Too many attempts. Try again in 15 minutes."}, 429)
     user = session.scalar(select(User).where(func.lower(User.email) == key))
-    try:
-        if user is None or not user.is_active:
-            raise VerificationError
-        hasher.verify(user.password_hash, password)
-    except VerificationError:
+    if not _password_ok(user, password):
         _failures[key].append(time.monotonic())
+        ratelimit.password_failures_by_ip.hit(ip)
+        if user is not None:
+            events.record_for_user(session, user.id, "login.failure", {"step": "password"})
+            session.commit()
         return render(request, "auth/login.html", {"error": "Wrong email or password."}, 401)
     _failures.pop(key, None)
     if hasher.check_needs_rehash(user.password_hash):
         user.password_hash = hasher.hash(password)
     request.session.clear()
+    if totp.enabled(session, user.id) is not None:
+        request.session["pw_ok"] = {"u": user.id, "t": int(time.time()), "n": 0}
+        session.commit()
+        return RedirectResponse("/login/totp", status.HTTP_303_SEE_OTHER)
+    return complete_login(request, session, user)
+
+
+def complete_login(request: Request, session, user: User):
+    """The credentials are fully verified (password, and code when enrolled): start the session."""
+    request.session.clear()
     request.session["user_id"] = user.id
+    request.session["sv"] = user.session_version
     session.commit()
     return _after_login(request, session, user)
 
 
 def _memberships(session, user: User) -> list[Membership]:
     return list(session.scalars(
-        select(Membership).where(Membership.user_id == user.id).order_by(Membership.id)
+        select(Membership).where(Membership.user_id == user.id, Membership.status == "active")
+        .order_by(Membership.id)
     ).unique())
 
 
@@ -86,6 +113,9 @@ def _enter_tenant(request: Request, session, user: User, membership: Membership,
 def _after_login(request: Request, session, user: User):
     memberships = _memberships(session, user)
     if not memberships:
+        if session.scalar(select(Membership.id).where(
+                Membership.user_id == user.id, Membership.status == "pending")):
+            return RedirectResponse("/account", status.HTTP_303_SEE_OTHER)
         request.session.clear()
         return render(request, "auth/login.html", {
             "error": "Your account is not a member of any workspace yet. "

@@ -22,6 +22,7 @@ def forge_session(client, **values) -> None:
     """Sign a session cookie with the test secret: models a stolen secret key or a stale cookie."""
     from ledgerline.config import get_settings
 
+    values.setdefault("sv", 1)
     signer = TimestampSigner(get_settings().secret_key)
     raw = base64.b64encode(json.dumps(values).encode())
     client.cookies.clear()

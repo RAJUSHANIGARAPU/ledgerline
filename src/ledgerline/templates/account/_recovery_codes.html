@@ -1,0 +1,8 @@
+<div class="stack">
+  <div class="card"><div class="card-header"><h2 class="card-title">Two-factor login is on</h2></div>
+    <div class="card-body stack">
+      <p>Save these recovery codes now. Each works once if you lose your phone. They are not shown again.</p>
+      <ul id="recovery-codes">{% for c in codes %}<li><code>{{ c }}</code></li>{% endfor %}</ul>
+      <p><a href="/account/security">Done</a></p>
+    </div></div>
+</div>

@@ -39,6 +39,7 @@ System packages in the Docker image (not Python dependencies): Pango, HarfBuzz a
 | cffi | 2.1.1 | MIT-0 |
 | click | 8.5.1 | BSD-3-Clause |
 | cssselect2 | 0.10.1 | BSD-3-Clause |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause (License-Expression metadata, read 2026-11-08) |
 | defusedxml | 0.7.1 | PSF-2.0 |
 | docstring-parser | 0.18.0 | MIT |
 | fastapi | 0.162.1 | MIT |
@@ -57,6 +58,7 @@ System packages in the Docker image (not Python dependencies): Pango, HarfBuzz a
 | pillow | 13.0.0 | MIT-CMU (HPND) |
 | psycopg | 3.3.8 | LGPL-3.0-only |
 | psycopg-binary | 3.3.8 | LGPL-3.0-only |
+| pyotp | 2.10.0 | MIT (License-Expression metadata, read 2026-11-08) |
 | pycountry | 26.2.16 | LGPL-2.1-only |
 | pycparser | 3.12 | BSD-3-Clause |
 | pydantic | 2.14.3 | MIT |
@@ -64,6 +66,7 @@ System packages in the Docker image (not Python dependencies): Pango, HarfBuzz a
 | pydantic_core | 2.50.4 | MIT |
 | pydyf | 0.13.0 | BSD-3-Clause |
 | pypdf | 7.0.0 | BSD-3-Clause |
+| segno | 1.6.6 | BSD-3-Clause (trove classifier "BSD License" in the installed metadata, read 2026-11-08) |
 | pyphen | 0.18.1 | GPL-2.0+ OR LGPL-2.1+ OR MPL-1.1 (used under MPL-1.1 / LGPL option) |
 | python-dotenv | 1.2.4 | BSD-3-Clause |
 | python-multipart | 0.0.33 | Apache-2.0 |
