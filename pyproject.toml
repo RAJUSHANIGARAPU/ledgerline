@@ -21,6 +21,8 @@ dependencies = [
     "schwifty>=2024.11",
     "weasyprint>=63",
     "mt-940>=4.30",
+    "anthropic>=2.6",
+    "pypdf>=5.1",
 ]
 
 [project.scripts]
