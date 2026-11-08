@@ -40,11 +40,14 @@ Migrations run automatically on every start (`ledgerline migrate`).
 ```
 books.example.com {
     encode zstd gzip
+    request_body {
+        max_size 12MB
+    }
     reverse_proxy 127.0.0.1:8000
 }
 ```
 
-Caddy obtains and renews a Let's Encrypt certificate by itself. The app starts uvicorn with `--proxy-headers`, so the original scheme and client address are taken from the proxy. Open only ports 80 and 443 in the firewall (plus SSH).
+The body limit stops oversized uploads at the proxy, before the app reads them. Caddy obtains and renews a Let's Encrypt certificate by itself. The app starts uvicorn with `--proxy-headers`, so the original scheme and client address are taken from the proxy. Open only ports 80 and 443 in the firewall (plus SSH).
 
 ## Updating
 

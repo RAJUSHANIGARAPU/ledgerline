@@ -18,6 +18,7 @@ WORKDIR /app
 COPY --from=builder --chown=ledgerline:ledgerline /app /app
 COPY --chown=ledgerline:ledgerline alembic.ini ./
 COPY --chown=ledgerline:ledgerline migrations ./migrations
+COPY --chown=ledgerline:ledgerline docs ./docs
 COPY --chown=ledgerline:ledgerline scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1

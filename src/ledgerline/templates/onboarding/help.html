@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}User guide{% endblock %}
+{% block heading %}User guide{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="/setup">Setup wizard</a>{% endblock %}
+{% block content %}
+{% if body is none %}
+<div class="empty"><h3>The user guide is not available</h3>
+  <p>The file docs/USER_GUIDE.md was not found next to the application.</p></div>
+{% else %}
+<div class="page-grid">
+  {% if toc %}
+  <nav class="card" aria-label="Guide contents"><div class="card-body">
+    <ul class="stack">{% for level, text, anchor in toc if level == 2 %}<li><a href="#{{ anchor }}">{{ text }}</a></li>{% endfor %}</ul>
+  </div></nav>
+  {% endif %}
+  <article class="card"><div class="card-body stack" data-testid="guide">{{ body|safe }}</div></article>
+</div>
+{% endif %}
+{% endblock %}

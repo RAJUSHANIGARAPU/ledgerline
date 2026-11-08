@@ -67,6 +67,12 @@ def seed_demo(_args: argparse.Namespace) -> int:
     return 0
 
 
+def worker(_args: argparse.Namespace) -> int:
+    from ledgerline.inbox import worker as inbox_worker
+
+    return inbox_worker.main()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ledgerline")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -87,6 +93,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     seed = sub.add_parser("seed-demo", help="load demo data")
     seed.set_defaults(func=seed_demo)
+
+    work = sub.add_parser("worker", help="read incoming documents and poll the invoice mailbox")
+    work.set_defaults(func=worker)
     return parser
 
 

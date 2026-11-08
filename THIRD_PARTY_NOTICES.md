@@ -1,6 +1,6 @@
 # Third-party notices
 
-Ledgerline is MIT-licensed (see LICENSE). It depends on the components below. Versions are those pinned in `uv.lock`. Licences were read from the installed package metadata (`importlib.metadata`) on 2026-11-07, then corrected from the package's own licence files where the metadata field was empty or a long text. Two Linux-only runtime packages (brotlicffi, tzdata) are not installed on the host used for this check; their entries come from PyPI metadata and are marked unverified.
+Ledgerline is MIT-licensed (see LICENSE). It depends on the components below. Versions are those pinned in `uv.lock`. Licences were read from the installed package metadata (`importlib.metadata`) on 2026-11-07 (anthropic, pypdf and their dependencies on 2026-11-08), then corrected from the package's own licence files where the metadata field was empty or a long text. Two Linux-only runtime packages (brotlicffi, tzdata) are not installed on the host used for this check; their entries come from PyPI metadata and are marked unverified.
 
 ## Copyleft and weak-copyleft components (read this first)
 
@@ -30,6 +30,7 @@ System packages in the Docker image (not Python dependencies): Pango, HarfBuzz a
 | alembic | 1.20.1 | MIT |
 | annotated-doc | 0.0.5 | MIT |
 | annotated-types | 0.8.0 | MIT |
+| anthropic | 2.6.0 | Apache-2.0 |
 | anyio | 4.16.0 | MIT |
 | argon2-cffi | 25.1.0 | MIT |
 | argon2-cffi-bindings | 26.1.0 | MIT |
@@ -39,13 +40,16 @@ System packages in the Docker image (not Python dependencies): Pango, HarfBuzz a
 | click | 8.5.1 | BSD-3-Clause |
 | cssselect2 | 0.10.1 | BSD-3-Clause |
 | defusedxml | 0.7.1 | PSF-2.0 |
+| docstring-parser | 0.18.0 | MIT |
 | fastapi | 0.162.1 | MIT |
 | fonttools | 4.68.0 | MIT |
 | h11 | 0.16.0 | MIT |
 | httptools | 0.9.0 | MIT |
+| httpx2 | 2.16.0 | BSD-3-Clause |
 | idna | 3.20 | BSD-3-Clause |
 | itsdangerous | 2.2.0 | BSD-3-Clause |
 | Jinja2 | 3.1.6 | BSD-3-Clause |
+| jiter | 0.19.0 | MIT |
 | Mako | 1.4.3 | MIT |
 | MarkupSafe | 3.0.4 | BSD-3-Clause |
 | mt-940 | 5.1.3 | BSD-3-Clause |
@@ -56,21 +60,23 @@ System packages in the Docker image (not Python dependencies): Pango, HarfBuzz a
 | pycountry | 26.2.16 | LGPL-2.1-only |
 | pycparser | 3.12 | BSD-3-Clause |
 | pydantic | 2.14.3 | MIT |
-| pydantic_core | 2.50.4 | MIT |
 | pydantic-settings | 2.16.2 | MIT |
+| pydantic_core | 2.50.4 | MIT |
 | pydyf | 0.13.0 | BSD-3-Clause |
+| pypdf | 7.0.0 | BSD-3-Clause |
 | pyphen | 0.18.1 | GPL-2.0+ OR LGPL-2.1+ OR MPL-1.1 (used under MPL-1.1 / LGPL option) |
 | python-dotenv | 1.2.4 | BSD-3-Clause |
 | python-multipart | 0.0.33 | Apache-2.0 |
 | PyYAML | 6.0.3 | MIT |
 | rstr | 3.2.2 | BSD-3-Clause |
 | schwifty | 2026.11.0 | MIT |
+| sniffio | 1.3.1 | MIT OR Apache-2.0 |
 | SQLAlchemy | 2.1.8 | MIT |
 | starlette | 1.10.0 | BSD-3-Clause |
 | tinycss2 | 1.5.1 | BSD-3-Clause |
 | tinyhtml5 | 2.1.0 | MIT |
-| typing_extensions | 4.16.0 | PSF-2.0 |
 | typing-inspection | 0.4.5 | MIT |
+| typing_extensions | 4.16.0 | PSF-2.0 |
 | tzdata | 2026.6 | Apache-2.0 (PyPI metadata; not installed on this host, unverified locally) |
 | uvicorn | 0.54.0 | BSD-3-Clause |
 | uvloop | 0.23.0 | MIT OR Apache-2.0 |

@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% set status_badge = {'new': 'draft', 'review': 'open', 'booked': 'posted', 'rejected': 'cancelled'} %}
+{% block title %}{{ attachment.filename }}{% endblock %}
+{% block heading %}{{ attachment.filename }} <span class="badge badge-{{ status_badge[document.status] }}">{{ document.status }}</span>{% endblock %}
+{% block actions %}<a class="btn btn-secondary" href="/inbox">Back to inbox</a>{% endblock %}
+{% block head %}<script src="{{ url_for('static', path='js/inbox.js') }}" defer></script>{% endblock %}
+{% block content %}
+{% for e in errors %}<div class="flash flash-error" role="alert">{{ e }}</div>{% endfor %}
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header"><h2 class="card-title">Document</h2></div>
+    <div class="card-body">
+      {% if attachment.content_type == 'application/pdf' %}
+        <iframe src="/inbox/{{ document.id }}/file" title="Document preview" width="100%" height="760"></iframe>
+      {% elif attachment.content_type in ('image/jpeg', 'image/png') %}
+        <img src="/inbox/{{ document.id }}/file" alt="Uploaded document" width="100%">
+      {% else %}
+        <p class="muted">An e-invoice (XML) has no preview. <a href="/inbox/{{ document.id }}/file?download=1">Download the file</a>.</p>
+      {% endif %}
+      <dl class="kv">
+        <dt>Source</dt><dd>{{ document.source }}{% if document.sender %} · {{ document.sender }}{% endif %}</dd>
+        {% if document.subject %}<dt>Subject</dt><dd>{{ document.subject }}</dd>{% endif %}
+        <dt>Received</dt><dd>{{ document.received_at|nldate }}</dd>
+      </dl>
+    </div>
+  </div>
+  <div class="stack">
+    <div class="flash flash-{{ 'success' if method_tone == 'good' else 'error' if method_tone == 'bad' else 'info' }}" role="status">{{ method_label }}</div>
+    {% if document.extraction_error %}<div class="flash flash-error" role="alert">{{ document.extraction_error }}</div>{% endif %}
+    {% for w in proposal.warnings %}<div class="flash flash-error" role="alert">{{ w }}</div>{% endfor %}
+    {% if document.status == 'booked' %}
+      <div class="card"><div class="card-body">
+        {% if purchase %}<p>Purchase invoice <a href="/purchases/{{ purchase.id }}">{{ purchase.supplier_reference }}</a> was created from this document.</p>{% endif %}
+      </div></div>
+    {% else %}
+    {% if proposal.duplicate %}
+      <div class="flash flash-error" role="alert">This looks like invoice {{ proposal.duplicate.supplier_reference }} from {{ proposal.contact.name }}, which is already registered (<a href="/purchases/{{ proposal.duplicate.id }}">open it</a>). A second copy cannot be created.</div>
+    {% endif %}
+    <form method="post" action="/inbox/{{ document.id }}/create" class="stack" id="review-form">
+      {{ ui.csrf() }}
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">Supplier</h2></div>
+        <div class="card-body stack">
+          <label class="field">
+            <span class="field-label">Supplier</span>
+            <select class="input" name="contact_id" id="contact-select">
+              <option value="">Choose a supplier</option>
+              {% for c in suppliers %}<option value="{{ c.id }}"{% if c.id|string == values.contact_id %} selected{% endif %}>{{ c.name }}</option>{% endfor %}
+              {% if proposal.extracted and proposal.extracted.supplier_name or new_supplier %}<option value="new"{% if values.contact_id == 'new' %} selected{% endif %}>Create supplier from the extracted data</option>{% endif %}
+            </select>
+            {% if proposal.contact %}<span class="field-hint">Matched on {{ proposal.matched_by }}.</span>{% endif %}
+          </label>
+          {% set ex = proposal.extracted %}
+          {% set ns = new_supplier %}
+          <div class="form-grid" id="new-supplier">
+            {{ ui.field("new_name", "New supplier name", ns.new_name if ns else (ex.supplier_name if ex else '')) }}
+            {{ ui.field("new_vat", "VAT number", ns.new_vat if ns else (ex.supplier_vat_number if ex else '')) }}
+            {{ ui.field("new_kvk", "KvK number", ns.new_kvk if ns else (ex.supplier_kvk if ex else '')) }}
+            {{ ui.field("new_iban", "IBAN", ns.new_iban if ns else (ex.supplier_iban if ex else '')) }}
+            {{ ui.field("new_country", "Country (2 letters)", ns.new_country if ns else ((ex.supplier_vat_number or 'NL')[:2] if ex else 'NL')) }}
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">Invoice</h2></div>
+        <div class="card-body form-grid">
+          {{ ui.field("supplier_reference", "Supplier's invoice number", values.supplier_reference, required=true) }}
+          {{ ui.field("invoice_date", "Invoice date", values.invoice_date, "date", true) }}
+          {{ ui.field("due_date", "Due date", values.due_date, "date") }}
+          {{ ui.field("description", "Description", values.description) }}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">Lines</h2></div>
+        <div class="table-wrap">
+          <table class="table line-editor">
+            <thead><tr><th>Description</th><th>Expense account</th><th class="num">Amount excl.</th><th>VAT code</th><th class="num">VAT</th></tr></thead>
+            <tbody>
+            {% for row in rows %}
+              <tr>
+                <td><input class="input" name="line_description" value="{{ row.description }}" maxlength="500" aria-label="Description"></td>
+                <td><select class="input" name="line_account" aria-label="Expense account">
+                  {% for a in accounts %}<option value="{{ a.id }}"{% if a.id|string == row.account %} selected{% endif %}>{{ a.code }} {{ a.name }}</option>{% endfor %}
+                </select></td>
+                <td><input class="input num" name="line_amount" value="{{ row.amount }}" inputmode="decimal" aria-label="Amount excl. VAT"></td>
+                <td><select class="input" name="line_vat_code" aria-label="VAT code">
+                  {% for c in vat_codes %}<option value="{{ c.code }}"{% if c.code == row.vat_code %} selected{% endif %}>{{ c.code }} · {{ c.rate }}%{% if c.reverse_charge %} (reverse charge){% endif %}</option>{% endfor %}
+                </select></td>
+                <td><input class="input num" name="line_vat" value="{{ row.vat }}" inputmode="decimal" aria-label="VAT amount"></td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="card-body">
+          {% if ex %}<p class="fine-print">Read from the document: excl. {{ (ex.total_excl_cents)|eur if ex.total_excl_cents is not none else '?' }} · VAT {{ (ex.total_vat_cents)|eur if ex.total_vat_cents is not none else '?' }} · total {{ (ex.total_incl_cents)|eur if ex.total_incl_cents is not none else '?' }}. Leave VAT empty to have it calculated; reverse-charge VAT is always calculated.</p>{% endif %}
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit" name="action" value="draft">Create purchase draft</button>
+        <button class="btn btn-secondary" type="submit" name="action" value="book" data-confirm="Create the invoice and book it to the journal? Booked invoices cannot be edited.">Create and book</button>
+        {% if proposal.duplicate %}<button class="btn btn-ghost" type="submit" name="action" value="link">Same invoice: link to the existing one</button>{% endif %}
+      </div>
+    </form>
+    <div class="row">
+      <form method="post" action="/inbox/{{ document.id }}/rerun">{{ ui.csrf() }}<button class="btn btn-secondary btn-sm" type="submit">Read again</button></form>
+      {% if document.status != 'rejected' %}
+      <form method="post" action="/inbox/{{ document.id }}/reject">{{ ui.csrf() }}<button class="btn btn-danger btn-sm" type="submit" data-confirm="Reject this document?">Reject</button></form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

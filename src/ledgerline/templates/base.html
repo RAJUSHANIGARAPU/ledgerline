@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Ledgerline{% endblock %} · Ledgerline</title>
   <link rel="icon" href="{{ url_for('static', path='img/mark.svg') }}" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0f3d3e">
+  <link rel="apple-touch-icon" href="{{ url_for('static', path='img/icon-180.png') }}">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="htmx-config" content='{"includeIndicatorStyles": false}'>
   <link rel="stylesheet" href="{{ url_for('static', path='css/app.css') }}">
   <script src="{{ url_for('static', path='js/htmx.min.js') }}" defer></script>
@@ -38,6 +42,7 @@
       {% endfor %}
     </nav>
     <div class="sidebar-foot">
+      <div><a href="/help">Help</a>{% if request.session.get('role') == 'owner' %} · <a href="/setup">Setup</a>{% endif %}</div>
       <div><a href="/legal/privacy">Privacy</a> · <a href="/legal/terms">Terms</a></div>
       <form method="post" action="/logout">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

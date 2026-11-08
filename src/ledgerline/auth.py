@@ -63,6 +63,7 @@ def login(
         user.password_hash = hasher.hash(password)
     request.session.clear()
     request.session["user_id"] = user.id
+    request.session["role"] = user.role
     audit.record(session, "login", user_id=user.id)
     session.commit()
     return RedirectResponse("/", status.HTTP_303_SEE_OTHER)
