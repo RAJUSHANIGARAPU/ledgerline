@@ -38,7 +38,15 @@ def all_routes() -> list[tuple[str, str]]:
     return found
 
 
-NOT_ENTITIES = {("/reports/aging/{kind}", "kind"): "sales", ("/setup/{key}", "key"): "business"}
+NOT_ENTITIES = {
+    ("/reports/aging/{kind}", "kind"): "sales",
+    ("/setup/{key}", "key"): "business",
+    # Covered by tests/account: the link token or the caller's own invitation, not a tenant row.
+    ("/invite/{token}", "token"): "x",
+    ("/reset/{token}", "token"): "x",
+    ("/account/invitations/{membership_id}/{decision}", "membership_id"): "1",
+    ("/account/invitations/{membership_id}/{decision}", "decision"): "accept",
+}
 
 
 def entity(path: str, param: str):
@@ -134,11 +142,16 @@ def test_route_table_is_covered():
                                     "user")})
 
 
-POSTS_OPEN_TO_EVERYONE = {"/login", "/tenants", "/logout", "/administration/switch",
-                          "/settings/password", "/api/v1/inbox"}
+POSTS_OPEN_TO_EVERYONE = {
+    "/login", "/tenants", "/logout", "/administration/switch", "/api/v1/inbox",
+    "/login/totp", "/forgot", "/reset/{token}", "/invite/{token}", "/account/password",
+    "/account/sign-out-everywhere", "/account/invitations/{membership_id}/{decision}",
+    "/account/security/2fa/start", "/account/security/2fa/enable",
+    "/account/security/2fa/disable",
+}
 POST_ROUTES = [p for p, m in all_routes() if m == "POST"]
-MANAGER_ONLY = {"/settings/users", "/settings/users/{user_id}/deactivate", "/settings/devices",
-                "/settings/devices/{token_id}/revoke"}
+MANAGER_ONLY = {"/settings/users", "/settings/require-2fa", "/settings/devices",
+                "/settings/users/{user_id}/deactivate", "/settings/devices/{token_id}/revoke"}
 
 
 @pytest.mark.parametrize("path", [p for p in POST_ROUTES if p not in POSTS_OPEN_TO_EVERYONE])

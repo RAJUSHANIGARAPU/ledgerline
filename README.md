@@ -71,7 +71,9 @@ cd e2e && npm ci && npx playwright install chromium && npx playwright test
 
 The suite signs in, renders every page on desktop and mobile with zero console or CSP errors,
 creates, issues and downloads an invoice through the UI, and turns an uploaded supplier PDF
-into a purchase. It expects a freshly seeded database. CI runs all three layers.
+into a purchase, and invites a user, accepts the invitation and enrols two-factor login (it reads the
+invitation link from the app log, so start the stack with `LEDGERLINE_ENVIRONMENT=development`). It
+expects a freshly seeded database. CI runs all three layers.
 
 ## Design decisions
 

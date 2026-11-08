@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Forgot password{% endblock %}
+{% block public %}
+<div class="auth-page">
+  <div class="card auth-card">
+    <div class="brand brand-lg">
+      <img src="{{ url_for('static', path='img/mark.svg') }}" alt="" width="36" height="36">
+      <span>Ledgerline</span>
+    </div>
+    {% for f in flashes %}<div class="flash flash-{{ f.kind }}" role="status">{{ f.message }}</div>{% endfor %}
+    <p class="muted">Enter your email address. If an account exists, we send a link to choose a new password.</p>
+    <form class="stack" method="post" action="/forgot">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="field"><span class="field-label">Email</span>
+        <input class="input" type="email" name="email" autocomplete="username" required autofocus></label>
+      <button class="btn btn-primary btn-block" type="submit">Send link</button>
+    </form>
+    <p class="fine-print"><a href="/login">Back to sign in</a></p>
+  </div>
+</div>
+{% endblock %}

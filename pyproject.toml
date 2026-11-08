@@ -23,6 +23,9 @@ dependencies = [
     "mt-940>=4.30",
     "anthropic>=2.6",
     "pypdf>=5.1",
+    "pyotp>=2.10.0",
+    "segno>=1.6.6",
+    "cryptography>=50.0.2",
 ]
 
 [project.scripts]

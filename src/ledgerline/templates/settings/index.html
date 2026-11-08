@@ -75,40 +75,32 @@
   </div></div>
 {% endif %}
 
-<form class="card" method="post" action="/settings/password">
-  <div class="card-header"><h2 class="card-title">Change your password</h2></div>
-  <div class="card-body stack">
-    {{ ui.csrf() }}
-    <div class="form-grid">
-      <label class="field"><span class="field-label">Current password</span><input class="input" type="password" name="current" autocomplete="current-password" required></label>
-      <span></span>
-      <label class="field"><span class="field-label">New password</span><input class="input" type="password" name="password" minlength="12" autocomplete="new-password" required><span class="field-hint">At least 12 characters.</span></label>
-      <label class="field"><span class="field-label">Repeat new password</span><input class="input" type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
-    </div>
-    <div class="form-actions"><button class="btn btn-primary" type="submit">Change password</button></div>
-  </div>
-</form>
-
 {% if is_owner %}
 <div class="card"><div class="card-header"><h2 class="card-title">Users</h2></div>
   <div class="table-wrap"><table class="table">
     <thead><tr><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
-    <tbody>{% for u, member_role in users %}
-      <tr><td>{{ u.email }}</td><td>{{ member_role }}</td><td>{{ 'active' if u.is_active else 'deactivated' }}</td>
-        <td>{% if u.is_active and u.id != request.session.get('user_id') %}
-          <form method="post" action="/settings/users/{{ u.id }}/deactivate">{{ ui.csrf() }}<button class="btn btn-sm btn-danger" type="submit">Deactivate</button></form>{% endif %}</td></tr>
+    <tbody>{% for u, member_role, member_status in users %}
+      <tr><td>{{ u.email }}</td><td>{{ member_role }}</td><td>{{ 'invited' if member_status == 'pending' else ('active' if u.is_active else 'deactivated') }}</td>
+        <td>{% if (u.is_active or member_status == 'pending') and u.id != request.session.get('user_id') %}
+          <form method="post" action="/settings/users/{{ u.id }}/deactivate">{{ ui.csrf() }}<button class="btn btn-sm btn-danger" type="submit">{{ 'Cancel invitation' if member_status == 'pending' else 'Deactivate' }}</button></form>{% endif %}</td></tr>
     {% endfor %}</tbody>
   </table></div>
   <form class="card-body stack" method="post" action="/settings/users">
     {{ ui.csrf() }}
-    <h3 class="section-title">Add a user</h3>
+    <h3 class="section-title">Invite a user</h3>
     <div class="form-grid">
       {{ ui.field('email', 'Email', '', 'email', True) }}
       <label class="field"><span class="field-label">Role</span><select class="input" name="role"><option value="accountant">Accountant (read-only)</option><option value="bookkeeper">Bookkeeper (writes, no user management)</option><option value="owner">Owner</option></select></label>
-      <label class="field"><span class="field-label">Password</span><input class="input" type="password" name="password" minlength="12" autocomplete="new-password" required><span class="field-hint">Set by you, at least 12 characters. Share it through a safe channel.</span></label>
-      <label class="field"><span class="field-label">Repeat password</span><input class="input" type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
     </div>
-    <div class="form-actions"><button class="btn btn-primary" type="submit">Create user</button></div>
+    <p class="field-hint">They get an email with a link to choose a password, or, if they already have a login, a note to accept the invitation under Account.</p>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Send invitation</button></div>
+  </form>
+  <form class="card-body stack" method="post" action="/settings/require-2fa">
+    {{ ui.csrf() }}
+    <h3 class="section-title">Two-factor login</h3>
+    <label class="checkbox"><input type="checkbox" name="enforce" {% if current_tenant and current_tenant.require_2fa %}checked{% endif %}> Require two-factor login for everyone in this workspace</label>
+    <p class="field-hint">Members without it are sent to set it up after signing in. Turn it on for your own account first (Account, Security).</p>
+    <div class="form-actions"><button class="btn btn-secondary" type="submit">Save</button></div>
   </form>
 </div>
 {% endif %}

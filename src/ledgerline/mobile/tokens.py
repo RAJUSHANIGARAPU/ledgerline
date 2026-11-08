@@ -100,7 +100,8 @@ def authenticate(session: Session, token: str) -> ApiToken | None:
     if user is None or not user.is_active:
         return None
     role = session.scalar(select(Membership.role).where(
-        Membership.user_id == user.id, Membership.tenant_id == tenant_id))
+        Membership.user_id == user.id, Membership.tenant_id == tenant_id,
+        Membership.status == "active"))
     return row if role in WRITE_ROLES else None
 
 

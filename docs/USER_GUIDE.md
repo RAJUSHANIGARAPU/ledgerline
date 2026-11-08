@@ -119,9 +119,20 @@ Ledgerline does not produce annual accounts, does not prepare your income tax re
 
 On [Reports](/reports): profit and loss, balance sheet, trial balance, aged receivables and aged payables. Each can be downloaded as CSV (Download CSV). The [chart of accounts](/accounts) lists all accounts; the [journal](/ledger) lists every entry.
 
+## Account, sign-in and two-factor login
+
+Your own settings are under [Account](/account) (link in the sidebar): change your password, see your workspaces, accept or decline invitations, and "Sign out everywhere" to end every session on every device.
+
+- **Invite someone:** an owner opens Settings, Users, Invite a user, enters an email address and a role. A new person gets an email with a link (valid for 7 days, works once) to choose a password. Someone who already has a Ledgerline login gets an email that they were added and accepts the invitation under Account. The confirmation looks the same in both cases, so it does not reveal whether an address already has an account. Emails are written in Dutch first, then English.
+- **Forgot your password:** on the sign-in page choose "Forgot password?". If an account exists you get a link (valid for 1 hour, works once). Using it signs you out everywhere else and cancels any other open reset links. The page always gives the same answer, and requests are limited per address and per network address.
+- **Two-factor login:** [Account, Security](/account/security) shows a QR code and a key for an authenticator app. Confirm with a code to switch it on, then save the 10 recovery codes: each works once and they are shown only now. At sign-in you enter your password, then the 6-digit code (a recovery code also works). To switch it off you need your password and a current code.
+- **Require it for everyone:** an owner can tick "Require two-factor login" in Settings, Users, once their own account has it. Members without it are sent to set it up after they sign in.
+
+If email is not set up on the server, invitations are refused with a message and reset emails are not sent: see DEPLOY.md.
+
 ## Accountant access
 
-Settings, Users: create a user with role accountant. That user can read everything and change nothing. The bookkeeper role can write the books but cannot manage users or phone tokens; only the owner can. Send reports as CSV, or the full administration ZIP from [Privacy and data](/settings/privacy) (owner only).
+Settings, Users: invite a user with role accountant. That user can read everything and change nothing. The bookkeeper role can write the books but cannot manage users or phone tokens; only the owner can. Send reports as CSV, or the full administration ZIP from [Privacy and data](/settings/privacy) (owner only).
 
 ## Privacy requests
 

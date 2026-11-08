@@ -22,7 +22,8 @@ from ledgerline.models import (
 from tests.conftest import tenant_db
 from tests.inbox.factories import ubl
 
-SHARED_TABLES = {"users", "tenants", "memberships", "alembic_version"}
+SHARED_TABLES = {"users", "tenants", "memberships", "alembic_version", "auth_tokens",
+                 "user_totp", "recovery_codes"}
 
 
 def seed_tenant(tenant_id: int, owner_id: int | None = None) -> dict:

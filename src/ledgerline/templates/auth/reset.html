@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Choose a new password{% endblock %}
+{% block public %}
+<div class="auth-page">
+  <div class="card auth-card">
+    <div class="brand brand-lg">
+      <img src="{{ url_for('static', path='img/mark.svg') }}" alt="" width="36" height="36">
+      <span>Ledgerline</span>
+    </div>
+    {% for f in flashes %}<div class="flash flash-{{ f.kind }}" role="status">{{ f.message }}</div>{% endfor %}
+    <p class="muted">Choose a new password. Other devices are signed out.</p>
+    {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
+    <form class="stack" method="post" action="/reset/{{ token }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="field"><span class="field-label">New password</span>
+        <input class="input" type="password" name="password" minlength="12" autocomplete="new-password" required autofocus>
+        <span class="field-hint">At least 12 characters.</span></label>
+      <label class="field"><span class="field-label">Repeat new password</span>
+        <input class="input" type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
+      <button class="btn btn-primary btn-block" type="submit">Set password</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

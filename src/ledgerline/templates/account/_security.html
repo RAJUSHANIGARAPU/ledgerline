@@ -1,0 +1,39 @@
+{% import "components/macros.html" as ui with context %}
+{% for f in flashes %}<div class="flash flash-{{ f.kind }}" role="status">{{ f.message }}</div>{% endfor %}
+{% if required %}<div class="flash flash-error" role="alert">Your workspace requires two-factor login. Set it up to continue.</div>{% endif %}
+<div class="stack">
+{% if enabled %}
+  <div class="card"><div class="card-header"><h2 class="card-title">Two-factor login is on</h2></div>
+    <div class="card-body stack">
+      <p>{{ remaining }} recovery codes left.</p>
+      <form class="stack" method="post" action="/account/security/2fa/disable">
+        {{ ui.csrf() }}
+        <h3 class="section-title">Turn it off</h3>
+        <div class="form-grid">
+          <label class="field"><span class="field-label">Password</span><input class="input" type="password" name="password" autocomplete="current-password" required></label>
+          <label class="field"><span class="field-label">Current code</span><input class="input" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required></label>
+        </div>
+        <div class="form-actions"><button class="btn btn-danger" type="submit">Turn off two-factor login</button></div>
+      </form>
+    </div></div>
+{% elif pending %}
+  <div class="card"><div class="card-header"><h2 class="card-title">Set up an authenticator app</h2></div>
+    <div class="card-body stack">
+      <p>Scan the code with an authenticator app, or enter the key by hand. Then type the 6-digit code to confirm.</p>
+      <img src="{{ pending.qr }}" alt="QR code for the authenticator app" width="200" height="200">
+      <p>Key: <code id="totp-secret">{{ pending.secret }}</code></p>
+      <form class="stack" method="post" action="/account/security/2fa/enable">
+        {{ ui.csrf() }}
+        <label class="field"><span class="field-label">Code from the app</span><input class="input" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required></label>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Turn on two-factor login</button></div>
+      </form>
+    </div></div>
+{% else %}
+  <div class="card"><div class="card-header"><h2 class="card-title">Two-factor login is off</h2></div>
+    <div class="card-body stack">
+      <p>Add a second step at sign-in with a code from an authenticator app.</p>
+      <form method="post" action="/account/security/2fa/start">{{ ui.csrf() }}<button class="btn btn-primary" type="submit">Set up</button></form>
+    </div></div>
+{% endif %}
+  <p><a href="/account">Back to account</a></p>
+</div>
