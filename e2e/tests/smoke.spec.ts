@@ -3,7 +3,8 @@ import { signIn } from './auth';
 
 const PAGES = [
   '/', '/sales', '/purchases', '/bank', '/ledger', '/accounts', '/vat', '/vat/icp',
-  '/reports', '/contacts', '/settings', '/settings/privacy',
+  '/reports', '/contacts', '/settings', '/settings/privacy', '/inbox', '/capture',
+  '/settings/devices', '/setup', '/help',
 ];
 
 test('every main page renders without errors', async ({ page }) => {

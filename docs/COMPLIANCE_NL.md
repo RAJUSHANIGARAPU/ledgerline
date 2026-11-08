@@ -67,3 +67,12 @@ Bank transactions keep the counterparty name and IBAN as imported from the bank 
 ### Not implemented
 
 Deletion of the personal data after the retention date is manual: the app shows the date but does not run a purge.
+
+## Document extraction by an external provider (optional)
+
+This applies only if the operator sets `LEDGERLINE_EXTRACTION_PROVIDER=anthropic`. By default nothing is sent anywhere.
+
+- **What is transferred:** the received invoice or receipt (PDF, JPEG, PNG), when the UBL and PDF-text steps could not read it. Such a document can contain personal data (names and bank details of suppliers, including sole traders).
+- **Recipient:** Anthropic, as processor. The operator needs its data processing agreement under the AVG and should check its current commercial terms and data-retention policy for retention, training use and the transfer mechanism for processing outside the EU.
+- **Transparency:** name the provider in the privacy notice (template section "Document extraction (optional)") and in the processing register. Without this, the feature should stay off.
+- **Control:** results are proposals; the owner reviews every figure before booking. A monthly cap per administration limits volume. Details: `docs/EXTRACTION.md`.

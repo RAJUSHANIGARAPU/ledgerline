@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Capture{% endblock %}
+{% block heading %}Capture a document{% endblock %}
+{% block head %}<script src="{{ url_for('static', path='js/capture.js') }}" defer></script>{% endblock %}
+{% block content %}
+<form class="card" method="post" action="/capture" enctype="multipart/form-data" id="capture-form">
+  <div class="card-body stack">
+    {{ ui.csrf() }}
+    <label class="field">
+      <span class="field-label">Take photo</span>
+      <input class="input" type="file" name="files" accept="image/*" capture="environment" data-picker>
+      <span class="field-hint">Opens the camera. Lay the receipt flat in good light.</span>
+    </label>
+    <label class="field">
+      <span class="field-label">Choose file</span>
+      <input class="input" type="file" name="files" accept="application/pdf,image/*" multiple data-picker>
+      <span class="field-hint">PDF, JPEG or PNG, up to {{ max_mb }} MB each.</span>
+    </label>
+    <div class="row" id="capture-previews" aria-live="polite"></div>
+    <label class="field">
+      <span class="field-label">Note (optional)</span>
+      <input class="input" type="text" name="note" maxlength="300" placeholder="e.g. Fuel, client lunch">
+    </label>
+    <progress id="capture-progress" max="100" value="0" hidden></progress>
+    <button class="btn btn-primary btn-block" type="submit" id="capture-submit">Upload to inbox</button>
+    <p class="fine-print">Uploads for {{ admin.name }}. Duplicates are recognised and not stored twice.</p>
+  </div>
+</form>
+{% endblock %}

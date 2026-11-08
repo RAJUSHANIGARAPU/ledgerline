@@ -13,16 +13,18 @@ posting, the BTW (VAT) return and ICP overview, and the standard financial repor
 | Area | Features |
 |---|---|
 | Sales | Draft → issue with gap-free numbering, Dutch invoice-requirement checks, credit notes, PDF, UBL 2.1 (Peppol BIS Billing 3.0 file) |
+| Inbox | Supplier invoices by email (IMAP), upload or phone; e-invoices (UBL) read exactly, PDF text read with sanity checks, photos and scans read by an optional, opt-in extraction service; review before anything is booked |
+| Phone | Installable web app that opens on the camera, plus an iOS share-sheet shortcut with revocable upload keys ([docs/IPHONE.md](docs/IPHONE.md)) |
 | Purchases | Entry with expense account and VAT as stated by the supplier, reverse charge (domestic, EU, non-EU), PDF/image attachment, duplicate guard |
 | Bank | CAMT.053 (.001.02/.08) and MT940 import, duplicate/overlap detection, ranked match suggestions, book-to-account, undo, SEPA credit-transfer file for paying suppliers |
 | Ledger | Journal with manual entries, reversals, chart of accounts, per-account ledger, period lock |
 | VAT | Return per month/quarter/year mapped to the rubrieken with drill-down to the bookings, ICP overview, optional settlement entry |
 | Reports | Dashboard, profit & loss, balance sheet, trial balance, aged receivables/payables, CSV export |
-| Platform | Multiple administrations, read-only accountant role, contacts, GDPR export and anonymisation, legal page templates |
+| Platform | Setup wizard, in-app user guide, multiple administrations, read-only accountant role, contacts, GDPR export and anonymisation, legal page templates |
 
 **Deliberately not included:** live bank feeds (PSD2 needs a licensed provider), sending
 invoices over Peppol (needs a certified access point), filing returns through Digipoort (needs a
-PKIoverheid certificate), payment links, receipt OCR, foreign currency.
+PKIoverheid certificate), payment links, foreign currency, a native app-store app.
 
 ## Quick start (Docker)
 
@@ -34,6 +36,13 @@ docker compose exec app ledgerline create-user --email you@example.com --role ow
 
 For plain-HTTP local use set `LEDGERLINE_COOKIE_SECURE=false`; behind HTTPS keep it `true`.
 To explore with fictional data: `docker compose exec app ledgerline seed-demo`.
+
+New here? The setup wizard opens from the dashboard; the [user guide](docs/USER_GUIDE.md) is also
+available in the app under Help.
+
+Email intake and photo extraction are off until configured: see `.env.example`,
+[docs/EXTRACTION.md](docs/EXTRACTION.md) and [docs/IPHONE.md](docs/IPHONE.md). Phone and email use
+require the server to be reachable over HTTPS.
 
 Deployment on a VPS with HTTPS: [docs/DEPLOY.md](docs/DEPLOY.md).
 Backups and restore drill: [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md).
@@ -61,7 +70,8 @@ cd e2e && npm ci && npx playwright install chromium && npx playwright test
 ```
 
 The suite signs in, renders every page on desktop and mobile with zero console or CSP errors,
-and creates, issues and downloads an invoice through the UI. CI runs all three layers.
+creates, issues and downloads an invoice through the UI, and turns an uploaded supplier PDF
+into a purchase. It expects a freshly seeded database. CI runs all three layers.
 
 ## Design decisions
 

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Inbox{% endblock %}
+{% block heading %}Inbox{% endblock %}
+{% block head %}<script src="{{ url_for('static', path='js/inbox.js') }}" defer></script>{% endblock %}
+{% set source_icon = {'email': '✉', 'upload': '⬆', 'phone': '📱'} %}
+{% set status_badge = {'new': 'draft', 'review': 'open', 'booked': 'posted', 'rejected': 'cancelled'} %}
+{% block content %}
+{% for d in duplicates %}
+<div class="flash flash-info" role="status">{{ names.get(d.attachment_id, 'This file') }} is already in your inbox: <a href="/inbox/{{ d.id }}">open it</a>.</div>
+{% endfor %}
+<div class="card">
+  <div class="card-body">
+    <form method="post" action="/inbox/upload" enctype="multipart/form-data" class="stack" id="upload-form">
+      {{ ui.csrf() }}
+      <label class="field" id="drop-zone">
+        <span class="field-label">Add invoices (PDF, JPEG, PNG or UBL XML, up to {{ max_mb }} MB each)</span>
+        <input class="input" type="file" name="files" multiple required accept="application/pdf,image/jpeg,image/png,application/xml,text/xml,.xml">
+        <span class="field-hint">Drop files here or choose them. Photos and PDFs are read for you to check; nothing is booked without your review.</span>
+      </label>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Upload</button></div>
+    </form>
+  </div>
+</div>
+<div class="tabs" role="tablist">
+  {% for key, label, status in tabs %}
+    <a class="tab{% if tab == key %} is-active{% endif %}" href="/inbox?tab={{ key }}">{{ label }} <span class="pill">{{ counts.get(status, 0) }}</span></a>
+  {% endfor %}
+</div>
+<div id="inbox-list"{% if tab == 'new' and documents %} hx-get="/inbox?tab=new" hx-trigger="every 4s" hx-select="#inbox-list" hx-target="#inbox-list" hx-swap="outerHTML"{% endif %}>
+{% if documents %}
+<div class="card">
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th></th><th>File</th><th>From</th><th>Received</th><th>Read as</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for d in documents %}
+        <tr class="is-clickable">
+          <td title="{{ d.source }}">{{ source_icon.get(d.source, '•') }}</td>
+          <td><a href="/inbox/{{ d.id }}">{{ names.get(d.attachment_id, 'document') }}</a></td>
+          <td class="muted">{{ d.sender or d.subject or d.source }}</td>
+          <td class="muted">{{ d.received_at|nldate }}</td>
+          <td class="muted">{{ labels.get(d.extraction_method, ('', ''))[0] if d.extraction_method else 'Waiting to be read' }}</td>
+          <td><span class="badge badge-{{ status_badge[d.status] }}">{{ d.status }}</span></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+  {{ ui.empty("Nothing here", "Documents you upload, email to the inbox address or send from your phone appear here.") }}
+{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Phone devices{% endblock %}
+{% block heading %}Phone devices{% endblock %}
+{% block actions %}<a class="btn btn-secondary" href="/settings">Settings</a>{% endblock %}
+{% block head %}<script src="{{ url_for('static', path='js/devices.js') }}" defer></script>{% endblock %}
+{% block content %}
+<div class="stack">
+  {% if new_token %}
+  <div class="card"><div class="card-header"><h2 class="card-title">Your new token</h2></div>
+    <div class="card-body stack">
+      <p>Copy it now. It is shown once and cannot be recovered; revoke it and create a new one if you lose it.</p>
+      <input class="input" id="new-token" type="text" readonly value="{{ new_token }}" aria-label="New token">
+      <div class="row">
+        <button class="btn btn-primary" type="button" data-copy="new-token">Copy token</button>
+        <span class="fine-print">Endpoint: {{ base_url }}/api/v1/inbox</span>
+      </div>
+    </div></div>
+  {% endif %}
+
+  <form class="card" method="post" action="/settings/devices">
+    <div class="card-header"><h2 class="card-title">Add a device</h2></div>
+    <div class="card-body stack">
+      {{ ui.csrf() }}
+      <p class="muted">A token lets the iOS Shortcut upload documents to {{ admin.name }}. It can only upload, nothing else. See docs/IPHONE.md.</p>
+      <div class="row">
+        <input class="input" name="name" maxlength="60" placeholder="e.g. iPhone" required aria-label="Device name">
+        <button class="btn btn-primary" type="submit">Create token</button>
+      </div>
+    </div>
+  </form>
+
+  <div class="card"><div class="card-header"><h2 class="card-title">Tokens</h2></div>
+    {% if tokens %}
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Name</th><th>Token</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+      <tbody>
+      {% for t in tokens %}
+        <tr>
+          <td>{{ t.name }}</td>
+          <td class="muted">{{ t.token_prefix }}…</td>
+          <td>{{ t.created_at|nldate }}</td>
+          <td>{% if t.last_used_at %}{{ t.last_used_at|nldate }}{% else %}<span class="muted">never</span>{% endif %}</td>
+          <td>
+            {% if t.revoked_at %}<span class="badge badge-cancelled">revoked</span>
+            {% else %}
+            <form method="post" action="/settings/devices/{{ t.id }}/revoke">
+              {{ ui.csrf() }}
+              <button class="btn btn-danger btn-sm" type="submit" data-confirm="Revoke {{ t.name }}? The shortcut on that device stops working.">Revoke</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    <div class="card-body">{{ ui.empty("No devices yet", "Create a token to connect the iOS Shortcut.") }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

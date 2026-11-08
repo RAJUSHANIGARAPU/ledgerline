@@ -2,7 +2,8 @@
 {% import "components/macros.html" as ui with context %}
 {% block title %}Settings{% endblock %}
 {% block heading %}Settings{% endblock %}
-{% block actions %}<a class="btn btn-secondary" href="/settings/privacy">Privacy and data</a>{% endblock %}
+{% block actions %}<a class="btn btn-secondary" href="/settings/devices">Phone devices</a>
+<a class="btn btn-secondary" href="/settings/privacy">Privacy and data</a>{% endblock %}
 {% block content %}
 {% if errors %}<div class="flash flash-error" role="alert"><ul>{% for msg in errors.values() %}<li>{{ msg }}</li>{% endfor %}</ul></div>{% endif %}
 

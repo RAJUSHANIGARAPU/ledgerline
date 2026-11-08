@@ -18,6 +18,7 @@ from ledgerline.models import (
     SystemRole,
     TxStatus,
 )
+from ledgerline.onboarding.service import setup_complete
 from ledgerline.reports.financial import result_between
 from ledgerline.vat.vat_return import compute_vat_return, period_bounds
 
@@ -37,6 +38,7 @@ class Dashboard:
     draft_sales: int = 0
     draft_purchases: int = 0
     has_data: bool = False
+    setup_complete: bool = True
     checklist: list[tuple[str, bool, str]] = field(default_factory=list)
 
 
@@ -166,6 +168,7 @@ def build_dashboard(session: Session, admin: Administration, today: date) -> Das
         .where(BankAccount.administration_id == aid),
     ) > 0
     d.has_data = has_entries or has_invoice
+    d.setup_complete = setup_complete(session, admin)
     d.checklist = [
         ("Add your business details", bool(admin.kvk_number and admin.vat_number), "/settings"),
         ("Add a bank account", has_bank, "/bank"),

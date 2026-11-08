@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Setup: {{ step.title }}{% endblock %}
+{% block heading %}Setup{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="/help">User guide</a>{% endblock %}
+{% macro step_nav() %}
+<div class="row">
+  {% if prev_key %}<a class="btn btn-ghost" href="/setup/{{ prev_key }}">Back</a>{% endif %}
+  <span class="spacer"></span>
+  {% if next_key %}<a class="btn btn-secondary" href="/setup/{{ next_key }}">{{ "Next" if step.done else "Skip for now" }}</a>
+  {% else %}<a class="btn btn-secondary" href="/">Go to the dashboard</a>{% endif %}
+</div>
+{% endmacro %}
+{% block content %}
+<div class="page-grid">
+  <div class="tabs" role="list" data-testid="setup-tabs">
+    {% for s in steps %}<a class="tab{% if s.key == step.key %} is-active{% endif %}" role="listitem" href="/setup/{{ s.key }}">{{ s.number }}. {{ s.title }}{% if s.done %} (done){% endif %}</a>{% endfor %}
+  </div>
+  <p class="muted" data-testid="setup-position">Step {{ step.number }} of {{ total }}{% if not step.required %} (optional){% endif %}{% if step.done %} - done{% endif %}</p>
+
+  {% if step.key == "business" %}
+  <div class="card"><div class="card-header"><h2 class="card-title">Business details</h2></div>
+    <form method="post" action="/setup/business" class="card-body stack">
+      {{ ui.csrf() }}
+      <p class="muted">These appear on your invoices. The Belastingdienst requires your name, address, VAT number and KvK number on every invoice, so Ledgerline will not issue one until they are filled in.</p>
+      {% set e = errors %}
+      <div class="form-grid">
+        {{ ui.field("name", "Business name", values.name, "text", true) }}{% if e.name %}<p class="field-hint amount-neg">{{ e.name }}</p>{% endif %}
+        <label class="field"><span class="field-label">Legal form</span>
+          <select class="input" name="legal_form">
+            {% for key, label in legal_forms %}<option value="{{ key }}" {% if values.legal_form == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            {% if values.legal_form not in legal_forms|map(attribute=0) %}<option value="{{ values.legal_form }}" selected>{{ values.legal_form }}</option>{% endif %}
+          </select>{% if e.legal_form %}<span class="field-hint amount-neg">{{ e.legal_form }}</span>{% endif %}</label>
+        {{ ui.field("kvk_number", "KvK number", values.kvk_number, "text", false, "8 digits") }}{% if e.kvk_number %}<p class="field-hint amount-neg">{{ e.kvk_number }}</p>{% endif %}
+        {{ ui.field("vat_number", "VAT number (BTW-id)", values.vat_number, "text", false, "e.g. NL123456789B01") }}{% if e.vat_number %}<p class="field-hint amount-neg">{{ e.vat_number }}</p>{% endif %}
+        {{ ui.field("address_line", "Address", values.address_line) }}
+        {{ ui.field("postcode", "Postcode", values.postcode) }}
+        {{ ui.field("city", "City", values.city) }}
+        {{ ui.field("iban", "IBAN", values.iban) }}{% if e.iban %}<p class="field-hint amount-neg">{{ e.iban }}</p>{% endif %}
+        {{ ui.field("email", "Email", values.email, "email") }}{% if e.email %}<p class="field-hint amount-neg">{{ e.email }}</p>{% endif %}
+        {{ ui.field("invoice_prefix", "Invoice number prefix", values.invoice_prefix, "text", false, "Optional, up to 10 characters") }}{% if e.invoice_prefix %}<p class="field-hint amount-neg">{{ e.invoice_prefix }}</p>{% endif %}
+        {{ ui.field("payment_terms_days", "Payment terms (days)", values.payment_terms_days, "number", false, None, 'min="0" max="365"') }}{% if e.payment_terms_days %}<p class="field-hint amount-neg">{{ e.payment_terms_days }}</p>{% endif %}
+      </div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Save and continue</button></div>
+    </form></div>
+
+  {% elif step.key == "vat" %}
+  <div class="card"><div class="card-header"><h2 class="card-title">VAT situation</h2></div>
+    <form method="post" action="/setup/vat" class="card-body stack">
+      {{ ui.csrf() }}
+      {% if errors.scheme %}<div class="flash flash-error" role="alert">{{ errors.scheme }}</div>{% endif %}
+      <label class="checkbox"><input type="radio" name="scheme" value="regular" {% if not admin.kor %}checked{% endif %}> Regular VAT: you charge VAT on your invoices and deduct the VAT on your costs.</label>
+      <label class="checkbox"><input type="radio" name="scheme" value="kor" {% if admin.kor %}checked{% endif %}> Small business scheme (KOR, kleineondernemersregeling): no VAT on your invoices and no deduction of input VAT.</label>
+      <p class="muted">The KOR applies if your turnover is at most EUR 20,000 per calendar year, and you register for it with the Belastingdienst yourself; this setting only tells Ledgerline how to book. Read the conditions at <a href="https://www.belastingdienst.nl/kleineondernemersregeling" target="_blank" rel="noopener noreferrer">belastingdienst.nl/kleineondernemersregeling</a>. Ledgerline does not watch the turnover limit.</p>
+      <p class="muted">Filing frequency: most businesses file their VAT return per quarter. The Belastingdienst tells you your period; use the same one on the VAT return page.</p>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Save and continue</button></div>
+    </form></div>
+
+  {% elif step.key == "bank" %}
+  <div class="card"><div class="card-header"><h2 class="card-title">Bank account</h2></div>
+    <div class="card-body stack">
+      {% if bank_accounts %}
+      <ul class="stack">{% for b in bank_accounts %}<li>{{ b.name }} <span class="pill">{{ b.iban }}</span></li>{% endfor %}</ul>
+      {% endif %}
+      <form method="post" action="/setup/bank" class="stack">
+        {{ ui.csrf() }}
+        <div class="form-grid">
+          {{ ui.field("name", "Name", values.name if values else "", "text", true) }}{% if errors.name %}<p class="field-hint amount-neg">{{ errors.name }}</p>{% endif %}
+          {{ ui.field("iban", "IBAN", values.iban if values else admin.iban, "text", true) }}{% if errors.iban %}<p class="field-hint amount-neg">{{ errors.iban }}</p>{% endif %}
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">Add bank account</button></div>
+      </form>
+      <p class="muted">To get your transactions in, log in to your online banking and look for "Download transactions" (or similar). Choose CAMT.053 or MT940 as the format, then upload the file on the <a href="/bank">Bank</a> page. Ledgerline does not connect to your bank.</p>
+    </div></div>
+
+  {% elif step.key == "opening" %}
+  <div class="card"><div class="card-header"><h2 class="card-title">Opening balances (optional)</h2></div>
+    <div class="card-body stack">
+      <p class="muted">Starting mid-year? Enter what was in each bank account on your start date. Ledgerline posts one journal entry with the bank balance against owner's equity. Skip this if you start on 1 January with empty books, or if your accountant provides opening balances.</p>
+      {% if errors.form %}<div class="flash flash-error" role="alert">{{ errors.form }}</div>{% endif %}
+      {% if opening %}
+      <div class="flash flash-info" role="status" data-testid="opening-done">Opening balances are posted in <a href="/ledger/{{ opening.id }}">{{ opening.number }}</a>. To enter them again, reverse that entry first.</div>
+      {% elif not bank_accounts %}
+      <p>Add a bank account first (<a href="/setup/bank">step 3</a>).</p>
+      {% else %}
+      <form method="post" action="/setup/opening" class="stack">
+        {{ ui.csrf() }}
+        <div class="form-grid">
+          {{ ui.field("entry_date", "Start date", values.entry_date if values else today.isoformat(), "date", true, "The balance on the evening of this date.") }}{% if errors.entry_date %}<p class="field-hint amount-neg">{{ errors.entry_date }}</p>{% endif %}
+          {% for b in bank_accounts %}
+          {{ ui.field("balance_" ~ b.id, "Balance " ~ b.name ~ " (EUR)", values["balance_" ~ b.id] if values else "", "text", false, b.iban) }}{% if errors["balance_" ~ b.id] %}<p class="field-hint amount-neg">{{ errors["balance_" ~ b.id] }}</p>{% endif %}
+          {% endfor %}
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit" data-confirm="Post the opening balances? A posted entry can only be reversed, not edited.">Post opening balances</button></div>
+      </form>
+      {% endif %}
+    </div></div>
+
+  {% elif step.key == "first-invoice" %}
+  <div class="card"><div class="card-header"><h2 class="card-title">First customer and invoice</h2></div>
+    <div class="card-body stack">
+      <p>{% if customers %}You have {{ customers }} customer{{ "" if customers == 1 else "s" }}.{% else %}No customers yet.{% endif %}</p>
+      <div class="row">
+        <a class="btn btn-secondary" href="/contacts/new">Add a customer</a>
+        <a class="btn btn-primary" href="/sales/new">Create an invoice</a>
+      </div>
+      <p class="muted">An invoice needs the customer's name, address and city before it can be issued.</p>
+    </div></div>
+
+  {% elif step.key == "inbox" %}
+  <div class="card"><div class="card-header"><h2 class="card-title">Inbox and phone</h2></div>
+    <div class="card-body stack">
+      <p>Drop supplier invoices into the <a href="/inbox">Inbox</a> and they become purchase invoices after your review.</p>
+      <p>On your phone, open <a href="/capture">Capture</a> and choose Share, then Add to Home Screen. To send PDFs and photos from other apps, create an upload key under <a href="/settings/devices">Phone devices</a> and follow the shortcut steps in the user guide.</p>
+    </div></div>
+
+  {% elif step.key == "review" %}
+  <div class="card"><div class="card-header"><h2 class="card-title">Accountant review and exports</h2></div>
+    <div class="card-body stack">
+      <p>Have your accountant review the first quarter before you file your first VAT return. Give them a read-only user (<a href="/settings">Settings</a>, Users, role accountant) and send them the reports.</p>
+      <ul class="stack">
+        <li><a href="/reports">Reports</a> can be downloaded as CSV.</li>
+        <li><a href="/settings/privacy">Privacy and data</a> has the full administration export (ZIP).</li>
+        <li>Make a backup before big changes; see the user guide, section Backups.</li>
+      </ul>
+    </div></div>
+  {% endif %}
+
+  {{ step_nav() }}
+</div>
+{% endblock %}

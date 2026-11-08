@@ -18,6 +18,9 @@ MODULES = [
     "ledgerline.banking.routes",
     "ledgerline.vat.routes",
     "ledgerline.platform.routes",
+    "ledgerline.inbox.routes",
+    "ledgerline.mobile.routes",
+    "ledgerline.onboarding.routes",
 ]
 
 SECURITY_HEADERS = {

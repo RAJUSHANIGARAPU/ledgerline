@@ -363,3 +363,49 @@ class AuditEvent(Base):
     entity_id: Mapped[int | None] = mapped_column(Integer)
     details: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = _now()
+
+
+class InboxStatus(StrEnum):
+    NEW = "new"  # waiting for extraction
+    REVIEW = "review"  # extracted (or failed), waiting for the owner
+    BOOKED = "booked"  # turned into a purchase invoice
+    REJECTED = "rejected"
+
+
+class InboxDocument(Base):
+    """A received document (email attachment, upload, phone) on its way to becoming a purchase."""
+
+    __tablename__ = "inbox_documents"
+    __table_args__ = (UniqueConstraint("administration_id", "content_sha256"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
+    source: Mapped[str] = mapped_column(String(10))  # email | upload | phone
+    status: Mapped[str] = mapped_column(String(10), default=InboxStatus.NEW, index=True)
+    attachment_id: Mapped[int] = mapped_column(ForeignKey("attachments.id"))
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    sender: Mapped[str | None] = mapped_column(String(254))
+    subject: Mapped[str | None] = mapped_column(String(300))
+    email_message_id: Mapped[str | None] = mapped_column(String(300))
+    received_at: Mapped[datetime] = _now()
+    # ubl | pdf_text | vision | none
+    extraction_method: Mapped[str | None] = mapped_column(String(10))
+    extraction: Mapped[dict | None] = mapped_column(JSONB)
+    extraction_error: Mapped[str | None] = mapped_column(String(500))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    purchase_invoice_id: Mapped[int | None] = mapped_column(ForeignKey("purchase_invoices.id"))
+    reviewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+
+class ApiToken(Base):
+    """Upload-only token for the phone shortcut. Only the SHA-256 of the token is stored."""
+
+    __tablename__ = "api_tokens"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"))
+    name: Mapped[str] = mapped_column(String(60))
+    token_prefix: Mapped[str] = mapped_column(String(12))
+    token_sha256: Mapped[str] = mapped_column(String(64), unique=True)
+    created_at: Mapped[datetime] = _now()
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

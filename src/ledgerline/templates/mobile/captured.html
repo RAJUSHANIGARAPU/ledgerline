@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Uploaded{% endblock %}
+{% block heading %}Upload result{% endblock %}
+{% block head %}<script src="{{ url_for('static', path='js/capture.js') }}" defer></script>{% endblock %}
+{% block content %}
+<div class="stack">
+  {% for r in results %}
+    {% if r.error %}
+      <div class="flash flash-error" role="alert">{{ r.name }}: {{ r.error }}</div>
+    {% elif r.duplicate %}
+      <div class="flash flash-info" role="status">{{ r.name }} is already in your inbox. <a href="/inbox/{{ r.id }}">View it</a></div>
+    {% else %}
+      <div class="flash flash-success" role="status"><strong>In your inbox:</strong> {{ r.name }}. <a href="/inbox/{{ r.id }}">Open document</a></div>
+    {% endif %}
+  {% endfor %}
+  <a class="btn btn-primary btn-block" href="/capture">Capture another</a>
+  <a class="btn btn-secondary btn-block" href="/inbox">Go to inbox</a>
+</div>
+{% endblock %}
