@@ -1,0 +1,113 @@
+#cloud-config
+# Rendered by provision.sh (double-at placeholders). Holds no secrets: passwords are
+# generated on the server by the bootstrap script.
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - git
+  - openssl
+  - unattended-upgrades
+  - fail2ban
+
+users:
+  - name: deploy
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - "@@SSH_PUBLIC_KEY@@"
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/99-ledgerline.conf
+    permissions: "0644"
+    content: |
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    permissions: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+  - path: /etc/fail2ban/jail.d/ledgerline-sshd.local
+    permissions: "0644"
+    content: |
+      [sshd]
+      enabled = true
+      maxretry = 4
+      findtime = 10m
+      bantime = 1h
+  - path: /opt/ledgerline-bootstrap/setup.sh
+    permissions: "0700"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      DOMAIN="@@DOMAIN@@"
+      REPO_URL="@@REPO_URL@@"
+      REPO_REF="@@REPO_REF@@"
+      OWNER_EMAIL="@@OWNER_EMAIL@@"
+      HOME_DIR=/home/deploy
+      APP_DIR="$HOME_DIR/ledgerline"
+
+      . /etc/os-release
+      install -m 0755 -d /etc/apt/keyrings
+      curl -fsSL "https://download.docker.com/linux/ubuntu/gpg" -o /etc/apt/keyrings/docker.asc
+      chmod a+r /etc/apt/keyrings/docker.asc
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${UBUNTU_CODENAME:-$VERSION_CODENAME} stable" \
+        > /etc/apt/sources.list.d/docker.list
+
+      curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+        | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+      curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+        > /etc/apt/sources.list.d/caddy-stable.list
+
+      apt-get update
+      DEBIAN_FRONTEND=noninteractive apt-get install -y \
+        docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin caddy
+      systemctl enable --now docker
+      usermod -aG docker deploy
+      systemctl restart ssh fail2ban
+
+      runuser -u deploy -- git clone --branch "$REPO_REF" --depth 1 "$REPO_URL" "$APP_DIR"
+
+      secret() { openssl rand -hex 24; }
+      INITIAL_PASSWORD="$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)"
+      umask 077
+      sed -e "s|{{SECRET_KEY}}|$(secret)|" \
+          -e "s|{{POSTGRES_PASSWORD}}|$(secret)|" \
+          -e "s|{{APP_DB_PASSWORD}}|$(secret)|" \
+          -e "s|{{DOMAIN}}|$DOMAIN|" \
+          -e "s|{{OWNER_EMAIL}}|$OWNER_EMAIL|" \
+          -e "s|{{INITIAL_PASSWORD}}|$INITIAL_PASSWORD|" \
+          "$APP_DIR/deploy/hetzner/env.template" > "$APP_DIR/.env"
+      chown deploy:deploy "$APP_DIR/.env"
+      chmod 0600 "$APP_DIR/.env"
+
+      sed "s|{{DOMAIN}}|$DOMAIN|" "$APP_DIR/deploy/hetzner/Caddyfile.template" > /etc/caddy/Caddyfile
+      systemctl reload caddy || systemctl restart caddy
+
+      runuser -u deploy -- sg docker -c "cd '$APP_DIR' && docker compose up -d --build"
+
+      for _ in $(seq 1 60); do
+        curl -fsS -m 5 http://127.0.0.1:8000/healthz >/dev/null 2>&1 && break
+        sleep 5
+      done
+
+      # The first-login password lives in one file, not in .env.
+      printf 'Sign in at https://%s as %s\nPassword: %s\nChange it after signing in, then delete this file.\n' \
+        "$DOMAIN" "$OWNER_EMAIL" "$INITIAL_PASSWORD" > "$HOME_DIR/FIRST-LOGIN.txt"
+      chown deploy:deploy "$HOME_DIR/FIRST-LOGIN.txt"
+      chmod 0600 "$HOME_DIR/FIRST-LOGIN.txt"
+      sed -i '/^LEDGERLINE_INITIAL_PASSWORD=/d' "$APP_DIR/.env"
+      cat > /etc/motd <<MOTD
+      Ledgerline bootstrap finished. Next: fill in the RESTIC_*, AWS_* and ping settings in
+      $APP_DIR/.env, then: cd $APP_DIR && docker compose up -d
+      Read ~/FIRST-LOGIN.txt once and delete it. See docs/OPERATIONS.md.
+      MOTD
+      touch /var/lib/cloud/ledgerline-bootstrap-done
+
+runcmd:
+  - [bash, -c, "/opt/ledgerline-bootstrap/setup.sh > /var/log/ledgerline-bootstrap.log 2>&1 || echo 'bootstrap failed, see /var/log/ledgerline-bootstrap.log' > /etc/motd"]

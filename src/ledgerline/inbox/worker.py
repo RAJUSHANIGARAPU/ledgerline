@@ -14,13 +14,17 @@ from ledgerline.db import for_each_tenant, get_sessionmaker
 from ledgerline.inbox import email_intake
 from ledgerline.inbox.extract import pipeline
 from ledgerline.models import InboxDocument, InboxStatus
+from ledgerline.ops.ping import Pinger
 
 log = logging.getLogger("ledgerline.worker")
 MAX_ATTEMPTS = 3
 BATCH_SIZE = 5
 IDLE_SECONDS = 2.0
-# Touched after every pass that reached the database; the container healthcheck reads its age.
-HEARTBEAT = Path("/tmp/ledgerline-worker.heartbeat")  # noqa: S108
+
+
+def default_heartbeat() -> Path:
+    """Touched after every pass that reached the database; /healthz/deep reads its age."""
+    return Path(get_settings().ops_dir) / "worker.heartbeat"
 
 
 def _fail(document: InboxDocument) -> None:
@@ -73,11 +77,13 @@ def run_forever(
     session_factory: Callable[[], Session] | None = None,
     mailbox_factory: Callable | None = None,
     clock: Callable[[], float] = time.monotonic,
-    heartbeat: Path | None = HEARTBEAT,
+    heartbeat: Path | None = None,
 ) -> None:
     factory = session_factory or get_sessionmaker()
     settings = get_settings()
     next_poll = clock()
+    heartbeat = heartbeat or default_heartbeat()
+    pinger = Pinger(settings.healthcheck_ping_url, settings.healthcheck_ping_seconds)
     log.info("worker started (mailbox %s)", "on" if settings.imap_host else "off")
     while not stop.is_set():
         busy = False
@@ -87,8 +93,8 @@ def run_forever(
                     busy = process_pending(session) > 0 or busy
                 except Exception:
                     log.exception("extraction pass failed for tenant %s", tenant_id)
-            if heartbeat:
-                heartbeat.touch()
+            heartbeat.touch()
+            pinger.tick()
         except Exception:
             log.exception("extraction pass failed")
         if (settings.imap_host or mailbox_factory) and clock() >= next_poll and not stop.is_set():

@@ -16,6 +16,15 @@ No GPL or AGPL component is used under a GPL licence. These need a note:
 
 System packages in the Docker image (not Python dependencies): Pango, HarfBuzz and FreeType-related libraries (LGPL / MIT, installed from Debian), fonts-dejavu-core (permissive font licence), PostgreSQL client tools (PostgreSQL licence). Debian lists exact licences per package in /usr/share/doc/<package>/copyright inside the image.
 
+## Operations tooling (not Python dependencies)
+
+| Component | Version | Licence | Where | How verified |
+|---|---|---|---|---|
+| restic | 0.19.1 | BSD-2-Clause | binary copied from the official `restic/restic:0.19.1` image into the backup image | LICENSE file of github.com/restic/restic (GitHub API licence field, 2026-11-08) |
+| hcloud CLI | not bundled | MIT | run by the owner for `deploy/hetzner/provision.sh` | GitHub API licence field of hetznercloud/cli, 2026-11-08 |
+| Caddy | not bundled | Apache-2.0 | installed on the server from the Caddy apt repository | GitHub API licence field of caddyserver/caddy, 2026-11-08 |
+| Docker Engine, Compose plugin | not bundled | Apache-2.0 | installed on the server from Docker's apt repository | GitHub API licence field of moby/moby and docker/compose, 2026-11-08 |
+
 ## Vendored front-end files (src/ledgerline/static/js)
 
 | File | Component | Version | Licence | How verified |

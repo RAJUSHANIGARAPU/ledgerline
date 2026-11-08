@@ -22,6 +22,7 @@ MODULES = [
     "ledgerline.inbox.routes",
     "ledgerline.mobile.routes",
     "ledgerline.onboarding.routes",
+    "ledgerline.ops.routes",
 ]
 
 SECURITY_HEADERS = {

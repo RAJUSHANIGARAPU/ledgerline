@@ -59,6 +59,9 @@ services:
       LEDGERLINE_EXTRACTION_MODEL: ${LEDGERLINE_EXTRACTION_MODEL:-claude-opus-5-5}
       LEDGERLINE_EXTRACTION_MONTHLY_LIMIT: ${LEDGERLINE_EXTRACTION_MONTHLY_LIMIT:-200}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LEDGERLINE_HEALTH_REQUIRE_OFFSITE_BACKUP: ${LEDGERLINE_HEALTH_REQUIRE_OFFSITE_BACKUP:-false}
+    volumes:
+      - ops:/var/lib/ledgerline/ops
     ports:
       - "${LEDGERLINE_BIND:-127.0.0.1:8000}:8000"
 
@@ -72,7 +75,7 @@ services:
         condition: service_completed_successfully
     command: ["ledgerline", "worker"]
     healthcheck:
-      test: ["CMD", "python", "-c", "import os, sys, time; sys.exit(time.time() - os.path.getmtime('/tmp/ledgerline-worker.heartbeat') > 60)"]
+      test: ["CMD", "python", "-c", "import os, sys, time; sys.exit(time.time() - os.path.getmtime('/var/lib/ledgerline/ops/worker.heartbeat') > 60)"]
       interval: 30s
       timeout: 5s
       start_period: 30s
@@ -101,13 +104,20 @@ services:
       LEDGERLINE_EXTRACTION_MODEL: ${LEDGERLINE_EXTRACTION_MODEL:-claude-opus-5-5}
       LEDGERLINE_EXTRACTION_MONTHLY_LIMIT: ${LEDGERLINE_EXTRACTION_MONTHLY_LIMIT:-200}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LEDGERLINE_HEALTHCHECK_PING_URL: ${LEDGERLINE_HEALTHCHECK_PING_URL:-}
+      LEDGERLINE_HEALTHCHECK_PING_SECONDS: ${LEDGERLINE_HEALTHCHECK_PING_SECONDS:-300}
+    volumes:
+      - ops:/var/lib/ledgerline/ops
 
+  # Nightly pg_dump (local tier) + encrypted off-site copy with restic. See docs/OPERATIONS.md.
   backup:
-    image: postgres:16-alpine
+    build: ./ops/backup
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       PGHOST: db
       PGUSER: ledgerline
@@ -115,18 +125,17 @@ services:
       PGDATABASE: ledgerline
       BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-30}
       BACKUP_HOUR_UTC: ${BACKUP_HOUR_UTC:-2}
+      BACKUP_CHECK_WEEKDAY: ${BACKUP_CHECK_WEEKDAY:-7}
+      BACKUP_HEALTHCHECK_PING_URL: ${BACKUP_HEALTHCHECK_PING_URL:-}
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:-}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-}
     volumes:
       - ./backups:/backups
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        while true; do
-          wait=$$(( ($${BACKUP_HOUR_UTC} * 3600 - $$(date -u +%s) % 86400 + 86400) % 86400 ))
-          sleep $$wait
-          f=/backups/ledgerline-$$(date -u +%Y%m%dT%H%M%SZ).dump
-          if pg_dump -Fc -f "$$f.tmp"; then mv "$$f.tmp" "$$f"; echo "backup written: $$f"; else rm -f "$$f.tmp"; echo "backup FAILED"; fi
-          find /backups -name 'ledgerline-*.dump' -mtime +$${BACKUP_KEEP_DAYS} -delete
-        done
+      - ops:/ops
 
 volumes:
   pgdata:
+  ops:
