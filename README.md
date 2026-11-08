@@ -46,6 +46,7 @@ require the server to be reachable over HTTPS.
 
 Deployment on a VPS with HTTPS: [docs/DEPLOY.md](docs/DEPLOY.md).
 Backups and restore drill: [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md).
+Running a hosted pilot (monitoring, updates, incidents): [docs/OPERATIONS.md](docs/OPERATIONS.md); server setup in [deploy/hetzner](deploy/hetzner/README.md).
 Security notes: [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Development

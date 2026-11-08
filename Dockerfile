@@ -20,7 +20,8 @@ COPY --chown=ledgerline:ledgerline alembic.ini ./
 COPY --chown=ledgerline:ledgerline migrations ./migrations
 COPY --chown=ledgerline:ledgerline docs ./docs
 COPY --chown=ledgerline:ledgerline scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod 0755 /usr/local/bin/entrypoint.sh
+RUN chmod 0755 /usr/local/bin/entrypoint.sh \
+ && mkdir -p /var/lib/ledgerline/ops && chown ledgerline:ledgerline /var/lib/ledgerline/ops
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 USER ledgerline
 EXPOSE 8000

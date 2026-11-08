@@ -56,6 +56,7 @@ ignore = ["S101", "B008"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S105", "S106", "S311"]
 "tests/tenancy/**" = ["S608"]
+"tests/ops/**" = ["S603", "S607"]
 "migrations/**" = ["E501", "S608"]
 "src/ledgerline/vat/sources.py" = ["E501"]
 

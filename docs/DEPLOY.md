@@ -1,6 +1,6 @@
 # Deploying Ledgerline
 
-Ledgerline runs as the app, the background worker, PostgreSQL 16 and a nightly backup job, plus a one-shot `migrate` container that runs migrations at every start and exits. Everything is free software; no paid service is needed.
+Ledgerline runs as the app, the background worker, PostgreSQL 16 and a nightly backup job (local dump plus an encrypted off-site copy), plus a one-shot `migrate` container that runs migrations at every start and exits. Everything is free software; no paid service is needed.
 
 ## Local, one command
 
@@ -46,7 +46,7 @@ On every `docker compose up` the `migrate` service runs `ledgerline migrate` and
 
 Without compose: set `LEDGERLINE_MIGRATION_DATABASE_URL` to the owner and `LEDGERLINE_DATABASE_URL` to `ledgerline_app`, run `ledgerline migrate` then `ledgerline ensure-app-role` (with `LEDGERLINE_APP_DB_PASSWORD`) as the owner. If `LEDGERLINE_MIGRATION_DATABASE_URL` is unset, migrations use `LEDGERLINE_DATABASE_URL`, which only makes sense for local development where a single superuser does everything (the isolation tests then do not apply to that setup).
 
-The owner role must be a superuser or hold `BYPASSRLS`; the migration refuses to run otherwise. The backup (`pg_dump`) and the two `SECURITY DEFINER` lookup functions (inbox address routing, phone tokens) read tables that have forced policies.
+The owner role must be a superuser or hold `BYPASSRLS`; the migration refuses to run otherwise. The backup (`pg_dump` and the per-table row counts of the manifest) and the two `SECURITY DEFINER` lookup functions (inbox address routing, phone tokens) read tables that have forced policies.
 
 ## A VPS with HTTPS (Caddy)
 
@@ -68,21 +68,24 @@ books.example.com {
 
 The body limit stops oversized uploads at the proxy, before the app reads them. Caddy obtains and renews a Let's Encrypt certificate by itself. The app starts uvicorn with `--proxy-headers`, so the original scheme and client address are taken from the proxy. Open only ports 80 and 443 in the firewall (plus SSH).
 
+## A Hetzner Cloud server, scripted
+
+`deploy/hetzner/` holds a provisioning script (firewall, SSH key, server through the `hcloud` CLI), a cloud-init file that installs Docker, Caddy, fail2ban and unattended upgrades and starts the stack, and `update.sh`. Start with deploy/hetzner/README.md; the day-to-day runbook is OPERATIONS.md. The Caddyfile above is `deploy/hetzner/Caddyfile.template`.
+
 ## Updating
 
 ```sh
-git pull
-docker compose up -d --build
+deploy/hetzner/update.sh v1.2.0
 ```
 
-Take a backup first (`scripts/backup.sh`). Migrations are applied on start. Upgrading an existing single-owner installation to multi-tenancy needs one new variable, `LEDGERLINE_APP_DB_PASSWORD`, in `.env`; the migration moves all data into tenant 1 and gives every existing user a membership there with their old role.
+It backs up, deploys, waits for `/healthz` and rolls back to the previous commit and images when the new version does not become healthy (see OPERATIONS.md for its limits). The manual form is `git pull && docker compose up -d --build` after a backup (`scripts/backup.sh`). Migrations are applied on start. Upgrading an existing single-owner installation to multi-tenancy needs one new variable, `LEDGERLINE_APP_DB_PASSWORD`, in `.env`; the migration moves all data into tenant 1 and gives every existing user a membership there with their old role.
 
 ## Operations notes
 
 - Logs: `docker compose logs -f app`.
-- Health: `GET /healthz` (also the container HEALTHCHECK).
+- Health: `GET /healthz` (also the container HEALTHCHECK) and `GET /healthz/deep` for an external monitor (database, worker heartbeat, last backup, free disk; 503 when any fails; rate limited).
 - Data lives in the `pgdata` volume. Attachments are stored in the database, so one dump contains everything.
-- Backups: see BACKUP_RESTORE.md. They are taken as the owner role and contain every tenant.
+- Backups: see BACKUP_RESTORE.md and OPERATIONS.md. They are taken as the owner role and contain every tenant.
 - Background work: the worker visits every tenant on each pass, one transaction per tenant.
-- Backups: see BACKUP_RESTORE.md. A backup stored on the same machine is not a disaster backup; copy `./backups` off the host.
+- A backup stored on the same machine is not a disaster backup: set the `RESTIC_*` variables so the backup service also writes an encrypted copy to S3-compatible storage, and keep `RESTIC_PASSWORD` outside the server.
 - Hosting provider: if a third party hosts the server, a data processing agreement is needed (see COMPLIANCE_NL.md).
