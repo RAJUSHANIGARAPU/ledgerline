@@ -45,6 +45,38 @@ def create_tenant(args: argparse.Namespace) -> int:
     return 0
 
 
+def delete_tenant(args: argparse.Namespace) -> int:
+    from sqlalchemy.orm import Session
+
+    from ledgerline.platform import offboarding
+
+    engine = create_engine(get_settings().owner_database_url)
+    try:
+        with engine.connect() as conn:
+            name = offboarding.tenant_name(conn, args.tenant)
+        if name is None:
+            print(f"error: tenant {args.tenant} does not exist", file=sys.stderr)
+            return 1
+        if args.confirm != name:
+            print(f"error: --confirm must be the tenant's exact name: {name!r}", file=sys.stderr)
+            return 1
+        with Session(engine) as session:
+            exports = offboarding.export_tenant(args.tenant, Path(args.export_dir), session)
+        with engine.begin() as conn:
+            report = offboarding.delete_tenant(conn, args.tenant)
+    except offboarding.OffboardingError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        engine.dispose()
+    for path in exports:
+        print(f"exported {path}")
+    total = sum(report.deleted_rows.values())
+    print(f"Deleted tenant {args.tenant} ({name}): {total} rows, {report.deleted_users} logins.")
+    print("Backups still hold this data until their retention ends; see docs/OPERATIONS.md.")
+    return 0
+
+
 def create_user(args: argparse.Namespace) -> int:
     email = args.email.strip().lower()
     try:
@@ -250,6 +282,12 @@ def build_parser() -> argparse.ArgumentParser:
     tenant = sub.add_parser("create-tenant", help="create a tenant (a customer account)")
     tenant.add_argument("--name", required=True)
     tenant.set_defaults(func=create_tenant)
+
+    drop = sub.add_parser("delete-tenant", help="export, then delete a tenant and all its data")
+    drop.add_argument("--tenant", type=int, required=True)
+    drop.add_argument("--confirm", required=True, help="the tenant's exact name")
+    drop.add_argument("--export-dir", required=True, help="where the export ZIPs are written")
+    drop.set_defaults(func=delete_tenant)
 
     roles = [r.value for r in Role]
     user = sub.add_parser("create-user", help="create a user with a membership in a tenant")

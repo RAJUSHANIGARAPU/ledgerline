@@ -82,6 +82,11 @@ scripts/restore.sh backups/restore/work/current/ledgerline.dump
 
 The first command writes the dump and its manifest under `./backups/restore/`; the second restores it as for the local tier. Start the stack (`docker compose up -d`) so the migrations and the app role are set up, and delete `./backups/restore` afterwards.
 
+**After every restore, re-apply offboarding.** A backup taken before a client left still holds that
+client's tenant. Run `ledgerline delete-tenant` again (in the `migrate` service, see
+`docs/pilot/ONBOARDING_RUNBOOK.md`, Offboarding) for every tenant in your offboarding log before
+anyone signs in.
+
 ## Restore drill (monthly)
 
 ```sh

@@ -18,7 +18,7 @@ Steps that depend on features still being merged carry a marker (`<!-- verify af
     --legal-form eenmanszaak --tenant <tenant id>
   ```
 
-  The id is printed by `create-tenant`. Tenant and administration deletion are not built (see ONBOARDING_RUNBOOK.md, "Offboarding"), so the tenant stays on the server afterwards. Name it clearly and leave it alone; do not reuse it for a later run, because the VAT figures in TC-13 assume an empty administration.
+  The id is printed by `create-tenant`. After the run, remove it with `delete-tenant` (see ONBOARDING_RUNBOOK.md, "Offboarding"); never reuse it for a later run, because the VAT figures in TC-13 assume an empty administration.
 - Use the production URL, over HTTPS, in a normal browser profile. `https://ledger.example.com` below stands for your `LEDGERLINE_PUBLIC_BASE_URL`.
 - All data is fictional. Test IBANs are the standard documentation examples.
 - Dates: the VAT test data is written for the fourth quarter of 2026 (1 October to 31 December 2026). Running in another quarter is fine: move every date into one quarter of your choice and the figures stay identical. Do not use a quarter that already has a period lock.
