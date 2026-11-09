@@ -90,7 +90,8 @@ expects a freshly seeded database. CI runs all three layers.
   inline scripts or styles, no external hosts, only functional cookies.
 - **One database holds everything**, attachments included, so one `pg_dump` is a full backup.
 
-Architecture decisions are recorded in [docs/adr](docs/adr).
+How the system fits together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (deployment, tenant
+isolation, document intake, backups). Architecture decisions are recorded in [docs/adr](docs/adr).
 
 ## Running a pilot
 
