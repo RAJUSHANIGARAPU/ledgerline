@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Preview open invoices{% endblock %}
+{% block heading %}Preview: {{ filename }}{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="/setup/opening-items">Back to the step</a>{% endblock %}
+{% block content %}
+<div class="grid grid-4">
+  {{ ui.stat("Start date", start|nldate) }}
+  {{ ui.stat("To create", creates, total_open|eur ~ " open", "good") }}
+  {{ ui.stat("Already imported", skips) }}
+  {{ ui.stat("Rows with errors", errors, "fix these first" if errors else None, "bad" if errors else None) }}
+</div>
+{% for w in warnings %}<div class="flash flash-info" role="status">{{ w }}</div>{% endfor %}
+<div class="card"><div class="table-wrap"><table class="table table-compact" data-testid="import-preview">
+  <thead><tr><th class="num">Row</th><th>Type</th><th>Number</th><th>Contact</th><th>Date</th><th>Due</th><th class="num">Total</th><th class="num">Open</th><th>Result</th><th>Notes</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr data-action="{{ r.action }}">
+      <td class="num">{{ r.row }}</td><td>{{ r.kind or '' }}</td><td>{{ r.number }}</td><td>{{ r.contact_name }}</td>
+      <td class="muted">{{ r.invoice_date|nldate if r.invoice_date else '' }}</td><td class="muted">{{ r.due_date|nldate if r.due_date else '' }}</td>
+      <td class="num">{{ r.total_cents|eur if r.total_cents else '' }}</td><td class="num">{{ r.open_cents|eur if r.open_cents else '' }}</td>
+      <td>{% if r.action == "create" %}<span class="badge badge-open">create</span>{% elif r.action == "skip" %}<span class="badge badge-ignored">skip</span>{% else %}<span class="badge badge-overdue">error</span>{% endif %}</td>
+      <td class="{{ 'amount-neg' if r.action == 'error' else 'muted' }}">{{ r.reason }}{% if r.warnings %}{% if r.reason %}; {% endif %}{{ r.warnings|join("; ") }}{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+{% if errors %}
+<p class="muted">Opening items are imported all together or not at all. Correct the rows with errors in your file and upload it again.</p>
+{% elif creates %}
+<form method="post" action="/setup/opening-items/confirm" class="form-actions">
+  {{ ui.csrf() }}
+  <input type="hidden" name="filename" value="{{ filename }}">
+  <input type="hidden" name="start_date" value="{{ start.isoformat() }}">
+  <textarea name="payload" hidden>{{ payload }}</textarea>
+  <button class="btn btn-primary" type="submit" data-testid="import-confirm" data-confirm="Post {{ creates }} opening item{{ '' if creates == 1 else 's' }} dated {{ start.isoformat() }}? Posted entries can only be reversed.">Post {{ creates }} opening item{{ "" if creates == 1 else "s" }}</button>
+</form>
+{% else %}
+<p class="muted">Nothing to create.</p>
+{% endif %}
+{% endblock %}

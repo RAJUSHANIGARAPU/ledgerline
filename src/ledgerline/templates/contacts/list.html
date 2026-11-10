@@ -2,7 +2,7 @@
 {% import "components/macros.html" as ui with context %}
 {% block title %}Contacts{% endblock %}
 {% block heading %}Contacts{% endblock %}
-{% block actions %}<a class="btn btn-primary" href="/contacts/new">New contact</a>{% endblock %}
+{% block actions %}{% if can_write %}<a class="btn btn-secondary" href="/contacts/import">Import CSV</a>{% endif %}<a class="btn btn-primary" href="/contacts/new">New contact</a>{% endblock %}
 {% block content %}
 <form class="toolbar" method="get" action="/contacts">
   <input class="input" type="search" name="q" value="{{ q }}" placeholder="Search name, email, city, VAT number" aria-label="Search contacts">

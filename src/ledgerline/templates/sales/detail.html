@@ -3,8 +3,10 @@
 {% block title %}{{ invoice.number }}{% endblock %}
 {% block heading %}{{ 'Credit note' if invoice.credit_note_of_id else 'Invoice' }} {{ invoice.number }} {{ ui.badge(display_status) }}{% endblock %}
 {% block actions %}
+  {% if not invoice.is_opening %}
   <a class="btn btn-secondary" href="/sales/{{ invoice.id }}/pdf">PDF</a>
   <a class="btn btn-secondary" href="/sales/{{ invoice.id }}/ubl">UBL (Peppol)</a>
+  {% endif %}
   {% if can_credit %}
   <form method="post" action="/sales/{{ invoice.id }}/credit">{{ ui.csrf() }}
     <button class="btn btn-danger" type="submit" data-confirm="Issue a credit note for the full amount? The invoice will be cancelled.">Credit note</button>
@@ -12,6 +14,7 @@
   {% endif %}
 {% endblock %}
 {% block content %}
+{% if invoice.is_opening %}<div class="flash flash-info" role="status" data-testid="opening-note">Opening item from the previous system. It is open on the start date and can be paid by a bank transaction; its revenue and VAT were already reported there, so it is not part of this period's VAT return, ICP or profit and loss.</div>{% endif %}
 <div class="grid grid-3">
   {{ ui.stat("Total", invoice.total_incl_cents|eur, "excl. " ~ (invoice.total_excl_cents|eur)) }}
   {{ ui.stat("Paid", invoice.paid_cents|eur) }}
@@ -31,7 +34,7 @@
     </dl>
   </div>
 </div>
-<div class="card">
+{% if not invoice.is_opening %}<div class="card">
   <div class="table-wrap">
     <table class="table">
       <thead><tr><th>Description</th><th class="num">Qty</th><th class="num">Unit price</th><th>Account</th><th>VAT</th><th class="num">Amount</th></tr></thead>
@@ -52,6 +55,6 @@
       </tbody>
     </table>
   </div>
-</div>
-{% if invoice.notes %}<p class="muted">{{ invoice.notes }}</p>{% endif %}
+</div>{% endif %}
+{% if invoice.notes and not invoice.is_opening %}<p class="muted">{{ invoice.notes }}</p>{% endif %}
 {% endblock %}

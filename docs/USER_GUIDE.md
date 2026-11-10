@@ -6,7 +6,7 @@ This guide is for a Dutch sole trader (eenmanszaak, ZZP) who keeps their own boo
 
 1. Install it: see the README (quick start) and `DEPLOY.md` in the docs folder. Both explain the one-command Docker setup and how to create the first owner.
 2. Sign in at `/login` with the owner email and password. Use at least 12 characters for the password; you can change it under [Settings](/settings).
-3. Open the [setup wizard](/setup). It has seven short steps. Every step can be skipped and picked up later: progress is read from your data, so a step shows "done" once the data exists.
+3. Open the [setup wizard](/setup). It has eight short steps. Every step can be skipped and picked up later: progress is read from your data, so a step shows "done" once the data exists.
 
 | Step | What you do |
 |---|---|
@@ -14,13 +14,25 @@ This guide is for a Dutch sole trader (eenmanszaak, ZZP) who keeps their own boo
 | 2. VAT situation | Regular VAT or the small business scheme (KOR) |
 | 3. Bank account | Register your business account |
 | 4. Opening balances | Optional: the bank balance on your start date |
-| 5. First customer and invoice | Shortcuts to add a customer and create an invoice |
-| 6. Inbox and phone | Where supplier invoices come in |
-| 7. Accountant review | Reminder to have the first quarter reviewed, and the exports |
+| 5. Open invoices | Optional: unpaid sales and purchase invoices on your start date, when you move from another system |
+| 6. First customer and invoice | Shortcuts to add a customer and create an invoice |
+| 7. Inbox and phone | Where supplier invoices come in |
+| 8. Accountant review | Reminder to have the first quarter reviewed, and the exports |
 
 The VAT choice matters: with the KOR (turnover at most EUR 20,000 per calendar year) you do not charge VAT and cannot deduct input VAT. You register for the KOR with the Belastingdienst yourself; the setting only tells Ledgerline how to book. Details: [belastingdienst.nl/kleineondernemersregeling](https://www.belastingdienst.nl/kleineondernemersregeling). Ledgerline does not watch the turnover limit.
 
 Opening balances: if you start mid-year, enter the balance of each bank account on your start date. Ledgerline posts one journal entry (bank against owner's equity). A second one is refused until you reverse the first (see [Troubleshooting](#troubleshooting-and-faq)).
+
+## Moving in from another system
+
+If you already have a business, pick a start date (usually the first day of a quarter) and bring three things over: your contacts, your unpaid invoices and your bank balance. Everything before the start date stays in the old system and in the VAT returns you filed from it.
+
+1. **Contacts.** On [Contacts](/contacts) choose Import CSV. Download the template (separator ; for Dutch Excel, or ,), fill it in or export from your old system, upload it and read the preview. Each row says create, skip or error. A row is skipped as a duplicate when its VAT number or KvK number is already known, or its name and postcode are. Rows with errors are not imported: correct them in your file and upload again. UTF-8 files with or without a BOM work; amounts and dates are not needed here.
+2. **Bank balance.** Step 4 of the [setup wizard](/setup), dated on your start date.
+3. **Open invoices.** Step 5 of the wizard. Add them one by one or import a CSV: type (sales or purchase), your original invoice number or the supplier's reference, the contact, invoice date, due date, total including VAT and the amount still open. Amounts like 1.234,56 are fine and dates are yyyy-mm-dd or dd-mm-yyyy. The contacts must exist first. The whole file is imported or none of it.
+4. **Check.** The step shows "Assets = Liabilities + Equity" on the start date. Compare the receivables and payables it lists with your old system.
+
+What an open invoice does: you see it in the aging reports, and a bank payment that mentions its number is suggested for matching like any open invoice. What it does not do: it is not revenue, a cost or VAT in Ledgerline, so it is not on your VAT return, the ICP overview or your profit and loss; you reported it in the old system. Opening items cannot be edited, credited or downloaded as a PDF; remove one (this reverses its entry) and add it again if it was entered wrongly. Command line: `ledgerline import-contacts --file contacts.csv` and `ledgerline import-opening-items --file open.csv --start-date 2026-10-01` preview first and only save with `--apply`.
 
 ## Daily and weekly routine
 
