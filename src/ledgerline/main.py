@@ -9,7 +9,8 @@ from starlette.middleware.sessions import SessionMiddleware
 from ledgerline.config import get_settings
 from ledgerline.web import LoginRequired, TenantRequired, TwoFactorRequired
 
-# Each module exposes `router`. Order sets nothing but readability.
+# Each module exposes `router`. Order matters only where a fixed path must beat a `{id}` route
+# (imports before platform).
 MODULES = [
     "ledgerline.auth",
     "ledgerline.accounts.routes",
@@ -18,6 +19,7 @@ MODULES = [
     "ledgerline.invoicing.routes",
     "ledgerline.banking.routes",
     "ledgerline.vat.routes",
+    "ledgerline.imports.routes",
     "ledgerline.platform.routes",
     "ledgerline.inbox.routes",
     "ledgerline.mobile.routes",

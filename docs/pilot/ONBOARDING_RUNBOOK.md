@@ -54,6 +54,31 @@ Check: sign in as the owner in a private window. You should land on the dashboar
 2. Check one issued sample invoice against the invoice requirements (see the user guide, "What the invoice must contain").
 3. Create the accountant user with role Accountant if the client's bookkeeper wants read access.
 
+## 3a. Moving a client in (they already have a business)
+
+Use this when the client starts on a date in the middle of their business life, ideally the first day of a quarter, and has contacts, unpaid invoices and a bank balance in an existing system. Samples: [contacts](../samples/contacts-import.csv), [Excel NL, comma and BOM](../samples/contacts-import-excel-nl.csv), [open invoices](../samples/opening-items.csv). Design and trade-offs: [ADR 0002](../adr/0002-opening-balances.md).
+
+Prepare with the client before the session:
+
+1. Agree the **start date** (the evening of the day before is the balance date). Everything before it stays in the old system and its filed VAT returns; everything from it is Ledgerline's.
+2. Get three exports from the old system as at the day before the start date: contacts, the open debtors list (unpaid sales invoices with the original number, date, due date, total incl. VAT and the amount still open) and the open creditors list, plus the bank balance per account.
+3. Save each as CSV from Excel ("CSV UTF-8" or Dutch "CSV (gescheiden door lijstscheidingsteken)"; separator ; or , both work). Use the template downloads on the import pages for the exact columns.
+
+Then, in this order, as owner or bookkeeper:
+
+1. **Contacts.** Contacts, Import CSV (or `ledgerline import-contacts --file contacts.csv`, which previews and only saves with `--apply`). Read the preview: rows with errors are fixed in the file and uploaded again (already imported rows are skipped as duplicates, so re-uploading is safe), duplicates are matched on VAT number, KvK number, or name plus postcode. Customers without address or city can be imported, but no invoice can be issued to them until both are filled in.
+2. **Bank accounts and opening balances.** Setup steps 3 and 4. Use the start date as the date.
+3. **Open invoices.** Setup step 5. Enter the start date once (it is then fixed for everything), upload the open debtors and creditors, read the preview, confirm. Items are imported all together or not at all. A partly paid invoice has an open amount lower than its total.
+4. **Check.** The step shows "Assets = Liabilities + Equity on <start date>" and the carried-over receivables and payables. Compare them with the old system's debtor and creditor totals on that date; they must agree to the cent. The difference between receivables and payables sits on equity account 0580 ("Opening balance, open items"); ask the accountant whether it stays there or is moved to the owner's equity.
+5. **Look at what the items do and do not do.** Reports, Aging shows them under their due dates; the VAT return, the ICP overview and the profit and loss for the first quarter show none of them (their revenue and VAT were reported in the old system). Check this once with the client on the first quarter's VAT page.
+6. **First bank file.** Import the bank statement from the start date. Payments of the old invoices are suggested by invoice number and amount like any other open invoice; match them.
+
+Things to tell the client:
+
+- Opening items cannot be edited or credited in Ledgerline. A mistake before anything is matched is fixed with Remove (it reverses the entry), then add it again with a corrected number. After a payment is matched, undo the match first.
+- Use an invoice prefix the old system did not use (Setup step 1), so a new number never equals an imported one.
+- A credit note for an old invoice is a manual correction or stays in the old system.
+
 ## 4. Inbox address and phone
 
 1. Hand over the private inbox address from the Inbox page (`mailbox+<token>@domain`). Tell the client it is private, how to forward supplier invoices to it, and that the owner can replace it under Settings, Inbox email address, Create a new address (which disables the old one).

@@ -4,6 +4,7 @@
 {% block heading %}{{ invoice.contact.name }} · {{ invoice.supplier_reference }} {{ ui.badge(display_status) }}{% endblock %}
 {% block actions %}{% if attachment %}<a class="btn btn-secondary" href="/purchases/{{ invoice.id }}/attachment">Download attachment</a>{% endif %}{% endblock %}
 {% block content %}
+{% if invoice.is_opening %}<div class="flash flash-info" role="status" data-testid="opening-note">Opening item from the previous system. It is open on the start date and can be paid by a bank transaction; its expense and VAT were already reported there, so it is not part of this period's VAT return or profit and loss.</div>{% endif %}
 <div class="grid grid-3">
   {{ ui.stat("Payable", invoice.total_incl_cents|eur, "excl. " ~ (invoice.total_excl_cents|eur)) }}
   {{ ui.stat("Paid", invoice.paid_cents|eur) }}
@@ -20,7 +21,7 @@
     </dl>
   </div>
 </div>
-<div class="card">
+{% if not invoice.is_opening %}<div class="card">
   <div class="table-wrap">
     <table class="table">
       <thead><tr><th>Description</th><th>Account</th><th>VAT code</th><th class="num">Excl.</th><th class="num">VAT</th></tr></thead>
@@ -38,6 +39,6 @@
       </tbody>
     </table>
   </div>
-</div>
+</div>{% endif %}
 {% if reverse %}<p class="fine-print">Reverse-charge VAT is self-assessed: it is deducted and owed in the same return and is not part of the amount payable to the supplier.</p>{% endif %}
 {% endblock %}

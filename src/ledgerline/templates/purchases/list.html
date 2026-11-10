@@ -17,7 +17,7 @@
       {% for inv, shown in rows %}
         <tr>
           <td><a href="/purchases/{{ inv.id }}">{{ inv.contact.name }}</a></td>
-          <td>{{ inv.supplier_reference }}</td>
+          <td>{{ inv.supplier_reference }}{% if inv.is_opening %} <span class="pill">opening</span>{% endif %}</td>
           <td>{{ inv.invoice_date|nldate }}</td>
           <td>{{ inv.due_date|nldate }}</td>
           <td class="num">{{ inv.total_incl_cents|eur }}</td>

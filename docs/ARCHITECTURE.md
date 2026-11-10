@@ -157,5 +157,6 @@ A restore brings back tenants that were deleted after the backup was taken: re-r
 | `ledgerline.accounts` | Invitations, password reset, two-factor login |
 | `ledgerline.platform` | Contacts, settings, GDPR export and anonymisation, legal pages, tenant offboarding |
 | `ledgerline.onboarding` | Setup wizard, in-app user guide |
+| `ledgerline.imports` | CSV import of contacts and opening items (open invoices on the start date), CLI `import-contacts` and `import-opening-items` |
 | `ledgerline.ops` | Deep health check |
 | `ledgerline.db`, `web`, `auth` | Tenant context per transaction, request dependencies, sign-in |

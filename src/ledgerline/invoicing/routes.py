@@ -257,7 +257,7 @@ def sales_detail(invoice_id: int, request: Request, session: SessionDep, user: U
         "remaining": invoice.total_incl_cents - invoice.paid_cents,
         "vat_summary": vat_summary(invoice), "accounts": accounts,
         "can_credit": invoice.status in (InvoiceStatus.OPEN, InvoiceStatus.PAID)
-        and not invoice.credit_note_of_id,
+        and not invoice.credit_note_of_id and not invoice.is_opening,
     })
 
 
@@ -327,6 +327,8 @@ def _issued_or_409(session: Session, admin_id: int, invoice_id: int) -> SalesInv
     invoice = _sales_or_404(session, admin_id, invoice_id)
     if not invoice.number:
         raise HTTPException(409, "issue the invoice first")
+    if invoice.is_opening:
+        raise HTTPException(409, "an opening item has no invoice document here")
     return invoice
 
 
