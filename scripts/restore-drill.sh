@@ -159,10 +159,14 @@ check_http() {
   quiet dc run --rm --no-deps --entrypoint sh app -c \
     "printf 'epoch=%s\noffsite=1\n' \"\$(date -u +%s)\" > /var/lib/ledgerline/ops/last_backup_ok" \
     || { verdict FAIL healthz-deep "could not write the backup marker"; return; }
-  quiet dc up -d worker || { verdict FAIL healthz-deep "worker did not start"; return; }
+  quiet dc up -d --no-recreate worker || { verdict FAIL healthz-deep "worker did not start"; return; }
+  # The app publishes on a random port; read it again in case starting the worker restarted it.
+  addr="$(dc port app 8000)" || { verdict FAIL healthz-deep "app port not published"; return; }
   tries=0; code=000
   while [ "$tries" -lt 30 ]; do
-    code="$(curl -sS -m 10 -o "$TMP/deep.json" -w '%{http_code}' "http://$addr/healthz/deep" 2>/dev/null || echo 000)"
+    code="$(curl -sS -m 10 -o "$TMP/deep.json" -w '%{http_code}' "http://$addr/healthz/deep" 2>/dev/null)" || true
+    [ -n "$code" ] || code=000
+    new_addr="$(dc port app 8000 2>/dev/null)" && [ -n "$new_addr" ] && addr="$new_addr"
     [ "$code" = "200" ] && break
     tries=$((tries + 1)); sleep 2
   done
