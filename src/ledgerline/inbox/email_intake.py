@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from ledgerline.config import Settings, get_settings
 from ledgerline.db import set_tenant
-from ledgerline.inbox import service
+from ledgerline.inbox import forwarding, service
 from ledgerline.models import Administration, Tenant
 
 log = logging.getLogger(__name__)
@@ -144,10 +144,8 @@ def _default_administration(session: Session, settings: Settings) -> int | None:
     return default if session.get(Administration, default) is not None else None
 
 
-def route_administration(
-    session: Session, message: EmailMessage, settings: Settings
-) -> int | None:
-    """The administration a mail belongs to; the session is moved into that tenant."""
+def route_by_token(session: Session, message: EmailMessage, settings: Settings) -> int | None:
+    """The administration for an exact inbox token only; no single-tenant default."""
     base = settings.imap_user.split("@")[0].lower() if "@" in settings.imap_user else None
     headers = [message.get_all(h, []) for h in ("To", "Delivered-To", "X-Original-To", "Cc")]
     for _, address in getaddresses([str(v) for group in headers for v in group]):
@@ -157,7 +155,32 @@ def route_administration(
             if routed is not None:
                 set_tenant(session, routed[1])
                 return routed[0]
-    return _default_administration(session, settings)
+    return None
+
+
+def route_administration(
+    session: Session, message: EmailMessage, settings: Settings
+) -> int | None:
+    """The administration a mail belongs to; the session is moved into that tenant."""
+    routed = route_by_token(session, message, settings)
+    return routed if routed is not None else _default_administration(session, settings)
+
+
+def _forwarding_confirmation(
+    session: Session, message: EmailMessage, sender: str, settings: Settings
+) -> bool:
+    """Handle a Gmail forwarding-confirmation mail sent to a valid inbox address."""
+    if sender != forwarding.GMAIL_SENDER:
+        return False
+    admin_id = route_by_token(session, message, settings)
+    if admin_id is None:
+        return False
+    link = forwarding.confirmation_link(message)
+    if link is None:
+        log.warning("forwarding confirmation without a usable link; nothing shown")
+    elif forwarding.record_gmail_confirmation(session, admin_id, link):
+        log.info("forwarding confirmation shown to the owners")
+    return True
 
 
 def _attachments(message: EmailMessage):
@@ -191,6 +214,8 @@ def process_message(
 ) -> str:
     """Store the attachments. Returns 'processed', 'rejected' or 'skipped' (leave in place)."""
     sender = parseaddr(str(message.get("From", "")))[1].lower()
+    if _forwarding_confirmation(session, message, sender, settings):
+        return "processed"
     if not sender_allowed(sender, settings.imap_allowed_senders):
         log.info("mail from a sender outside the allow-list was set aside")
         return "rejected"

@@ -85,6 +85,27 @@ Or enter it by hand: [New purchase invoice](/purchases/new). Fill in the supplie
 
 Always check the amounts and the VAT code before booking. Reverse-charge codes (for example IEU21 for EU purchases) post both the VAT you owe and the VAT you deduct. Keep the original documents: records must be kept 7 years (10 for real estate). Ledgerline stores the attachment in its database, so it is part of every backup.
 
+## Forward invoices from Gmail / Outlook automatically
+
+Ledgerline never connects to your mailbox. Instead your mailbox forwards the invoice mails to your administration's private address, shown on the [Inbox](/inbox) page (`mailbox+<token>@domain`). Keep the address private. Only mail with attachments (PDF, JPEG, PNG, UBL XML) creates documents, and nothing is booked without your review. Only new mail is forwarded, not mail already in the mailbox.
+
+### Gmail
+
+1. Gmail, Settings, **Forwarding and POP/IMAP**, add your Ledgerline address as a forwarding address. Gmail sends it a verification link ([Google: forward Gmail messages](https://support.google.com/mail/answer/10957)).
+2. That mail arrives in Ledgerline. The owner sees the link as a notice at the top of the Inbox page, for 7 days or until dismissed. Open it while signed in to Gmail, then refresh Gmail's forwarding settings. Ledgerline never opens the link itself and shows only links on google.com.
+3. Turn off "Forward a copy of incoming mail" if it was switched on: by default Gmail forwards all mail to a new address. Then create a filter instead ([Google: create filters](https://support.google.com/mail/answer/6579)): in the search options use a query like
+
+   `has:attachment filename:pdf (factuur OR invoice OR rekening)`
+
+   and add your suppliers with `from:` (for example `{from:leverancier.example from:energie.example}`, which matches either). Operators are described in [Google: search operators](https://support.google.com/mail/answer/7190). Click **Create filter**, choose **Forward it to** and select the Ledgerline address.
+4. Test the query in the Gmail search bar first. If an invoice is missed, add its sender to the `from:` list.
+
+### Outlook
+
+1. Outlook on the web: Settings, Mail, Rules, Add rule. Choose the conditions you need, and the action **Forward to** with your Ledgerline address ([Microsoft: use rules to automatically forward messages](https://support.microsoft.com/office/45aa9664-4911-4f96-9663-ece42816d746)). Use "Forward to", not "Forward as attachment": the invoice must arrive as an attachment of its own.
+2. Business Microsoft 365: an administrator can block automatic forwarding to external addresses. The rule then does not work and the sender gets a bounce ([Microsoft: control automatic external email forwarding](https://learn.microsoft.com/defender-office-365/outbound-spam-policies-external-email-forwarding)). Ask your IT administrator to allow it for this mailbox.
+3. Not verified: whether Outlook needs a separate confirmation step for the new address, and which sender such a mail would use. Ledgerline only shows the confirmation notice for Gmail.
+
 ## Bank
 
 - Add the account on [Bank](/bank) (name, IBAN). In your online banking look for "Download transactions" and choose CAMT.053 or MT940, then upload it with Import. Importing posts nothing to the ledger.

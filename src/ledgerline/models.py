@@ -493,6 +493,19 @@ class InboxDocument(TenantScoped, Base):
     reviewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
 
+class ForwardingNotice(TenantScoped, Base):
+    """A mail-forwarding confirmation link waiting for the owner. Holds the link, not the mail."""
+
+    __tablename__ = "forwarding_notices"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # gmail
+    link: Mapped[str] = mapped_column(String(600))
+    received_at: Mapped[datetime] = _now()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class ApiToken(TenantScoped, Base):
     """Upload-only token for the phone shortcut. Only the SHA-256 of the token is stored."""
 
