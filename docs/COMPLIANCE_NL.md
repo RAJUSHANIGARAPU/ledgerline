@@ -36,7 +36,7 @@ Ledgerline numbers invoices gap-free per administration and year, and the invoic
 
 ## Bank data
 
-CAMT.053 and MT940 files are imported by upload. There is no PSD2 bank connection: [secondary] that needs a licensed account information service provider.
+CAMT.053, MT940 and CSV files are imported by upload. There is no PSD2 bank connection: [secondary] that needs a licensed account information service provider.
 
 ## RGS (Referentie Grootboekschema)
 

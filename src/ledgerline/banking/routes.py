@@ -1,3 +1,5 @@
+import base64
+import binascii
 from datetime import date
 from typing import Annotated
 
@@ -6,7 +8,7 @@ from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import func, select
 
 from ledgerline import audit
-from ledgerline.banking import matching, service
+from ledgerline.banking import csv_import, matching, service
 from ledgerline.config import get_settings
 from ledgerline.ledger.service import LedgerError
 from ledgerline.models import (
@@ -19,7 +21,7 @@ from ledgerline.models import (
     PurchaseInvoice,
     TxStatus,
 )
-from ledgerline.money import MoneyError
+from ledgerline.money import MoneyError, to_cents
 from ledgerline.vat.codes import VAT_CODES, Direction
 from ledgerline.web import AdminDep, OwnerDep, SessionDep, UserDep, flash, render
 
@@ -110,6 +112,30 @@ def create_account(
     return _redirect()
 
 
+def _after_import(request: Request, account: BankAccount, result: service.ImportResult):
+    flash(
+        request,
+        f"Imported {result.created} new transactions ({result.skipped} already known).",
+    )
+    for warning in result.warnings:
+        flash(request, warning, "info")
+    return _redirect(f"/bank/reconcile?account_id={account.id}")
+
+
+def _map_page(request, account, filename: str, content: bytes, error: str | None = None,
+              chosen: dict | None = None):
+    table = csv_import.read_table(content)
+    return render(
+        request, "bank/csv_map.html",
+        {
+            "account": account, "filename": filename, "headers": table.headers,
+            "sample": table.rows[:5], "error": error,
+            "content_b64": base64.b64encode(content).decode(),
+            "chosen": chosen or csv_import.suggest_mapping(table.headers),
+        },
+    )
+
+
 @router.post("/accounts/{account_id}/import")
 def import_file(
     account_id: int,
@@ -122,21 +148,104 @@ def import_file(
     account = _account_or_404(session, admin, account_id)
     limit = get_settings().max_upload_bytes
     content = file.file.read(limit + 1)
+    filename = file.filename or "statement"
     try:
-        result = service.import_statement(
-            session, account, file.filename or "statement", content, user.id
-        )
+        result = service.import_statement(session, account, filename, content, user.id)
         session.commit()
+    except service.MappingNeeded:
+        session.rollback()
+        return _map_page(request, account, filename, content)
     except ERRORS as exc:
         session.rollback()
         flash(request, str(exc), "error")
         return _redirect()
-    flash(
-        request,
-        f"Imported {result.created} new transactions ({result.skipped} already known).",
+    return _after_import(request, account, result)
+
+
+@router.post("/accounts/{account_id}/import/csv")
+def import_csv_mapped(
+    account_id: int,
+    request: Request,
+    session: SessionDep,
+    user: OwnerDep,
+    admin: AdminDep,
+    filename: Annotated[str, Form()],
+    content_b64: Annotated[str, Form()],
+    date_column: Annotated[str, Form()],
+    amount_mode: Annotated[str, Form()] = "single",
+    amount: Annotated[str, Form()] = "",
+    direction: Annotated[str, Form()] = "",
+    debit: Annotated[str, Form()] = "",
+    credit: Annotated[str, Form()] = "",
+    counterparty: Annotated[str, Form()] = "",
+    iban: Annotated[str, Form()] = "",
+    description: Annotated[list[str] | None, Form()] = None,
+    date_format: Annotated[str, Form()] = "auto",
+    decimal: Annotated[str, Form()] = "auto",
+    remember: Annotated[str, Form()] = "",
+):
+    account = _account_or_404(session, admin, account_id)
+    try:
+        content = base64.b64decode(content_b64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(400, "invalid file data") from exc
+    if len(content) > get_settings().max_upload_bytes:
+        raise HTTPException(413, "the file is too large")
+    single = amount_mode == "single"
+    mapping = csv_import.CsvMapping(
+        date=date_column,
+        amount=amount or None if single else None,
+        direction=direction or None if single else None,
+        debit=debit or None if not single else None,
+        credit=credit or None if not single else None,
+        counterparty=counterparty or None,
+        iban=iban or None,
+        description=[c for c in description or [] if c],
+        date_format=date_format,
+        decimal=decimal,
     )
-    for warning in result.warnings:
-        flash(request, warning, "info")
+    try:
+        result = service.import_statement(
+            session, account, filename, content, user.id, mapping=mapping,
+            save_mapping=remember == "true",
+        )
+        session.commit()
+    except ERRORS as exc:
+        session.rollback()
+        return _map_page(request, account, filename, content, str(exc), mapping.to_json())
+    return _after_import(request, account, result)
+
+
+@router.post("/accounts/{account_id}/manual")
+def add_manual(
+    account_id: int,
+    request: Request,
+    session: SessionDep,
+    user: OwnerDep,
+    admin: AdminDep,
+    booking_date: Annotated[date, Form()],
+    amount: Annotated[str, Form()],
+    direction: Annotated[str, Form()],
+    reason: Annotated[str, Form()],
+    counterparty_name: Annotated[str, Form()] = "",
+    counterparty_iban: Annotated[str, Form()] = "",
+    description: Annotated[str, Form()] = "",
+):
+    account = _account_or_404(session, admin, account_id)
+    try:
+        cents = abs(to_cents(amount))
+        if direction not in ("in", "out"):
+            raise service.BankingError("choose money in or money out")
+        service.add_manual_transaction(
+            session, account, booking_date, cents if direction == "in" else -cents,
+            counterparty_name, counterparty_iban, description, reason, user.id,
+        )
+        session.commit()
+        flash(request, "Line added, marked as manually entered.")
+    except ERRORS as exc:
+        session.rollback()
+        flash(request, str(exc), "error")
+        return _redirect()
     return _redirect(f"/bank/reconcile?account_id={account.id}")
 
 

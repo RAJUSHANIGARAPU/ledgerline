@@ -122,10 +122,25 @@ For businesses that sell over a counter. Until the till's own data is connected,
 
 ## Bank
 
-- Add the account on [Bank](/bank) (name, IBAN). In your online banking look for "Download transactions" and choose CAMT.053 or MT940, then upload it with Import. Importing posts nothing to the ledger.
+- Add the account on [Bank](/bank) (name, IBAN). In your online banking look for "Download transactions" and choose CAMT.053 or MT940 if your bank offers them, then upload the file with Import. If it does not, a CSV works too. Importing posts nothing to the ledger.
 - Reconcile: for each transaction, Match selected pairs it with open invoices, "Accept all exact matches" takes every exact amount match in one go, "Book to an account" posts a cost or receipt with an optional VAT code, Ignore sets it aside.
 - Undo: on the Matched and Ignored tabs, Undo reverses the match (a reversing journal entry is posted) and puts the transaction back to Unmatched.
 - The same file twice is refused ("this file has already been imported").
+
+### CSV files
+
+- Rabobank: the standard 26-column CSV (header starts with "IBAN/BBAN", "Munt", "BIC", "Volgnr") is recognised and needs no setup. Layout source: Rabobank, "Formaatbeschrijving CSV (csv-extensie)", version 1.2, April 2022, <https://media.rabobank.com/m/4a7130f6f0042a57/original/pdf_formaatbeschrijving_csv-pdf.pdf> (read 2026-11-14). A file holding several accounts is imported for the account you chose; the other rows are left out and reported.
+- ING, ABN AMRO, bunq and Knab have no built-in layout, because none of them publishes the column layout of its CSV or TXT export on its own site (checked 2026-11-14; ING's layout only turned up on third-party mirrors, the others in forum posts and converters). Their files use the column mapper below.
+- Column mapper: when a CSV is not recognised, Ledgerline shows the first rows and asks which column is the date, the amount (one signed column, an amount with an Af/Bij or D/C column, or separate debit and credit columns), the counterparty, IBAN and description. Date format and decimal separator can stay on Detect. Tick "Remember this mapping" and the next file of that account imports without the step; if its headers change you are asked again.
+- Read as: separators ; , tab; UTF-8 (with or without BOM) or Windows-1252; amounts like 1.234,56, 1,234.56, -12,50, 12,50-, (12,50) and +99,00; dates like 2026-06-30, 30-06-2026, 30/06/2026, 30.06.2026 and 20260630 (day first when in doubt). An amount such as 1.234 or 1,234 with exactly three digits after one separator is refused as ambiguous: set the decimal separator in the mapper. Only EUR is supported. Any bad row stops the import and names its row number; nothing is half-imported.
+
+### Importing the same payments in two formats
+
+Say you import a CAMT.053 for June and later a CSV that also covers June. Different formats carry different references and wording, so file contents cannot be compared. Ledgerline instead treats a CSV or CAMT line as already stored when a line of another format (or a manual line) on the same bank account has the same amount, a booking or value date that agrees on both sides, and a counterparty IBAN that does not contradict (an unknown IBAN is not a contradiction). Each stored line is used up once, so two equal payments on one day need two stored lines. Lines left out are counted in the import message. Within one format, repeated payments are handled by the bank reference or, without one, by date, amount, IBAN and text. The rule can wrongly drop a genuinely new payment that has the same amount and date as a stored one from a counterparty with no IBAN in the file; check the "left out" count after mixing formats.
+
+### Lines entered by hand
+
+Use "Add a line by hand" under the bank account only when no file is available. Enter date, amount and direction, counterparty and a reason (for example "read from the banking app"). The line is labelled "Manually entered" in the reconciliation, also after matching, and the audit log records who entered it, when, and the reason. A later file containing the same payment does not add it again (see above). A manual line can be matched, booked, ignored or undone like any other.
 - A payment to the Belastingdienst: book it to the VAT settlement account (see below).
 
 ## The BTW quarter
