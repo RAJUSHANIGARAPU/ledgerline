@@ -25,7 +25,7 @@ reverse-charged VAT is not booked from here.
 
 ## Postings
 
-One clearing account per platform (1310 Uber Eats, 1320 Thuisbezorgd), created when first used.
+One clearing account per platform (1330 Uber Eats, 1340 Thuisbezorgd), found by system role and created when first used.
 The statement entry credits sales, tips; debits fees (4610), input VAT as printed, cash, and
 adjustments; and debits the clearing account with the printed payout. When the payout reaches
 the bank, the bank screen offers to book that line against the clearing account, which brings

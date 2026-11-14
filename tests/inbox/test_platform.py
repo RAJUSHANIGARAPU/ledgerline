@@ -181,7 +181,7 @@ def test_booking_a_thuisbezorgd_week(client, session, admin):
     assert (entry.entry_date, entry.description) == (date(2026, 3, 7), st.label)
     assert sum(ln.debit_cents for ln in entry.lines) == sum(ln.credit_cents for ln in entry.lines)
     assert session.get(InboxDocument, doc.id).status == InboxStatus.BOOKED
-    assert balance(session, admin, "1320") == st.payout_cents
+    assert balance(session, admin, "1340") == st.payout_cents
     assert balance(session, admin, "1000") == 4000
     assert balance(session, admin, "1400") == st.fee_vat_cents
     assert balance(session, admin, "4610") == st.fees_cents
@@ -220,7 +220,7 @@ def test_a_statement_that_does_not_add_up_needs_an_explicit_override(client, ses
     assert client.post(f"/inbox/{doc.id}/book-statement", data=data,
                        follow_redirects=False).status_code == 303
     session.expire_all()
-    assert balance(session, admin, "1310") == 30000
+    assert balance(session, admin, "1330") == 30000
     assert balance(session, admin, "1500") == 954
 
 
@@ -268,11 +268,11 @@ def test_payout_is_offered_on_the_bank_line_and_clears_the_account(client, sessi
     page = client.get(f"/bank/reconcile?account_id={bank.id}")
     assert page.text.count("Book against the clearing account") == 1
     assert st.label in page.text
-    clearing = account(session, admin, "1310")
+    clearing = account(session, admin, "1330")
     r = client.post(f"/bank/transactions/{tx.id}/book", data={
         "csrf_token": client.csrf, "account_id": str(clearing.id), "description": "payout"},
         follow_redirects=False)
     assert r.status_code == 303
     session.expire_all()
-    assert balance(session, admin, "1310") == 0
+    assert balance(session, admin, "1330") == 0
     assert balance(session, admin, "1100") == st.payout_cents

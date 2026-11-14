@@ -28,8 +28,12 @@ from ledgerline.vat import codes
 from ledgerline.vat.codes import Direction
 
 SOURCE_TYPE = "platform_statement"
-CLEARING = {UBER: ("1310", "Uber Eats clearing"), THUISBEZORGD: ("1320", "Thuisbezorgd clearing")}
-FEES = ("4610", "Delivery platform fees", "I21")
+# Platform -> (system role, account code and name used when a book predates the role).
+CLEARING = {
+    UBER: (SystemRole.UBER_EATS_CLEARING, "1330", "Uber Eats to settle"),
+    THUISBEZORGD: (SystemRole.THUISBEZORGD_CLEARING, "1340", "Thuisbezorgd to settle"),
+}
+FEES = (SystemRole.PLATFORM_FEES, "4610", "Delivery platform fees", "I21")
 CASH_CODE = "1000"
 FEE_VAT_CODES = {21: "I21", 9: "I9"}
 
@@ -57,20 +61,29 @@ def statement_of(document: InboxDocument) -> PlatformStatement | None:
 
 
 def _account(session: Session, admin_id: int, code: str, name: str, kind: str,
-             vat: str | None = None) -> Account:
+             vat: str | None = None, role: SystemRole | None = None) -> Account:
+    """The account with this role; a book that predates the role gets it created by code."""
+    if role is not None:
+        found = session.scalar(select(Account).where(
+            Account.administration_id == admin_id, Account.system_role == role))
+        if found is not None:
+            return found
     account = session.scalar(select(Account).where(
         Account.administration_id == admin_id, Account.code == code))
     if account is None:
         account = Account(administration_id=admin_id, code=code, name=name, type=kind,
-                          default_vat_code=vat)
+                          default_vat_code=vat, system_role=role)
         session.add(account)
         session.flush()
+    elif role is not None:
+        raise PlatformBookingError(
+            f"account {code} is already in use; give {name} an account with the {role} role")
     return account
 
 
 def clearing_account(session: Session, admin_id: int, platform: str) -> Account:
-    code, name = CLEARING[platform]
-    return _account(session, admin_id, code, name, AccountType.ASSET)
+    role, code, name = CLEARING[platform]
+    return _account(session, admin_id, code, name, AccountType.ASSET, role=role)
 
 
 def _revenue_account(session: Session, admin_id: int, vat_code: str) -> Account:
@@ -153,7 +166,7 @@ def build_lines(session: Session, admin: Administration, st: PlatformStatement,
         cash = _account(session, aid, CASH_CODE, "Cash", AccountType.ASSET)
         rows.append((cash, st.cash_collected_cents, None, None, "Cash collected by the restaurant"))
     fee_code = FEE_VAT_CODES.get(st.fee_vat_rate_percent or 0) if st.fee_vat_cents else "I0"
-    fees = _account(session, aid, FEES[0], FEES[1], AccountType.EXPENSE, FEES[2])
+    fees = _account(session, aid, FEES[1], FEES[2], AccountType.EXPENSE, FEES[3], FEES[0])
     rows.append((fees, st.fees_cents, fee_code, "base", f"{st.name} fees"))
     if st.fee_vat_cents:
         rows.append((system_account(session, aid, SystemRole.VAT_RECEIVABLE), st.fee_vat_cents,
