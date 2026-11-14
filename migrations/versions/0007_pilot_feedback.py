@@ -44,11 +44,12 @@ def upgrade() -> None:
         "USING (tenant_id = ledgerline_current_tenant()) "
         "WITH CHECK (tenant_id = ledgerline_current_tenant())"
     )
-    op.execute(
+    op.execute(  # 0004's default privileges also grant UPDATE; nothing updates feedback
         f"""
         DO $$ BEGIN
             IF EXISTS (SELECT FROM pg_roles WHERE rolname = '{APP_ROLE}') THEN
-                GRANT SELECT, INSERT, UPDATE, DELETE ON feedback_entries TO {APP_ROLE};
+                GRANT SELECT, INSERT, DELETE ON feedback_entries TO {APP_ROLE};
+                REVOKE UPDATE ON feedback_entries FROM {APP_ROLE};
                 GRANT USAGE, SELECT ON SEQUENCE feedback_entries_id_seq TO {APP_ROLE};
             END IF;
         END $$;

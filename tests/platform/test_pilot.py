@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
 from ledgerline import audit, cli
+from ledgerline.accounts import ratelimit
 from ledgerline.config import get_settings
 from ledgerline.inbox import email_intake, service
 from ledgerline.main import create_app
@@ -46,6 +47,32 @@ def test_feedback_csv_defuses_spreadsheet_formulas():
            "administration": "A", "text": "=HYPERLINK(\"http://evil\")\nsecond line"}
     parsed = list(csv.DictReader(io.StringIO(pilot.feedback_csv([row]))))
     assert parsed[0]["text"] == "'=HYPERLINK(\"http://evil\")\nsecond line"
+
+
+def test_csv_does_not_prefix_empty_cells_and_keeps_other_text_verbatim():
+    row = {"id": 1, "tenant_id": 1, "created_at": "x", "user": "", "administration_id": 1,
+           "administration": "A", "text": "- a bullet\nplain"}
+    [parsed] = csv.DictReader(io.StringIO(pilot.feedback_csv([row])))
+    assert parsed["user"] == "" and parsed["text"] == "'- a bullet\nplain"
+    assert parsed["tenant_id"] == "1"
+    assert pilot._safe({"a": "text", "b": "x=1"}) == {"a": "text", "b": "x=1"}
+
+
+def test_terminal_text_is_made_inert():
+    hostile = "ok\x1b]0;owned\x07\x1b[31mred\x9b2J\r\x00 tab\there\u202eevil\nnext"
+    out = pilot.printable(hostile)
+    assert not any(c in out for c in "\x1b\x07\x9b\r\x00\u202e")
+    assert "\t" in out and "\n" in out and "\\u001b" in out
+    assert pilot.printable("é中 ok") == "é中 ok"
+
+
+def test_report_text_escapes_feedback_user_and_names():
+    rows = [{"created_at": "t", "user": "a\x1b[1m@x", "administration": "B\x07",
+             "text": "line\x1b[2J\nsecond"}]
+    out = pilot.render_text(1, [pilot.AdministrationReport(1, "N\x1bame")], rows,
+                            *WIDE)
+    assert "\x1b" not in out and "\x07" not in out
+    assert "second" in out
 
 
 def test_web_upload_success_and_failure_are_counted(client, session, admin):
@@ -118,7 +145,7 @@ def test_time_to_processed_uses_the_first_processing_event(session, admin):
     assert sorted(round(s / 60) for s in report.seconds_to_processed) == [1, 5, 10]
     assert round(report.median_seconds / 60) == 5
     assert round(report.p90_seconds / 60) == 10
-    assert report.unprocessed == 2
+    assert report.unprocessed == 1
 
 
 def test_events_outside_the_range_are_ignored(session, admin):
@@ -155,6 +182,25 @@ def test_feedback_form_rejects_blank_and_oversized_text(client, session, admin):
     assert session.scalar(select(func.count()).select_from(FeedbackEntry)) == 0
 
 
+def test_feedback_with_nul_byte_is_a_form_error_not_a_crash(client, session, admin):
+    response = client.post("/feedback", data={"csrf_token": client.csrf, "message": "a\x00b"})
+    assert response.status_code == 400 and "null characters" in response.text
+    assert session.scalar(select(func.count()).select_from(FeedbackEntry)) == 0
+
+
+def test_oversized_feedback_is_400_and_keeps_the_text(client, admin):
+    response = client.post("/feedback", data={"csrf_token": client.csrf, "message": "x" * 5001})
+    assert response.status_code == 400 and "limited to 5000" in response.text
+
+
+def test_feedback_is_rate_limited_per_user(client, session, admin):
+    limit = ratelimit.feedback_by_user.limit
+    codes = [client.post("/feedback", data={"csrf_token": client.csrf, "message": "hi"},
+                         follow_redirects=False).status_code for _ in range(limit + 1)]
+    assert codes[:limit] == [303] * limit and codes[-1] == 429
+    assert session.scalar(select(func.count()).select_from(FeedbackEntry)) == limit
+
+
 def test_bookkeeper_can_send_feedback_and_accountant_cannot(bookkeeper_client, readonly_client,
                                                             session):
     assert bookkeeper_client.get("/feedback").status_code == 200
@@ -189,6 +235,32 @@ def test_cli_report_and_csv_show_feedback_verbatim(client, session, admin, capsy
     assert cli.main(["feedback-export", *args]) == 0
     [row] = list(csv.DictReader(io.StringIO(capsys.readouterr().out)))
     assert row["text"] == "line one\nline two" and row["user"] == "owner@example.com"
+    assert row["tenant_id"].isdigit()
+
+
+def test_cli_errors_on_an_unknown_tenant(client, admin, capsys):
+    with pytest.raises(SystemExit, match="no tenant with id 999999"):
+        cli.main(["feedback-export", "--tenant", "999999", "--from", "2026-01-01",
+                  "--to", "2026-01-02"])
+
+
+def test_cli_refuses_a_role_that_bypasses_row_level_security(owner_engine, tenant, monkeypatch,
+                                                              capsys):
+    from sqlalchemy.orm import sessionmaker
+
+    from ledgerline import db
+
+    monkeypatch.setattr(db, "get_sessionmaker", lambda: sessionmaker(owner_engine))
+    args = ["--from", "2026-01-01", "--to", "2026-01-02"]
+    with pytest.raises(SystemExit, match="refusing to run"):
+        cli.main(["pilot-report", *args])
+    assert cli.main(["pilot-report", "--tenant", str(tenant.id), "--allow-rls-bypass", *args]) == 0
+
+
+def test_the_application_role_does_not_bypass_row_level_security(session):
+    from ledgerline import db
+
+    assert db.rls_bypass_reason(session) is None
 
 
 def test_cli_rejects_an_inverted_range():

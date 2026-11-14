@@ -27,9 +27,6 @@ def test_a_tenant_cannot_write_or_edit_another_tenants_feedback(
         conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant.id)})
         assert conn.execute(text("SELECT count(*) FROM feedback_entries WHERE tenant_id = :t"),
                             {"t": other_tenant.id}).scalar() == 0
-        updated = conn.execute(text("UPDATE feedback_entries SET body = 'x' "
-                                    "WHERE tenant_id = :t"), {"t": other_tenant.id})
-        assert updated.rowcount == 0
         deleted = conn.execute(text("DELETE FROM feedback_entries WHERE tenant_id = :t"),
                                {"t": other_tenant.id})
         assert deleted.rowcount == 0
@@ -40,6 +37,14 @@ def test_a_tenant_cannot_write_or_edit_another_tenants_feedback(
             "VALUES (:t, :a, :u, 'planted')"),
             {"t": other_tenant.id, "a": seeded_b["administration_id"],
              "u": seeded_b["ids"]["user"]})
+
+
+def test_feedback_is_append_only_for_the_application_role(
+    database_url, tenant, seeded_a
+):
+    with app_connection(database_url) as conn, pytest.raises(DBAPIError, match="permission"):
+        conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant.id)})
+        conn.execute(text("UPDATE feedback_entries SET body = 'x'"))
 
 
 def test_feedback_cannot_point_at_another_tenants_administration(

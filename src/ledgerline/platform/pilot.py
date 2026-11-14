@@ -7,6 +7,7 @@ event of the same document. Feedback is the only table added for the pilot.
 import csv
 import io
 import math
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
@@ -19,6 +20,7 @@ from ledgerline.inbox.service import CHANNELS
 from ledgerline.models import Administration, AuditEvent, FeedbackEntry, User
 
 PROCESSED_ACTIONS = ("inbox.create_purchase", "inbox.link_duplicate")
+REJECT_ACTION = "inbox.reject"
 CHANNEL_ORDER = ("web", "phone", "shortcut", "email")
 
 
@@ -91,26 +93,33 @@ def administration_reports(session: Session, start: date, end: date) -> list[Adm
             reason = (details or {}).get("reason", "unknown")
             count.reasons[reason] = count.reasons.get(reason, 0) + 1
     if received:
-        done = _first_processed(session, {doc_id for _, doc_id in received})
+        done, rejected = _outcomes(session, {doc_id for _, doc_id in received})
         for (admin_id, doc_id), at in received.items():
             if (admin_id, doc_id) in done:
                 reports[admin_id].seconds_to_processed.append(
                     max(0.0, (done[(admin_id, doc_id)] - at).total_seconds()))
-            else:
+            elif (admin_id, doc_id) not in rejected:
                 reports[admin_id].unprocessed += 1
     return list(reports.values())
 
 
-def _first_processed(session: Session, doc_ids: set[int]) -> dict[tuple[int, int], datetime]:
+def _outcomes(session: Session, doc_ids: set[int]):
+    """First processing time per document, and the documents a reviewer rejected."""
     rows = session.execute(
-        select(AuditEvent.administration_id, AuditEvent.entity_id, AuditEvent.created_at)
-        .where(AuditEvent.action.in_(PROCESSED_ACTIONS), AuditEvent.entity_id.in_(doc_ids))
+        select(AuditEvent.administration_id, AuditEvent.entity_id, AuditEvent.action,
+               AuditEvent.created_at)
+        .where(AuditEvent.action.in_((*PROCESSED_ACTIONS, REJECT_ACTION)),
+               AuditEvent.entity_id.in_(doc_ids))
         .order_by(AuditEvent.id)
     ).all()
     first: dict[tuple[int, int], datetime] = {}
-    for admin_id, doc_id, at in rows:
-        first.setdefault((admin_id, doc_id), at)
-    return first
+    rejected: set[tuple[int, int]] = set()
+    for admin_id, doc_id, action, at in rows:
+        if action == REJECT_ACTION:
+            rejected.add((admin_id, doc_id))
+        else:
+            first.setdefault((admin_id, doc_id), at)
+    return first, rejected
 
 
 def feedback_rows(session: Session, start: date, end: date) -> list[dict]:
@@ -123,15 +132,17 @@ def feedback_rows(session: Session, start: date, end: date) -> list[dict]:
         .where(FeedbackEntry.created_at >= lo, FeedbackEntry.created_at < hi)
         .order_by(FeedbackEntry.id)
     ).all()
-    return [{"id": e.id, "created_at": e.created_at.isoformat(), "user": email,
+    return [{"id": e.id, "tenant_id": e.tenant_id, "created_at": e.created_at.isoformat(),
+             "user": email,
              "administration_id": e.administration_id, "administration": name, "text": e.body}
             for e, email, name in rows]
 
 
 def feedback_csv(rows: list[dict]) -> str:
     out = io.StringIO()
-    writer = csv.DictWriter(out, ["id", "created_at", "user", "administration_id",
-                                  "administration", "text"], lineterminator="\n")
+    columns = ["id", "tenant_id", "created_at", "user", "administration_id", "administration",
+               "text"]
+    writer = csv.DictWriter(out, columns, lineterminator="\n")
     writer.writeheader()
     writer.writerows(_safe(r) for r in rows)
     return out.getvalue()
@@ -139,8 +150,17 @@ def feedback_csv(rows: list[dict]) -> str:
 
 def _safe(row: dict) -> dict:
     """Stop spreadsheets from running a formula a user typed into the feedback form."""
-    return {k: ("'" + v if isinstance(v, str) and v[:1] in "=+-@\t\r" else v)
+    return {k: ("'" + v if isinstance(v, str) and v and v[0] in "=+-@\t\r" else v)
             for k, v in row.items()}
+
+
+_UNSAFE = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def printable(value: object) -> str:
+    """Make stored text inert in a terminal: control characters (so ANSI and OSC sequences)
+    and bidi overrides become visible escapes. Newline and tab stay."""
+    return _UNSAFE.sub(lambda m: f"\\u{ord(m.group()):04x}", str(value))
 
 
 def _duration(seconds: float | None) -> str:
@@ -157,14 +177,14 @@ def render_text(tenant_id: int, reports: list[AdministrationReport], feedback: l
                 start: date, end: date) -> str:
     lines = [f"Tenant {tenant_id}, {start} to {end} (UTC)"]
     for report in reports:
-        lines += ["", f"Administration {report.administration_id}: {report.name}",
+        lines += ["", f"Administration {report.administration_id}: {printable(report.name)}",
                   "  channel    ok  failed  reasons"]
         names = [c for c in CHANNEL_ORDER if c in report.channels] + sorted(
             c for c in report.channels if c not in CHANNEL_ORDER)
         for name in names or []:
             c = report.channels[name]
-            reasons = ", ".join(f"{k}={v}" for k, v in sorted(c.reasons.items())) or "-"
-            lines.append(f"  {name:<9} {c.ok:>3}  {c.failed:>6}  {reasons}")
+            reasons = ", ".join(f"{printable(k)}={v}" for k, v in sorted(c.reasons.items())) or "-"
+            lines.append(f"  {printable(name):<9} {c.ok:>3}  {c.failed:>6}  {reasons}")
         if not names:
             lines.append("  no uploads")
         n = len(report.seconds_to_processed)
@@ -173,8 +193,9 @@ def render_text(tenant_id: int, reports: list[AdministrationReport], feedback: l
     if feedback:
         lines += ["", "Feedback (verbatim)"]
         for r in feedback:
-            lines += [f"  [{r['created_at']}] {r['user']} / {r['administration']}:",
-                      *(f"    {line}" for line in r["text"].splitlines() or [""])]
+            lines += [f"  [{r['created_at']}] {printable(r['user'])} / "
+                      f"{printable(r['administration'])}:",
+                      *(f"    {line}" for line in printable(r["text"]).split("\n"))]
     return "\n".join(lines)
 
 

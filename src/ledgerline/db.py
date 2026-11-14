@@ -55,6 +55,25 @@ def tenant_session(tenant_id: int) -> Iterator[Session]:
         yield session
 
 
+_BYPASS_QUERY = text("""
+    SELECT
+      (SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user) AS role_bypass,
+      COALESCE((SELECT string_agg(relname, ', ' ORDER BY relname) FROM pg_class
+                WHERE relrowsecurity AND NOT relforcerowsecurity
+                  AND pg_has_role(current_user, relowner, 'USAGE')), '') AS owned
+""")
+
+
+def rls_bypass_reason(session: Session) -> str | None:
+    """Why this connection would see every tenant's rows, or None when row-level security holds."""
+    role_bypass, owned = session.execute(_BYPASS_QUERY).one()
+    if role_bypass:
+        return "the database role is a superuser or has BYPASSRLS"
+    if owned:
+        return f"the database role owns tables without forced row-level security ({owned})"
+    return None
+
+
 def for_each_tenant(
     factory: sessionmaker[Session] | None = None,
 ) -> Iterator[tuple[int, Session]]:
