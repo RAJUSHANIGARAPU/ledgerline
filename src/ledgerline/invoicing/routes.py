@@ -19,6 +19,7 @@ from ledgerline.invoicing.service import (
     delete_draft_purchase_invoice,
     delete_draft_sales_invoice,
     issue_sales_invoice,
+    purchase_line_accounts,
     store_attachment,
     update_purchase_invoice,
     update_sales_invoice,
@@ -406,7 +407,7 @@ def _purchase_lines_ctx(accounts, rows):
 
 
 def _purchase_editor_ctx(session, admin, rows, invoice=None, values=None, errors=None):
-    accounts = _accounts(session, admin.id, AccountType.EXPENSE)
+    accounts = purchase_line_accounts(session, admin.id)
     today = date.today()
     values = values or {
         "contact_id": str(invoice.contact_id) if invoice else "",
@@ -444,7 +445,7 @@ def purchases_list(request: Request, session: SessionDep, user: UserDep, admin: 
 
 @router.get("/purchases/new")
 def purchase_new(request: Request, session: SessionDep, user: UserDep, admin: AdminDep):
-    accounts = _accounts(session, admin.id, AccountType.EXPENSE)
+    accounts = purchase_line_accounts(session, admin.id)
     return render(request, "purchases/form.html",
                   _purchase_editor_ctx(session, admin, [_default_purchase_row(accounts)]))
 
@@ -499,7 +500,7 @@ def purchase_create(request: Request, session: SessionDep, owner: OwnerDep, admi
 @router.post("/purchases/preview")
 def purchase_preview(request: Request, session: SessionDep, owner: OwnerDep, admin: AdminDep,
                      data: PurchaseFormDep):
-    accounts = _accounts(session, admin.id, AccountType.EXPENSE)
+    accounts = purchase_line_accounts(session, admin.id)
     rows = data.rows or [_default_purchase_row(accounts)]
     return render(request, "purchases/_lines.html", _purchase_lines_ctx(accounts, rows))
 
@@ -522,7 +523,7 @@ def purchase_detail(invoice_id: int, request: Request, session: SessionDep, user
     entry = session.get(JournalEntry, invoice.journal_entry_id) if invoice.journal_entry_id \
         else None
     attachment = session.get(Attachment, invoice.attachment_id) if invoice.attachment_id else None
-    accounts = {a.id: a for a in _accounts(session, admin.id, AccountType.EXPENSE)}
+    accounts = {a.id: a for a in purchase_line_accounts(session, admin.id)}
     return render(request, "purchases/detail.html", {
         "invoice": invoice, "entry": entry, "attachment": attachment, "accounts": accounts,
         "display_status": _display_status(invoice, date.today()),

@@ -436,6 +436,23 @@ def find_duplicate_purchase(
     return session.scalars(stmt).first()
 
 
+def purchase_line_account_ok(account: Account) -> bool:
+    """Expenses, plus balance-sheet accounts the app does not post to itself (deposits, assets)."""
+    return account.type == AccountType.EXPENSE or (
+        account.type == AccountType.ASSET and account.system_role is None
+    )
+
+
+def purchase_line_accounts(session: Session, admin_id: int) -> list[Account]:
+    found = session.scalars(
+        select(Account)
+        .where(Account.administration_id == admin_id, Account.is_active.is_(True),
+               Account.type.in_((AccountType.EXPENSE, AccountType.ASSET)))
+    )
+    usable = [a for a in found if purchase_line_account_ok(a)]
+    return sorted(usable, key=lambda a: (a.type != AccountType.EXPENSE, a.code))
+
+
 def _build_purchase_lines(
     session: Session, admin: Administration, inputs: list[PurchaseLineInput]
 ) -> list[PurchaseInvoiceLine]:
@@ -445,7 +462,10 @@ def _build_purchase_lines(
     for position, item in enumerate(inputs):
         if not item.description.strip():
             raise InvoiceError(f"line {position + 1}: description is required")
-        account = _account(session, admin, item.expense_account_id, AccountType.EXPENSE)
+        account = session.get(Account, item.expense_account_id)
+        if account is None or account.administration_id != admin.id or not account.is_active \
+                or not purchase_line_account_ok(account):
+            raise InvoiceError(f"account {item.expense_account_id} cannot take a purchase line")
         code = item.vat_code or account.default_vat_code or "I21"
         if code not in _purchase_codes():
             raise InvoiceError(f"line {position + 1}: {code} is not a purchase VAT code")

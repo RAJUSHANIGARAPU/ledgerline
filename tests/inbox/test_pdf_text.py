@@ -209,7 +209,10 @@ def test_multi_supplier_block_sums_the_rows_and_deposit_is_outside_the_totals():
     assert (ex.total_excl_cents, ex.total_vat_cents, ex.total_incl_cents) == (32000, 3120, 37620)
     assert any("deposit" in w for w in ex.warnings) and not any("add up" in w for w in ex.warnings)
     assert {(ln.vat_rate_percent, ln.amount_excl_cents) for ln in ex.lines} == {
-        (9, 30000), (21, 2000)}
+        (9, 30000), (21, 2000), (0, 2500)}
+    [deposit] = [ln for ln in ex.lines if ln.is_deposit]
+    assert (deposit.amount_excl_cents, deposit.vat_cents) == (2500, 0)
+    assert sum(ln.amount_excl_cents + (ln.vat_cents or 0) for ln in ex.lines) == 37620
 
 
 def test_identical_vat_table_repeated_on_a_second_page_is_not_double_counted():

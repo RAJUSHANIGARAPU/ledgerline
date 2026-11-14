@@ -25,6 +25,7 @@ DEFAULT_CHART: list[tuple[str, str, AccountType, SystemRole | None, str | None]]
     ("1320", "Vouchers and other receipts to settle", A, SystemRole.TAKINGS_OTHER, None),
     ("1330", "Uber Eats to settle", A, SystemRole.UBER_EATS_CLEARING, None),
     ("1340", "Thuisbezorgd to settle", A, SystemRole.THUISBEZORGD_CLEARING, None),
+    ("1350", "Deposits paid (emballage)", A, None, "I0"),
     ("1400", "VAT receivable (input VAT)", A, SystemRole.VAT_RECEIVABLE, None),
     ("1500", "Suspense", A, SystemRole.SUSPENSE, None),
     ("1600", "Accounts payable", L, SystemRole.CREDITORS, None),
