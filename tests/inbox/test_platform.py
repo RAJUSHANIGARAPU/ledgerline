@@ -1,3 +1,4 @@
+import threading
 from datetime import date
 
 import pytest
@@ -144,7 +145,7 @@ def received(client, session, html, name="overzicht.pdf"):
 
 def split_form(client, code_amounts, **extra):
     data = {"csrf_token": client.csrf, "sales_code": [c for c, _ in code_amounts],
-            "sales_amount": [a for _, a in code_amounts]}
+            "sales_amount": [a for _, a in code_amounts], "fee_vat_rate": "21"}
     data.update(extra)
     return data
 
@@ -276,3 +277,91 @@ def test_payout_is_offered_on_the_bank_line_and_clears_the_account(client, sessi
     session.expire_all()
     assert balance(session, admin, "1330") == 0
     assert balance(session, admin, "1100") == st.payout_cents
+
+
+def test_concurrent_double_submit_books_one_entry(client, session, admin, owner, tenant):
+    from ledgerline.models import Administration, User
+    from tests.conftest import tenant_db
+
+    doc = received(client, session, uber_statement_html())
+    adj = account(session, admin, "4600")
+    choices = platform_booking.StatementChoices(
+        [("V9", 40250)], adjustments_account_id=adj.id, fee_vat_rate=21)
+    barrier, outcomes = threading.Barrier(2), []
+
+    def submit():
+        with tenant_db(tenant.id) as s:
+            a, u, d = s.get(Administration, admin.id), s.get(User, owner.id), s.get(
+                InboxDocument, doc.id)
+            barrier.wait()
+            try:
+                platform_booking.book_statement(s, a, u, d, choices)
+                s.commit()
+                outcomes.append("booked")
+            except platform_booking.PlatformBookingError as exc:
+                s.rollback()
+                outcomes.append(str(exc))
+
+    threads = [threading.Thread(target=submit) for _ in range(2)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert sorted(o if o == "booked" else "refused" for o in outcomes) == ["booked", "refused"]
+    session.expire_all()
+    assert len(session.scalars(select(JournalEntry)).all()) == 1
+
+
+UNDERIVABLE = dict(sales=100000, fee=10000, fee_vat=2103, adjustments=())
+
+
+def test_uber_fee_rate_that_cannot_be_derived_is_left_open():
+    st = read(uber_statement_html(**UNDERIVABLE))
+    assert st.fee_vat_rate_percent is None and not st.fee_vat_rate_printed
+    assert any("not printed" in w for w in st.warnings)
+
+
+def test_statement_page_asks_the_owner_to_confirm_an_inferred_rate(client, session, admin):
+    doc = received(client, session, uber_statement_html())
+    page = client.get(f"/inbox/{doc.id}").text
+    assert "inferred 21% from the amounts, confirm" in page and 'name="fee_vat_rate"' in page
+
+
+def test_statement_page_asks_for_a_rate_it_cannot_derive(client, session, admin):
+    doc = received(client, session, uber_statement_html(**UNDERIVABLE))
+    page = client.get(f"/inbox/{doc.id}").text
+    assert "not printed and not derivable: choose" in page
+
+
+def test_booking_needs_the_owner_to_choose_an_underivable_fee_rate(client, session, admin):
+    doc = received(client, session, uber_statement_html(**UNDERIVABLE))
+    adj = account(session, admin, "4600")
+    data = split_form(client, [("V9", "1000,00")], adjustments_account=str(adj.id))
+    data.pop("fee_vat_rate")
+    r = client.post(f"/inbox/{doc.id}/book-statement", data=data)
+    assert r.status_code == 422 and "choose the VAT rate on the fees" in r.text
+    assert session.scalars(select(JournalEntry)).all() == []
+    data["fee_vat_rate"] = "21"
+    assert client.post(f"/inbox/{doc.id}/book-statement", data=data,
+                       follow_redirects=False).status_code == 303
+    session.expire_all()
+    assert balance(session, admin, "1400") == 2103
+    assert balance(session, admin, "4610") == 10000
+
+
+def test_booking_rejects_a_fee_rate_that_is_not_a_purchase_rate(client, session, admin):
+    doc = received(client, session, uber_statement_html(**UNDERIVABLE))
+    data = split_form(client, [("V9", "1000,00")], fee_vat_rate="17")
+    r = client.post(f"/inbox/{doc.id}/book-statement", data=data)
+    assert r.status_code == 422 and "choose the VAT rate on the fees" in r.text
+
+
+def test_a_printed_fee_rate_needs_no_input(client, session, admin):
+    doc = received(client, session, thuisbezorgd_statement_html())
+    assert 'name="fee_vat_rate"' not in client.get(f"/inbox/{doc.id}").text
+
+
+def test_thuisbezorgd_invoice_date_is_the_printed_date_not_the_period_end():
+    content = pdf_from_html(thuisbezorgd_statement_html())
+    extracted = PdfTextExtractor().extract("application/pdf", content)
+    st = PlatformStatement.from_json(extracted.platform_statement)
+    assert st.invoice_date == date(2026, 3, 8) and st.period_end == date(2026, 3, 7)
+    assert extracted.invoice_date == date(2026, 3, 8)

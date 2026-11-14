@@ -40,6 +40,7 @@ class PlatformStatement:
     orders: int | None = None
     reference: str | None = None
     statement_date: date | None = None
+    invoice_date: date | None = None  # the date printed on the invoice part, when there is one
     reverse_charge: bool = False
     arithmetic_ok: bool = True
     warnings: list[str] = field(default_factory=list)
@@ -54,7 +55,7 @@ class PlatformStatement:
 
     def to_json(self) -> dict:
         data = asdict(self)
-        for key in ("period_start", "period_end", "statement_date"):
+        for key in ("period_start", "period_end", "statement_date", "invoice_date"):
             if data[key] is not None:
                 data[key] = data[key].isoformat()
         return data
@@ -62,7 +63,7 @@ class PlatformStatement:
     @classmethod
     def from_json(cls, data: dict) -> "PlatformStatement":
         data = dict(data)
-        for key in ("period_start", "period_end", "statement_date"):
+        for key in ("period_start", "period_end", "statement_date", "invoice_date"):
             if data.get(key):
                 data[key] = date.fromisoformat(data[key])
         return cls(**data)
@@ -225,6 +226,7 @@ def parse_thuisbezorgd(text: str) -> PlatformStatement:
     settled = _find(lines, rf"^Verrekening van factuur \d+\s+€\s*({AMT})\s*$")
     payout = _find(lines, rf"^Uitbetaling naar rekening .*?€\s*({AMT})\s*$")
     reference = _find(lines, r"Factuurnummer:\s*(\d+)")
+    printed_date = _find(lines, rf"\bDatum:\s*({NL_DATE})", 1)
     subtotal = _find(lines, rf"^Subtotaal\s+€\s*({AMT})\s*$")
     vat_match = re.search(rf"^BTW \((\d+)% over € ({AMT})\)\s+€\s*({AMT})\s*$", text, re.MULTILINE)
     invoice_total = _find(lines, rf"^Totaalbedrag van deze factuur\s+€\s*({AMT})\s*$")
@@ -250,6 +252,7 @@ def parse_thuisbezorgd(text: str) -> PlatformStatement:
         adjustments_cents=sum(c for _, c in adjustments), adjustment_lines=adjustments,
         orders=int(order_count) if order_count else None, reference=reference,
         statement_date=_nl_date(statement_date) if statement_date else None,
+        invoice_date=_nl_date(printed_date) if printed_date else None,
     )
     out = _cents(outstanding)
     settled_cents = _cents(settled) if settled else _cents(invoice_total)

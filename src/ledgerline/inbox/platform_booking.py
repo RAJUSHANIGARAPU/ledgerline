@@ -8,7 +8,7 @@ platform's clearing account.
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from ledgerline import audit
@@ -52,6 +52,8 @@ class StatementChoices:
     tips_account_id: int | None = None
     adjustments_account_id: int | None = None
     accept_difference: bool = False
+    # The owner's answer when the statement does not print the VAT rate on the fees.
+    fee_vat_rate: int | None = None
 
 
 def statement_of(document: InboxDocument) -> PlatformStatement | None:
@@ -109,9 +111,21 @@ def split_inclusive(gross_cents: int, rate: Decimal) -> int:
     return int(vat.quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
+def fee_rate_needs_input(st: PlatformStatement) -> bool:
+    """True when the fees carry VAT but the document does not print its rate."""
+    return bool(st.fee_vat_cents) and not st.fee_vat_rate_printed
+
+
+def fee_rate(st: PlatformStatement, choices: StatementChoices) -> int | None:
+    """The printed rate, or the one the owner confirmed; never a silent default."""
+    return choices.fee_vat_rate if fee_rate_needs_input(st) else st.fee_vat_rate_percent
+
+
 def pending_decisions(st: PlatformStatement) -> list[str]:
     """What the owner must still decide; shown with the proposal."""
     items = ["Split sales by VAT rate: neither document prints the split."]
+    if fee_rate_needs_input(st):
+        items.append("Confirm the VAT rate on the fees: the document does not print it.")
     if st.tips_cents:
         items.append("Choose where tips are booked: the document does not say how they are taxed.")
     if st.adjustments_cents:
@@ -123,8 +137,10 @@ def _validate(st: PlatformStatement, choices: StatementChoices) -> None:
     problems = []
     if st.reverse_charge:
         problems.append("the document mentions reverse-charged VAT; book it by hand")
-    if st.fee_vat_cents and st.fee_vat_rate_percent not in FEE_VAT_CODES:
-        problems.append("the VAT rate on the fees is unknown; book it by hand")
+    if st.fee_vat_cents and fee_rate(st, choices) not in FEE_VAT_CODES:
+        problems.append("choose the VAT rate on the fees (21% or 9%); the document does not "
+                        "print it" if fee_rate_needs_input(st)
+                        else "the VAT rate on the fees is unknown; book it by hand")
     if not st.arithmetic_ok and not choices.accept_difference:
         problems.append("the figures do not add up; tick that you checked the difference or "
                         "reject the document")
@@ -165,7 +181,7 @@ def build_lines(session: Session, admin: Administration, st: PlatformStatement,
     if st.cash_collected_cents:
         cash = _account(session, aid, CASH_CODE, "Cash", AccountType.ASSET)
         rows.append((cash, st.cash_collected_cents, None, None, "Cash collected by the restaurant"))
-    fee_code = FEE_VAT_CODES.get(st.fee_vat_rate_percent or 0) if st.fee_vat_cents else "I0"
+    fee_code = FEE_VAT_CODES.get(fee_rate(st, choices) or 0) if st.fee_vat_cents else "I0"
     fees = _account(session, aid, FEES[1], FEES[2], AccountType.EXPENSE, FEES[3], FEES[0])
     rows.append((fees, st.fees_cents, fee_code, "base", f"{st.name} fees"))
     if st.fee_vat_cents:
@@ -202,6 +218,10 @@ def book_statement(session: Session, admin: Administration, user: User, document
     st = statement_of(document)
     if st is None:
         raise PlatformBookingError("this document is not a platform statement")
+    # Serialise on the statement period so a double submit books one entry, not two.
+    session.execute(text("SELECT pg_advisory_xact_lock(:admin, hashtext(:label))"),
+                    {"admin": admin.id, "label": st.label})
+    session.refresh(document)
     if document.status == InboxStatus.BOOKED:
         raise PlatformBookingError("this statement is already booked")
     if existing_entry(session, admin.id, st):
@@ -219,6 +239,6 @@ def book_statement(session: Session, admin: Administration, user: User, document
         session, "inbox.book_platform_statement", user_id=user.id, administration_id=admin.id,
         entity_type="inbox_document", entity_id=document.id,
         details={"entry": entry.number, "platform": st.platform,
-                 "payout_cents": st.payout_cents},
+                 "payout_cents": st.payout_cents, "fee_vat_rate": fee_rate(st, choices)},
     )
     return entry
