@@ -35,6 +35,9 @@ def owner_url():
         engine = create_engine(url)
         with engine.begin() as conn:
             conn.execute(text(f"ALTER ROLE ledgerline_app LOGIN PASSWORD '{APP_ROLE_PASSWORD}'"))
+            # The migrations seed an empty "Default" tenant. The per-test cleanup removes it
+            # after the first test, so drop it up front: every test then sees the same state.
+            conn.execute(text("DELETE FROM tenants WHERE name = 'Default'"))
         engine.dispose()
         yield url
 
