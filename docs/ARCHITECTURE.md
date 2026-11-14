@@ -11,7 +11,7 @@ Everything runs on one Linux server (Hetzner Cloud in the reference setup) from
 ```mermaid
 flowchart LR
     subgraph users["People and devices"]
-        browser["Browser<br/>(owner, bookkeeper, accountant)"]
+        browser["Browser<br/>(owner, bookkeeper, accountant, uploader)"]
         phone["iPhone shortcut<br/>(upload key)"]
         uptime["Uptime monitor"]
     end
