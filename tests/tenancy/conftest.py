@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine, select, text
@@ -13,6 +14,7 @@ from ledgerline.models import (
     BankTransaction,
     Contact,
     FeedbackEntry,
+    ForwardingNotice,
     InboxDocument,
     JournalEntry,
     Membership,
@@ -36,11 +38,14 @@ def seed_tenant(tenant_id: int, owner_id: int | None = None) -> dict:
         inbox.receive(s, books.id, "bill.xml", ubl([("Hosting", 1000, "S", 21)]), "upload")
         s.add(FeedbackEntry(administration_id=books.id, user_id=user_id,
                             body=f"seed feedback of tenant {tenant_id}"))
+        s.add(ForwardingNotice(administration_id=books.id, kind="gmail",
+                               link="https://mail-settings.google.com/x",
+                               expires_at=datetime.now(UTC) + timedelta(days=7)))
         _, secret = tokens.create_token(s, s.get(User, user_id), books.id, "Phone")
         s.commit()
         first = {m: s.scalar(select(m.id).where(m.administration_id == books.id).order_by(m.id))
                  for m in (Account, BankAccount, Contact, InboxDocument, JournalEntry,
-                           PurchaseInvoice, SalesInvoice, ApiToken)}
+                           PurchaseInvoice, SalesInvoice, ApiToken, ForwardingNotice)}
         first[BankTransaction] = s.scalar(select(BankTransaction.id).where(
             BankTransaction.bank_account_id == first[BankAccount]).order_by(BankTransaction.id))
         first["user"] = user_id

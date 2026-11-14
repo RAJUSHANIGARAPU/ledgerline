@@ -9,6 +9,17 @@
 {% for d in duplicates %}
 <div class="flash flash-info" role="status">{{ names.get(d.attachment_id, 'This file') }} is already in your inbox: <a href="/inbox/{{ d.id }}">open it</a>.</div>
 {% endfor %}
+{% for n in notices %}
+<div class="flash flash-info" role="status">
+  <form method="post" action="/inbox/forwarding-notices/{{ n.id }}/dismiss" class="stack">
+    {{ ui.csrf() }}
+    <span><strong>Gmail asks you to confirm forwarding to this inbox.</strong> Open the link below while signed in to the Gmail account, then return to Gmail's forwarding settings and refresh. It is shown here until {{ n.expires_at.strftime('%d-%m-%Y') }} or until you dismiss it.</span>
+    <a href="{{ n.link }}" target="_blank" rel="noopener noreferrer">{{ n.link }}</a>
+    <span class="field-hint">Only follow it if you just added this address to Gmail yourself.</span>
+    <div class="form-actions"><button class="btn" type="submit">Dismiss</button></div>
+  </form>
+</div>
+{% endfor %}
 {% if inbox_address %}
 <div class="card"><div class="card-body stack">
   <span class="field-label">Email address for this administration</span>

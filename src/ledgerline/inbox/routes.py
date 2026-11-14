@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from ledgerline.config import get_settings
 from ledgerline.db import tenant_session
-from ledgerline.inbox import email_intake, review, service, worker
+from ledgerline.inbox import email_intake, forwarding, review, service, worker
 from ledgerline.inbox.extract import pipeline
 from ledgerline.invoicing import forms
 from ledgerline.invoicing.calc import InvoiceError
@@ -30,10 +30,11 @@ from ledgerline.models import (
     InboxDocument,
     InboxStatus,
     PurchaseInvoice,
+    Role,
 )
 from ledgerline.vat import codes
 from ledgerline.vat.codes import Direction
-from ledgerline.web import AdminDep, OwnerDep, SessionDep, UserDep, flash, render
+from ledgerline.web import AdminDep, ManagerDep, OwnerDep, SessionDep, UserDep, flash, render
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -93,7 +94,18 @@ def inbox_list(request: Request, session: SessionDep, user: UserDep, admin: Admi
         "max_mb": get_settings().max_upload_bytes // (1024 * 1024),
         "inbox_address": email_intake.inbox_address(get_settings(), admin.inbox_token)
         if user.role in WRITE_ROLES else None,
+        "notices": forwarding.active_notices(session, admin.id)
+        if user.role == Role.OWNER else [],
     })
+
+
+@router.post("/inbox/forwarding-notices/{notice_id}/dismiss")
+def forwarding_notice_dismiss(notice_id: int, session: SessionDep, manager: ManagerDep,
+                              admin: AdminDep):
+    if not forwarding.dismiss(session, admin.id, notice_id, manager.id):
+        raise HTTPException(404, "notice not found")
+    session.commit()
+    return _redirect("/inbox")
 
 
 @router.post("/inbox/upload")
