@@ -214,6 +214,7 @@ def process_message(
                 )
         except service.InboxError as exc:
             log.info("attachment not accepted: %s", exc)
+            service.record_rejection(session, admin_id, "email", exc)
             continue
         if created:
             result.documents += 1

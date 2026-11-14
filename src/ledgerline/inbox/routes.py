@@ -110,6 +110,7 @@ def inbox_upload(request: Request, session: SessionDep, owner: OwnerDep, admin: 
                 user_id=owner.id,
             )
         except service.InboxError as exc:
+            service.record_rejection(session, admin.id, "web", exc, user_id=owner.id)
             flash(request, f"{upload.filename}: {exc}", "error")
             continue
         (new_ids if created else duplicate_ids).append(document.id)
