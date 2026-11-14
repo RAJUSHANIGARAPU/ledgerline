@@ -456,3 +456,51 @@ def test_an_invoice_that_mentions_payslips_in_its_body_stays_an_invoice():
     text = layout_text("Payroll Service B.V.", "Factuurnummer INV-9", "Totaal excl btw 10,00",
                        "BTW 21% 2,10", "Totaal 12,10", "Tarief per salarisspecificatie")
     assert parse_text(text).document_type == "invoice"
+
+
+COST_TABLE = """Pagina 1 van 2 FACTUUR
+Voorbeeld Parkeren B.V.
+KvK 12345678
+BTW NL853345678B01
+Factuurdatum:
+24-09-2026
+Factuurnummer:
+INL26F0000001
+Overzicht
+Kostenoverzicht Aantal Bedrag BTW% BTW Totaal
+Straatparkeren 4 € 7,47 € 0,00 € 7,47
+Transactiekosten 4 € 1,21 21 % € 0,26 € 1,47
+Totaalbedrag € 8,68 € 0,26 € 8,94
+"""
+
+
+def test_cost_table_with_untaxed_and_taxed_rows_is_read_line_by_line():
+    ex = parse_text(COST_TABLE)
+    assert (ex.total_excl_cents, ex.total_vat_cents, ex.total_incl_cents) == (868, 26, 894)
+    untaxed, taxed = ex.lines
+    assert (untaxed.description, untaxed.amount_excl_cents, untaxed.vat_rate_percent,
+            untaxed.vat_cents, untaxed.vat_unconfirmed) == ("Straatparkeren", 747, 0, 0, True)
+    assert (taxed.amount_excl_cents, taxed.vat_rate_percent, taxed.vat_cents,
+            taxed.vat_unconfirmed) == (121, 21, 26, False)
+    assert any("no VAT" in w for w in ex.warnings)
+
+
+def test_cost_table_that_does_not_add_up_is_not_trusted_for_lines():
+    ex = parse_text(COST_TABLE.replace("€ 7,47 € 0,00 € 7,47", "€ 9,99 € 0,00 € 9,99"))
+    assert not any(line.vat_unconfirmed for line in ex.lines)
+
+
+@pytest.mark.parametrize("title", [
+    "Statement business account", "Rekeningafschrift", "Afschrift", "Bank statement",
+])
+def test_bank_statement_pdf_is_typed_not_rejected(title):
+    ex = parse_text(f"{title}\nPeriod 01/05/2026 till 31/05/2026\nAccount number\n"
+                    "NL02ABNA0123456789\nDate Name Amount (EUR)\n26/05/2026 Shop -19.58\n")
+    assert ex.document_type == "bank_statement"
+    assert "CSV or CAMT" in ex.warnings[0]
+    assert ex.lines == []
+
+
+def test_invoice_that_mentions_a_statement_is_still_an_invoice():
+    ex = parse_text(COST_TABLE.replace("Overzicht", "Overzicht van het afschrift"))
+    assert ex.document_type == "invoice"

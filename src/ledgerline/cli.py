@@ -42,6 +42,17 @@ def create_tenant(args: argparse.Namespace) -> int:
         session.add(tenant)
         session.commit()
         print(f"Created tenant {tenant.id}: {tenant.name}")
+        new_id = tenant.id
+    from ledgerline.platform import offboarding
+
+    engine = create_engine(get_settings().owner_database_url)
+    try:
+        with engine.begin() as conn:
+            dropped = offboarding.drop_empty_seeded_tenant(conn, new_id)
+    finally:
+        engine.dispose()
+    if dropped is not None:
+        print(f"Removed the empty seeded tenant {dropped} ({offboarding.SEEDED_TENANT_NAME}).")
     return 0
 
 

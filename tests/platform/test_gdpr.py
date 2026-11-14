@@ -120,3 +120,17 @@ def test_privacy_page_shows_retention_date(client, session, admin):
     _invoice(session, admin, c, year=2024)
     text = client.get("/settings/privacy").text
     assert "31-12-2031" in text and c.name in text
+
+
+def test_every_tenant_table_is_in_the_export_or_excluded_on_purpose(session, admin):
+    from ledgerline.models import Base
+    from ledgerline.platform.gdpr import EXPORT_EXCLUDED, build_export_zip
+
+    tenant_tables = {t.name for t in Base.metadata.sorted_tables if "tenant_id" in t.columns}
+    with zipfile.ZipFile(build_export_zip(session, admin)) as zf:
+        exported = {n.removeprefix("data/").removesuffix(".json")
+                    for n in zf.namelist() if n.startswith("data/")}
+    exported = {"administrations" if n == "administration" else n for n in exported}
+    assert tenant_tables - exported - set(EXPORT_EXCLUDED) == set(), (
+        "tenant tables missing from the administration export")
+    assert set(EXPORT_EXCLUDED) <= tenant_tables and not set(EXPORT_EXCLUDED) & exported

@@ -357,11 +357,12 @@ def match_tx(
     user: OwnerDep,
     admin: AdminDep,
     allocation: Annotated[list[str] | None, Form()] = None,
+    rounding_ok: Annotated[str, Form()] = "",
 ):
     tx = _tx_or_404(session, admin, tx_id)
     try:
         allocations = [_parse_allocation(v) for v in allocation or []]
-        service.match(session, tx, allocations, user.id)
+        service.match(session, tx, allocations, user.id, allow_rounding=bool(rounding_ok))
         session.commit()
         flash(request, "Transaction matched.")
     except ERRORS as exc:

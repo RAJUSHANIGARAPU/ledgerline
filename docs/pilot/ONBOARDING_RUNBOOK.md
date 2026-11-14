@@ -30,6 +30,8 @@ docker compose exec app ledgerline create-administration \
 # legal forms: see the dropdown under Settings; the chart of accounts is created with it
 ```
 
+The migrations seed an empty tenant called "Default". `create-tenant` removes it, and prints that it did, when it has no logins, administrations, documents or other data; it never touches one that is in use or has been renamed. Run the command with the database owner role configured (`LEDGERLINE_MIGRATION_DATABASE_URL`); without it the seeded tenant is left in place. On an install with real tenants the leftover "Default" would clutter the tenant list and stop the single-tenant mail default (`LEDGERLINE_IMAP_DEFAULT_ADMINISTRATION_ID`) from working.
+
 Then the owner login. Two routes:
 
 - **Invite by email** (preferred, no password passes through you): <!-- verify after feat/account-security merges --> create the owner membership as the first owner user and send the invitation from Settings, Users (the exact labels are confirmed after the feature merges). The owner accepts and sets a password. Until the feature is merged use the second route.

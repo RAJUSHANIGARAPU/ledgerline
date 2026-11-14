@@ -7,6 +7,7 @@ from difflib import SequenceMatcher
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ledgerline.config import get_settings
 from ledgerline.models import (
     BankAccount,
     BankTransaction,
@@ -19,6 +20,8 @@ SALES = "sales"
 PURCHASE = "purchase"
 
 SCORE_AMOUNT = 50
+SCORE_AMOUNT_NEAR = 45
+DEFAULT_TOLERANCE_CENTS = 2
 SCORE_NUMBER = 40
 SCORE_IBAN = 25
 SCORE_NAME = 15
@@ -52,6 +55,8 @@ class Suggestion:
     score: int
     reasons: list[str] = field(default_factory=list)
     exact_amount: bool = False
+    # Invoice remaining minus the payment, when that is a few cents (rounding), else 0.
+    difference_cents: int = 0
     number_hit: bool = False
     # The payment predates the invoice: a same-amount hit is a coincidence until the owner says so.
     before_invoice: bool = False
@@ -105,6 +110,7 @@ def score_candidates(
     counterparty_name: str | None,
     candidates: list[Candidate],
     booking_date: date | None = None,
+    tolerance_cents: int = DEFAULT_TOLERANCE_CENTS,
 ) -> list[Suggestion]:
     kind = SALES if amount_cents > 0 else PURCHASE
     paid = abs(amount_cents)
@@ -118,6 +124,10 @@ def score_candidates(
             sug.score += SCORE_AMOUNT
             sug.exact_amount = True
             sug.reasons.append("exact amount")
+        elif 0 < abs(cand.remaining_cents - paid) <= tolerance_cents:
+            sug.score += SCORE_AMOUNT_NEAR
+            sug.difference_cents = cand.remaining_cents - paid
+            sug.reasons.append(f"difference €{abs(sug.difference_cents) / 100:.2f}")
         if number_in_text(cand.number, text):
             sug.score += SCORE_NUMBER
             sug.number_hit = True
@@ -130,7 +140,8 @@ def score_candidates(
         if similarity >= NAME_THRESHOLD:
             sug.score += round(SCORE_NAME * similarity)
             sug.reasons.append(f"name similar ({round(similarity * 100)}%)")
-        if sug.score and not sug.exact_amount and paid < cand.remaining_cents:
+        if (sug.score and not sug.exact_amount and not sug.difference_cents
+                and paid < cand.remaining_cents):
             sug.reasons.append("partial payment")
         if booking_date is not None and sug.score:
             _score_dates(sug, booking_date)
@@ -198,7 +209,7 @@ def suggest(
         candidates = load_candidates(session, admin_id)
     ranked = score_candidates(
         tx.amount_cents, tx.description, tx.counterparty_iban, tx.counterparty_name, candidates,
-        tx.booking_date,
+        tx.booking_date, tolerance_cents=get_settings().bank_match_tolerance_cents,
     )
     _recommend(ranked)
     return ranked if include_all else [s for s in ranked if s.score > 0]

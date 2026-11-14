@@ -51,7 +51,7 @@
 {% if tab == 'other' and user_can_write %}
 <form method="post" action="/inbox/reject-non-invoices" class="card"><div class="card-body stack">
   {{ ui.csrf() }}
-  <span class="field-hint">Payout statements, payment reminders, contracts and your own sales invoices. They are kept out of the review list.</span>
+  <span class="field-hint">Payout statements, bank statements, payment reminders, contracts and your own sales invoices. They are kept out of the review list.</span>
   <div class="form-actions"><button class="btn" type="submit">Reject all {{ documents|length }}</button></div>
 </div></form>
 {% endif %}
@@ -63,8 +63,8 @@
       {% for d in documents %}
         <tr class="is-clickable">
           <td title="{{ d.source }}">{{ source_icon.get(d.source, '•') }}</td>
-          <td><a href="/inbox/{{ d.id }}">{{ names.get(d.attachment_id, 'document') }}</a></td>
-          <td class="muted">{{ d.sender or d.subject or d.source }}</td>
+          <td class="cell-file"><a href="/inbox/{{ d.id }}">{{ names.get(d.attachment_id, 'document') }}</a></td>
+          <td class="muted cell-from" title="{{ d.sender or d.subject or d.source }}">{{ d.sender or d.subject or d.source }}</td>
           <td class="muted">{{ d.received_at|nldate }}</td>
           <td class="muted">{{ types.get((d.extraction or {}).get('document_type')) or (labels.get(d.extraction_method, ('', ''))[0] if d.extraction_method else 'Waiting to be read') }}</td>
           <td><span class="badge badge-{{ status_badge[d.status] }}">{{ d.status }}</span></td>

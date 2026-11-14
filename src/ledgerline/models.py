@@ -68,6 +68,7 @@ class SystemRole(StrEnum):
     UBER_EATS_CLEARING = "uber_eats_clearing"
     THUISBEZORGD_CLEARING = "thuisbezorgd_clearing"
     PLATFORM_FEES = "platform_fees"
+    ROUNDING = "rounding"
 
 
 class ContactKind(StrEnum):

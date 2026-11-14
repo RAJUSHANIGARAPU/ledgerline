@@ -44,6 +44,7 @@ DEFAULT_CHART: list[tuple[str, str, AccountType, SystemRole | None, str | None]]
     ("4700", "Accounting and advice", X, None, "I21"),
     ("4800", "Bank charges", X, SystemRole.BANK_COSTS, "I0"),
     ("4610", "Delivery platform fees", X, SystemRole.PLATFORM_FEES, "I21"),
+    ("4890", "Rounding differences", X, SystemRole.ROUNDING, "I0"),
     ("4900", "Other expenses", X, None, "I21"),
     ("4950", "Depreciation", X, None, "I0"),
     ("7000", "Cost of goods sold", X, None, "I21"),
