@@ -10,6 +10,7 @@
 # Repository settings come from the environment or the env file: RESTIC_REPOSITORY,
 # RESTIC_PASSWORD, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_DEFAULT_REGION.
 # A RESTIC_REPOSITORY that is an absolute path is a local (file) repository.
+# The legal check of /healthz/deep (operator identity, drafting markers) does not fail the drill.
 # DRILL_SKIP_APP=1 skips the app start and the HTTP checks (database checks still run).
 # DRILL_MIN_FREE_DISK_PERCENT=<1-99> sets the /healthz/deep disk threshold for the drill stack, for
 # a machine whose Docker disk is fuller than production (default: the application's 10).
@@ -27,7 +28,7 @@ while [ $# -gt 0 ]; do
     --snapshot) SNAPSHOT="${2:?--snapshot needs a value}"; shift 2 ;;
     --env-file) ENV_FILE="${2:?--env-file needs a value}"; shift 2 ;;
     --keep) KEEP=1; shift ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,17p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -166,6 +167,11 @@ check_http() {
     tries=$((tries + 1)); sleep 2
   done
   if [ "$code" = "200" ]; then verdict PASS healthz-deep "HTTP 200 $(cat "$TMP/deep.json")"
+  elif [ "$code" = "503" ] && [ "$(grep -o '"ok":false' "$TMP/deep.json" | wc -l)" -eq 1 ] \
+    && grep -q '"legal":{"ok":false' "$TMP/deep.json"; then
+    # Legal-page readiness (operator identity, drafting markers) is a deployment setting, not a
+    # property of the restored data: report it, but do not fail the restore on it.
+    verdict PASS healthz-deep "restore checks ok; legal check still open (operator identity or drafting markers), see /healthz/deep on the live system"
   else verdict FAIL healthz-deep "HTTP $code $(cat "$TMP/deep.json" 2>/dev/null)"; fi
 }
 
