@@ -1,5 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Choose a workspace{% endblock %}
+{% macro chooser() %}
+    {% for m in memberships %}
+    <form method="post" action="/tenants" data-purge-queue>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="tenant_id" value="{{ m.tenant.id }}">
+      <button class="btn btn-block" type="submit">{{ m.tenant.name }} <span class="muted">({{ m.role }})</span></button>
+    </form>
+    {% endfor %}
+{% endmacro %}
+{% block heading %}Choose a workspace{% endblock %}
+{% block content %}
+<div class="card"><div class="card-body stack">
+  <p class="muted">Choose the account you want to work in.</p>
+  {{ chooser() }}
+</div></div>
+{% endblock %}
 {% block public %}
 <div class="auth-page">
   <div class="card auth-card">
@@ -8,13 +24,7 @@
       <span>Ledgerline</span>
     </div>
     <p class="muted">Choose the account you want to work in.</p>
-    {% for m in memberships %}
-    <form method="post" action="/tenants" data-purge-queue>
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="tenant_id" value="{{ m.tenant.id }}">
-      <button class="btn btn-block" type="submit">{{ m.tenant.name }} <span class="muted">({{ m.role }})</span></button>
-    </form>
-    {% endfor %}
+    {{ chooser() }}
     <form method="post" action="/logout" data-purge-queue>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button class="link-button" type="submit">Sign out</button>

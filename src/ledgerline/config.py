@@ -1,6 +1,20 @@
+from dataclasses import dataclass
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+@dataclass(frozen=True)
+class OperatorIdentity:
+    legal_name: str
+    kvk_number: str
+    address: str
+    contact_email: str
+
+    def missing(self) -> list[str]:
+        """Names of the fields that are empty or still a bracketed placeholder."""
+        return [name for name, value in vars(self).items()
+                if not value or value.startswith("[")]
 
 
 class Settings(BaseSettings):
@@ -55,6 +69,13 @@ class Settings(BaseSettings):
     health_require_offsite_backup: bool = False
     health_rate_limit_per_minute: int = 30
 
+    # Who runs this installation: shown on the privacy notice and the terms. Production health
+    # fails until all four are set (they are not guessed or defaulted).
+    operator_legal_name: str = ""
+    operator_kvk_number: str = ""
+    operator_address: str = ""
+    operator_contact_email: str = ""
+
     # Outbound email (invitations, password reset). Empty host = email off.
     smtp_host: str = ""
     smtp_port: int = 587
@@ -65,6 +86,15 @@ class Settings(BaseSettings):
     smtp_tls: str = "starttls"
     # "development" prints links to the server log when SMTP is not configured.
     environment: str = "production"
+
+    @property
+    def operator_identity(self) -> "OperatorIdentity":
+        return OperatorIdentity(
+            legal_name=self.operator_legal_name.strip(),
+            kvk_number=self.operator_kvk_number.strip(),
+            address=self.operator_address.strip(),
+            contact_email=self.operator_contact_email.strip(),
+        )
 
     @property
     def owner_database_url(self) -> str:

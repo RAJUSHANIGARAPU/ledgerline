@@ -16,7 +16,7 @@
   {% block head %}{% endblock %}
 </head>
 <body hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
-{% if request.session.get('user_id') and request.session.get('tenant_id') %}
+{% if request.session.get('user_id') and request.session.get('tenant_id') and not standalone %}
 <div class="shell">
   <aside class="sidebar" id="sidebar">
     <a class="brand" href="{{ '/capture' if is_uploader else '/' }}">

@@ -42,6 +42,10 @@ class TenantRequired(Exception):
     """Signed in, but no tenant selected (or the membership is gone): redirect to /tenants."""
 
 
+class NoAdministration(Exception):
+    """Signed in to a tenant that has no administration (or none this user can reach)."""
+
+
 def csrf_token(request: Request) -> str:
     token = request.session.get("csrf")
     if not token:
@@ -160,7 +164,7 @@ def _resolve_administration(request: Request, session: Session) -> Administratio
     if admin is None:
         admin = session.scalar(select(Administration).order_by(Administration.id))
         if admin is None:
-            raise HTTPException(status.HTTP_409_CONFLICT, "no administration exists yet")
+            raise NoAdministration
         request.session["administration_id"] = admin.id
     return admin
 

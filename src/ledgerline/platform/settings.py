@@ -5,6 +5,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
 
 from ledgerline import audit
+from ledgerline.accounts import invitations
 from ledgerline.config import get_settings
 from ledgerline.inbox.email_intake import inbox_address
 from ledgerline.ledger.chart import create_administration
@@ -41,15 +42,19 @@ def _context(session, user, admin, **extra) -> dict:
         "is_owner": user.role == Role.OWNER,
         "administrations": session.scalars(
             select(Administration).order_by(Administration.id)).all(),
-        "users": [],
+        "users": [], "failed_invites": set(),
         "inbox_address": inbox_address(get_settings(), admin.inbox_token)
         if user.role in WRITE_ROLES else None,
     }
     if user.role == Role.OWNER:
-        ctx["users"] = session.execute(
-            select(User, Membership.role, Membership.status)
+        rows = session.execute(
+            select(User, Membership.role, Membership.status, Membership.id)
             .join(Membership, Membership.user_id == User.id)
             .where(Membership.tenant_id == tenant_id).order_by(User.id)).all()
+        ctx["users"] = [row[:3] for row in rows]
+        failed = invitations.failed_memberships(
+            session, [r[3] for r in rows if r[2] == "pending"])
+        ctx["failed_invites"] = {r[0].id for r in rows if r[3] in failed}
     ctx.update(extra)
     return ctx
 

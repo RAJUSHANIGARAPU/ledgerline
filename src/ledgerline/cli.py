@@ -6,6 +6,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, func, select
 
+from ledgerline.accounts import tokens
 from ledgerline.auth import hash_password
 from ledgerline.config import get_settings
 from ledgerline.db import get_sessionmaker, tenant_session
@@ -170,6 +171,42 @@ def add_membership(args: argparse.Namespace) -> int:
         session.add(Membership(user_id=user.id, tenant_id=tenant_id, role=args.role))
         session.commit()
     print(f"Added {args.email} to tenant {tenant_id} as {args.role}")
+    return 0
+
+
+def invite_owner(args: argparse.Namespace) -> int:
+    """Send the normal invitation mail to the first owner of a tenant (no password, no login)."""
+    from ledgerline import mail
+    from ledgerline.accounts import invitations
+    from ledgerline.platform import validation as v
+
+    address, err = v.check_email(args.email)
+    if err or not address:
+        print(f"error: {err or '--email is required'}", file=sys.stderr)
+        return 1
+    address = address.lower()
+    if not mail.can_deliver():
+        print("error: email is not set up (LEDGERLINE_SMTP_HOST and LEDGERLINE_SMTP_FROM), "
+              "so the invitation cannot be sent", file=sys.stderr)
+        return 1
+    with tenant_session(args.tenant) as session:
+        tenant = session.get(Tenant, args.tenant)
+        if tenant is None:
+            print(f"error: tenant {args.tenant} does not exist", file=sys.stderr)
+            return 1
+        invitation = invitations.prepare(session, tenant, address, Role.OWNER.value)
+        if invitation is None:
+            print(f"{address} is already a member of tenant {tenant.id}; nothing sent.")
+            return 0
+        delivered = invitations.deliver(session, invitation, role=Role.OWNER.value,
+                                        actor_id=None, source="cli")
+        session.commit()
+    if not delivered:
+        print(f"error: the invitation email to {address} could not be sent. Check the SMTP "
+              "settings and run the command again; it issues a fresh link.", file=sys.stderr)
+        return 1
+    print(f"Invitation sent to {address} as owner of tenant {args.tenant} "
+          f"(the link works for {tokens.INVITE_TTL.days} days).")
     return 0
 
 
@@ -464,6 +501,12 @@ def build_parser() -> argparse.ArgumentParser:
     member.add_argument("--role", choices=roles, default=Role.OWNER.value)
     member.add_argument("--tenant", type=int, help="tenant id (optional with a single tenant)")
     member.set_defaults(func=add_membership)
+
+    inv = sub.add_parser("invite-owner",
+                         help="email the first owner of a tenant the normal invitation link")
+    inv.add_argument("--tenant", type=int, required=True)
+    inv.add_argument("--email", required=True)
+    inv.set_defaults(func=invite_owner)
 
     admin = sub.add_parser("create-administration", help="create an administration")
     admin.add_argument("--name", required=True)
