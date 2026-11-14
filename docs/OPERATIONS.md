@@ -98,6 +98,24 @@ On any machine with Docker (a laptop is fine). With the repository settings in t
 
 Counts are compared before the migrations run, so a migration cannot hide a restore problem. Log the date, snapshot and result in your own records each month. A failed drill is an incident: the backups are not usable until it passes.
 
+## Pilot measurements
+
+No analytics service and no extra tracking table: uploads and processing times are derived from the audit events the app already writes (`inbox.receive`, `inbox.receive_failed`, `inbox.create_purchase`, `inbox.link_duplicate`). They hold channel, reason code and timestamps, never document contents or amounts.
+
+```
+docker compose exec app ledgerline pilot-report --from 2026-11-15 --to 2026-11-30 [--tenant N]
+docker compose exec app ledgerline feedback-export --from 2026-11-15 --to 2026-11-30 > feedback.csv
+```
+
+- Channels: `web` (inbox upload), `phone` (capture page), `shortcut` (iOS shortcut token), `email` (mailbox).
+- Time to processed runs from receipt to the first purchase created or linked from the inbox document. Rejected documents are excluded; documents still waiting are counted separately. Percentiles are nearest-rank, dates are UTC.
+- Not counted: requests with an invalid token (no administration to attribute them to), duplicates of a document already received, and events from before this release (no channel recorded; they fall back to the source, so shortcut uploads show as `phone`).
+- Feedback comes from the "Feedback" link in the app (owners and bookkeepers). The text is personal data, stored verbatim in `feedback_entries`, included in the administration ZIP export and deleted with the tenant by `delete-tenant`. The form refuses empty text, text over 5000 characters and NUL bytes, and allows 20 messages per user per hour (per process).
+- The CSV has a `tenant_id` column. Its text is verbatim except that a cell starting with `=`, `+`, `-`, `@`, tab or carriage return gets a leading `'` so a spreadsheet does not run it as a formula.
+- The terminal report escapes control characters (including ANSI and OSC sequences) as `\uXXXX`; newline and tab stay. Storage and CSV keep the original characters.
+- Both commands refuse to run when the database role is a superuser, has BYPASSRLS or owns tables without forced row-level security, because every tenant would then see all rows. Use the application role, or pass `--allow-rls-bypass` knowingly. An unknown `--tenant` is an error.
+- Known limits: a receive failure is recorded in the polling session, so a poll that fails and re-fetches the message can record the failure twice (receipts are deduplicated by hash, failures are not). Unknown senders, unroutable mail, size refusals made before the app sees the file, unexpected errors and uploads without a filename are not counted as failures.
+
 ## Monitoring
 
 `GET /healthz/deep` is unauthenticated, rate limited (30 requests per minute per client address, then 429) and returns JSON with only check names, ages and percentages:

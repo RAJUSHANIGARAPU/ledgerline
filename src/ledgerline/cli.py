@@ -77,6 +77,57 @@ def delete_tenant(args: argparse.Namespace) -> int:
     return 0
 
 
+def _date_range(args: argparse.Namespace):
+    from datetime import date
+
+    start, end = date.fromisoformat(args.start), date.fromisoformat(args.end)
+    if end < start:
+        raise SystemExit("error: --to is before --from")
+    return start, end
+
+
+def _tenant_sessions(args: argparse.Namespace):
+    from sqlalchemy import select
+
+    from ledgerline.db import for_each_tenant, get_sessionmaker, rls_bypass_reason
+    from ledgerline.models import Tenant
+
+    with get_sessionmaker()() as probe:
+        known = set(probe.scalars(select(Tenant.id)))
+        reason = rls_bypass_reason(probe)
+    if reason and not args.allow_rls_bypass:
+        raise SystemExit(
+            f"error: refusing to run, {reason}, so tenants would not be isolated. Use the "
+            "application role (LEDGERLINE_DATABASE_URL), or pass --allow-rls-bypass.")
+    if args.tenant is not None and args.tenant not in known:
+        raise SystemExit(f"error: no tenant with id {args.tenant}")
+    for tid, session in for_each_tenant():
+        if args.tenant is None or tid == args.tenant:
+            yield tid, session
+
+
+def pilot_report(args: argparse.Namespace) -> int:
+    from ledgerline.platform import pilot
+
+    start, end = _date_range(args)
+    for tid, (reports, feedback) in pilot.report_by_tenant(
+        _tenant_sessions(args), start, end
+    ).items():
+        print(pilot.render_text(tid, reports, feedback, start, end), end="\n\n")
+    return 0
+
+
+def feedback_export(args: argparse.Namespace) -> int:
+    from ledgerline.platform import pilot
+
+    start, end = _date_range(args)
+    rows = []
+    for _, session in _tenant_sessions(args):
+        rows += pilot.feedback_rows(session, start, end)
+    sys.stdout.write(pilot.feedback_csv(rows))
+    return 0
+
+
 def create_user(args: argparse.Namespace) -> int:
     email = args.email.strip().lower()
     try:
@@ -169,6 +220,9 @@ WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'ledgerline\\_%
 """
 
 
+NO_UPDATE_TABLES = {"feedback_entries"}
+
+
 def grant_app_role(raw) -> list[str]:
     """Grant the app role data access on protected tables only; return the tables granted.
 
@@ -182,8 +236,8 @@ def grant_app_role(raw) -> list[str]:
     tables = sorted({*protected, *SHARED_TABLES})
     for table in tables:
         raw.execute(
-            sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON {} TO ledgerline_app").format(
-                sql.Identifier(table)
+            sql.SQL("GRANT SELECT, INSERT, {}DELETE ON {} TO ledgerline_app").format(
+                sql.SQL("" if table in NO_UPDATE_TABLES else "UPDATE, "), sql.Identifier(table)
             )
         )
     for (sequence,) in raw.execute(OWNED_SEQUENCES, (tables,)).fetchall():
@@ -320,6 +374,18 @@ def build_parser() -> argparse.ArgumentParser:
     seed = sub.add_parser("seed-demo", help="load demo data into a new tenant")
     seed.add_argument("--email", help="existing user to make owner of the demo tenant")
     seed.set_defaults(func=seed_demo)
+
+    for name, handler, blurb in (
+        ("pilot-report", pilot_report, "uploads, processing time, feedback for a date range"),
+        ("feedback-export", feedback_export, "feedback entries as CSV (verbatim)"),
+    ):
+        cmd = sub.add_parser(name, help=blurb)
+        cmd.add_argument("--from", dest="start", required=True, help="YYYY-MM-DD, inclusive")
+        cmd.add_argument("--to", dest="end", required=True, help="YYYY-MM-DD, inclusive")
+        cmd.add_argument("--tenant", type=int, help="limit to one tenant")
+        cmd.add_argument("--allow-rls-bypass", action="store_true",
+                         help="run even if the database role bypasses row-level security")
+        cmd.set_defaults(func=handler)
 
     work = sub.add_parser("worker", help="read incoming documents and poll the invoice mailbox")
     work.set_defaults(func=worker)

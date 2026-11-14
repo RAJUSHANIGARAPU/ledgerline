@@ -112,6 +112,7 @@ def _ingest(session, admin_id: int, user_id: int, payloads, subject):
                 session, admin_id, name, content, "phone", subject=subject, user_id=user_id
             )
         except inbox.InboxError as exc:
+            inbox.record_rejection(session, admin_id, "phone", exc, user_id=user_id)
             results.append({"name": name, "error": _friendly(str(exc))})
             continue
         results.append({"name": name, "id": document.id, "duplicate": not created})
@@ -160,6 +161,23 @@ async def _read_upload(request: Request, limit: int) -> tuple[str, bytes] | JSON
     return filename, content
 
 
+def _reject(session, token: ApiToken, error: inbox.InboxError) -> None:
+    inbox.record_rejection(
+        session, token.administration_id, "shortcut", error, user_id=token.user_id)
+    session.commit()
+
+
+def _failure_code(status_code: int) -> str:
+    return "too_large" if status_code == 413 else "invalid"
+
+
+def _reject_upload(token_value: str, code: str) -> None:
+    with get_sessionmaker()() as session:
+        token = tokens.authenticate(session, token_value)
+        if token is not None:
+            _reject(session, token, inbox.InboxError(code, code))
+
+
 def _store(token_value: str, filename: str, content: bytes) -> JSONResponse:
     with get_sessionmaker()() as session:
         token = tokens.authenticate(session, token_value)
@@ -168,9 +186,11 @@ def _store(token_value: str, filename: str, content: bytes) -> JSONResponse:
         try:
             inbox.sniff_type(content)
         except inbox.InboxError as exc:
+            _reject(session, token, exc)
             return JSONResponse({"detail": str(exc)}, 415)
         document, created = inbox.receive(
-            session, token.administration_id, filename, content, "phone", user_id=token.user_id
+            session, token.administration_id, filename, content, "phone",
+            user_id=token.user_id, channel="shortcut",
         )
         audit.record(
             session,
@@ -209,9 +229,11 @@ async def api_upload(request: Request):
     limit = get_settings().max_upload_bytes
     read = await _read_upload(request, limit)
     if isinstance(read, Response):
+        await run_in_threadpool(_reject_upload, value, _failure_code(read.status_code))
         return read
     filename, content = read
     if not content:
+        await run_in_threadpool(_reject_upload, value, "empty")
         return JSONResponse({"detail": "the file is empty"}, 400)
     return await run_in_threadpool(_store, value, filename, content)
 
