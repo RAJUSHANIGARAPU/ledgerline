@@ -15,7 +15,8 @@ Ledgerline must be reachable from your phone over HTTPS. The address below is wh
 Notes:
 
 - Safari converts HEIC photos to JPEG when you pick them in a file input. Ledgerline accepts PDF, JPEG, PNG and UBL/XML only; anything else gets a clear error.
-- Offline, the app shows "You're offline — photos can't be uploaded right now". Nothing is queued; upload again when you have a connection.
+- If the connection drops while you upload from the capture page, the files are saved on the phone and the page shows "N waiting to upload". They are sent automatically when the phone is back online (and again whenever you open or return to the capture page); each one is cleared only after the server confirms it. A queued file always goes to the administration it was captured for, even if you switch administration in the meantime. A file the server refuses stays in the list with the reason and a Discard button.
+- The queue needs the capture page to be open. Opening the app while fully offline shows "You're offline"; reopen it once you have a connection. Only iOS Safari without Background Sync relies on this; browsers that have it can also send in the background.
 - The app caches only its own static files (styles, icons), never pages or data.
 
 ## 2. iOS Shortcut: "Send to Ledgerline"

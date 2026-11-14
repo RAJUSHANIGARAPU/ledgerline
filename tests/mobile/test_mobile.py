@@ -96,6 +96,56 @@ def test_capture_post_forbidden_for_readonly_and_needs_csrf(readonly_client, cli
     assert client.post("/capture", data={"csrf_token": "wrong"}, files=files).status_code == 403
 
 
+def test_capture_json_reply_for_the_offline_queue(client, session, admin):
+    files = [("files", ("q.pdf", pdf("queued"), "application/pdf"))]
+    data = {"csrf_token": client.csrf, "administration_id": str(admin.id)}
+    first = client.post("/capture", data=data, files=files, headers={"Accept": "application/json"})
+    assert first.status_code == 200
+    [row] = first.json()["results"]
+    assert row["duplicate"] is False and "error" not in row
+    again = client.post("/capture", data=data, files=files, headers={"Accept": "application/json"})
+    assert again.json()["results"][0] == {**row, "duplicate": True}
+    assert len(docs(session)) == 1
+    bad = client.post(
+        "/capture",
+        data=data,
+        files=[("files", ("x.gif", b"GIF89a....", "image/gif"))],
+        headers={"Accept": "application/json"},
+    )
+    assert "not supported" in bad.json()["results"][0]["error"]
+
+
+def test_capture_lands_in_the_administration_it_was_captured_for(client, session, admin):
+    from ledgerline.ledger.chart import create_administration
+
+    second = create_administration(session, name="Tweede Zaak", kvk_number="11112222")
+    session.commit()
+    response = client.post(
+        "/capture",
+        data={"csrf_token": client.csrf, "administration_id": str(second.id)},
+        files=[("files", ("late.pdf", pdf("late"), "application/pdf"))],
+        headers={"Accept": "application/json"},
+    )
+    assert response.status_code == 200 and response.json()["administration"] == "Tweede Zaak"
+    [doc] = docs(session)
+    assert doc.administration_id == second.id != admin.id
+
+
+def test_capture_refuses_an_administration_it_cannot_resolve(
+    client, session, other_admin, admin
+):
+    files = [("files", ("n.pdf", pdf("nope"), "application/pdf"))]
+    for bogus in (str(other_admin.id), "999999", "abc"):
+        response = client.post(
+            "/capture",
+            data={"csrf_token": client.csrf, "administration_id": bogus},
+            files=files,
+            headers={"Accept": "application/json"},
+        )
+        assert response.status_code == 409, bogus
+    assert docs(session) == []
+
+
 def test_api_upload_multipart_then_duplicate(anon, token, session, admin):
     row, value = token
     first = anon.post(

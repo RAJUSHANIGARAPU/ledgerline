@@ -2,11 +2,14 @@
 {% import "components/macros.html" as ui with context %}
 {% block title %}Capture{% endblock %}
 {% block heading %}Capture a document{% endblock %}
-{% block head %}<script src="{{ url_for('static', path='js/capture.js') }}" defer></script>{% endblock %}
+{% block head %}<script src="{{ url_for('static', path='js/capture-queue.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/capture.js') }}" defer></script>{% endblock %}
 {% block content %}
-<form class="card" method="post" action="/capture" enctype="multipart/form-data" id="capture-form">
+<div class="stack" id="capture-queue" aria-live="polite" hidden></div>
+<form class="card" method="post" action="/capture" enctype="multipart/form-data" id="capture-form" data-admin-id="{{ admin.id }}" data-admin-name="{{ admin.name }}">
   <div class="card-body stack">
     {{ ui.csrf() }}
+    <input type="hidden" name="administration_id" value="{{ admin.id }}">
     <label class="field">
       <span class="field-label">Take photo</span>
       <input class="input" type="file" name="files" accept="image/*" capture="environment" data-picker>
@@ -24,7 +27,7 @@
     </label>
     <progress id="capture-progress" max="100" value="0" hidden></progress>
     <button class="btn btn-primary btn-block" type="submit" id="capture-submit">Upload to inbox</button>
-    <p class="fine-print">Uploads for {{ admin.name }}. Duplicates are recognised and not stored twice.</p>
+    <p class="fine-print">Uploads for {{ admin.name }}. Duplicates are recognised and not stored twice. Without a connection, uploads wait on this phone and are sent when you are back online.</p>
   </div>
 </form>
 {% endblock %}

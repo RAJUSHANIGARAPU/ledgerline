@@ -1,11 +1,14 @@
 // Caches static assets only; pages and API responses always go to the network.
-const CACHE = "ledgerline-static-v1";
+const CACHE = "ledgerline-static-v2";
+importScripts("/static/js/capture-queue.js");
+
 const OFFLINE_URL = "/static/offline.html";
 const PRECACHE = [
   OFFLINE_URL,
   "/static/css/app.css",
   "/static/js/app.js",
   "/static/js/capture.js",
+  "/static/js/capture-queue.js",
   "/static/img/mark.svg",
   "/static/img/icon-192.png",
 ];
@@ -46,4 +49,8 @@ self.addEventListener("fetch", (event) => {
         .catch(() => caches.match(request))
     );
   }
+});
+
+self.addEventListener("sync", (event) => {
+  if (event.tag === "capture-queue") event.waitUntil(self.captureQueue.flush());
 });
