@@ -14,10 +14,15 @@ GOOGLE = "forwarding-noreply@google.com"
 CSRF = re.compile(r'name="csrf_token" value="([^"]+)"')
 
 
-def confirmation(token, body=None, sender=GOOGLE, message_id="<c1@google.com>"):
+PASS = "mx.jouwbedrijf.example; dkim=pass header.d=google.com header.s=20230601; spf=pass"
+
+
+def confirmation(token, body=None, sender=GOOGLE, message_id="<c1@google.com>", auth=PASS):
     body = body if body is not None else f"Confirm forwarding: {LINK}\nIgnore otherwise."
+    headers = {"Authentication-Results": auth} if auth else None
     return eml(sender=sender, to=f"invoices+{token}@jouwbedrijf.example", body=body,
-               subject="Gmail Forwarding Confirmation", message_id=message_id)
+               subject="Gmail Forwarding Confirmation", message_id=message_id,
+               extra_headers=headers)
 
 
 def notices(session):
@@ -71,6 +76,13 @@ def test_other_senders_do_not_create_notices(session, admin, settings):  # noqa:
     "Open https://google.com.evil.example/vf-1",
     "Open https://mail-settings.google.com@evil.example/vf-1",
     "Open https://notgoogle.com/vf-1",
+    "Open https://evil.example\\.google.com/vf-1",
+    "Open https://evil.example%5C.google.com/vf-1",
+    "Open https://sites.google.com/vf-1",
+    "Open https://docs.google.com/vf-1",
+    "Open https://google.com/vf-1",
+    "Open https://mail-settings.google.com:8443/vf-1",
+    "Open https://mail-settings.google.com.evil.example/vf-1",
     "No link at all",
 ])
 def test_non_google_links_are_not_surfaced(session, admin, settings, body):  # noqa: F811
@@ -138,3 +150,33 @@ def test_confirmation_is_not_subject_to_the_sender_allow_list(session, admin, se
     strict = settings.model_copy(update={"imap_allowed_senders": "@leverancier.example"})
     poll(session, FakeMailbox({"1": confirmation(admin.inbox_token)}), strict)
     assert len(notices(session)) == 1
+
+
+def test_mail_without_a_passing_google_dkim_is_labelled_unverified(session, admin, settings):  # noqa: F811
+    for auth in (None, "mx.x.example; dkim=pass header.d=evil.example",
+                 "mx.x.example; dkim=fail header.d=google.com"):
+        poll(session, FakeMailbox({"1": confirmation(admin.inbox_token, auth=auth)}), settings)
+        for n in notices(session):
+            session.delete(n)
+        session.commit()
+    poll(session, FakeMailbox({"1": confirmation(admin.inbox_token, auth=None)}), settings)
+    assert [n.kind for n in notices(session)] == ["unverified"]
+
+
+def test_verified_mail_is_marked_gmail(session, admin, settings):  # noqa: F811
+    poll(session, FakeMailbox({"1": confirmation(admin.inbox_token)}), settings)
+    assert [n.kind for n in notices(session)] == ["gmail"]
+
+
+def test_unverified_notice_is_not_styled_as_gmail(client, session, admin, settings):  # noqa: F811
+    poll(session, FakeMailbox({"1": confirmation(admin.inbox_token, auth=None)}), settings)
+    page = client.get("/inbox").text
+    assert "Unverified sender" in page and "Gmail asks you to confirm" not in page
+
+
+def test_active_notices_are_capped_per_administration(session, admin, settings):  # noqa: F811
+    for n in range(5):
+        body = f"https://mail-settings.google.com/mail/vf-{n}"
+        poll(session, FakeMailbox({"1": confirmation(
+            admin.inbox_token, body=body, message_id=f"<c{n}@google.com>")}), settings)
+    assert len(notices(session)) == forwarding.MAX_ACTIVE_NOTICES
