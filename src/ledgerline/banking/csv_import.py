@@ -359,22 +359,43 @@ def parse_csv(content: bytes, mapping: CsvMapping, account_iban: str) -> ParsedS
     )
 
 
+def _header_key(header: str) -> str:
+    """Lower-cased header without a unit in brackets: "Bedrag (EUR)" -> "bedrag"."""
+    return re.sub(r"\s+", " ", re.sub(r"\([^)]*\)", " ", header.lower())).strip()
+
+
 def suggest_mapping(headers: list[str]) -> dict:
     """Guess columns from common header words, to pre-select the mapping form."""
     hints = {
         "date": ("boekdatum", "transactiedatum", "datum", "date"),
         "amount": ("bedrag", "amount", "transactiebedrag"),
+        "direction": ("af bij", "af/bij", "debit/credit", "debet/credit", "d/c",
+                      "credit/debit", "creditdebit indicator", "cdtdbtind"),
         "counterparty": ("naam tegenpartij", "tegenrekeninghouder", "naam / omschrijving",
                          "counterparty", "naam"),
         "iban": ("tegenrekening", "tegenrekeningnummer", "counterparty iban"),
         "description": ("omschrijving", "mededelingen", "description"),
     }
-    lowered = {h.lower(): h for h in headers}
+    keyed = {_header_key(h): h for h in headers if h.strip()}
     found: dict = {}
     for key, words in hints.items():
-        for word in words:
-            match = next((h for low, h in lowered.items() if low == word), None)
-            if match:
-                found[key] = [match] if key == "description" else match
-                break
+        match = next((keyed[w] for w in words if w in keyed), None)
+        match = match or next(
+            (h for w in words for k, h in keyed.items() if k.startswith(w + " ")), None
+        )
+        if match:
+            found[key] = [match] if key == "description" else match
+    if "amount" not in found:
+        found.update(_split_amount_columns(keyed))
+        found.pop("direction", None)
     return found
+
+
+def _split_amount_columns(keyed: dict[str, str]) -> dict:
+    split = {}
+    for key, words in (("debit", ("debet", "debit", "af", "afschrijving")),
+                       ("credit", ("credit", "bij", "bijschrijving"))):
+        match = next((keyed[w] for w in words if w in keyed), None)
+        if match:
+            split[key] = match
+    return split if len(split) == 2 else {}
