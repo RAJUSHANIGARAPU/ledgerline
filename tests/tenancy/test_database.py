@@ -22,7 +22,7 @@ def test_every_tenant_table_has_enabled_forced_policy(owner_engine):
             "SELECT tablename, policyname, qual, with_check FROM pg_policies "
             "WHERE schemaname = 'public'"))}
     assert set(tables) == with_columns - {"memberships"}
-    assert len(tables) == 18
+    assert len(tables) == 19
     for table in tables:
         assert flags[table] == (True, True), table
         policy = policies[table]

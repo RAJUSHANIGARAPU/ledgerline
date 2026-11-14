@@ -493,6 +493,18 @@ class InboxDocument(TenantScoped, Base):
     reviewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
 
+class FeedbackEntry(TenantScoped, Base):
+    """Pilot feedback, stored verbatim. Personal data: exported with the administration and
+    deleted with the tenant."""
+
+    __tablename__ = "feedback_entries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = _now()
+
+
 class ApiToken(TenantScoped, Base):
     """Upload-only token for the phone shortcut. Only the SHA-256 of the token is stored."""
 

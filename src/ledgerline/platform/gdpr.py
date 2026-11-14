@@ -19,6 +19,7 @@ from ledgerline.models import (
     BankStatement,
     BankTransaction,
     Contact,
+    FeedbackEntry,
     JournalEntry,
     JournalLine,
     NumberSequence,
@@ -176,6 +177,7 @@ def _table_dumps(session, admin: Administration):
         "number_sequences": select(NumberSequence).where(NumberSequence.administration_id == aid),
         "attachments": select(Attachment).where(Attachment.administration_id == aid),
         "audit_events": select(AuditEvent).where(AuditEvent.administration_id == aid),
+        "feedback_entries": select(FeedbackEntry).where(FeedbackEntry.administration_id == aid),
     }
     for name, stmt in queries.items():
         pk = inspect(stmt.column_descriptions[0]["entity"]).primary_key[0]

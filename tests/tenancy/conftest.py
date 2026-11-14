@@ -12,6 +12,7 @@ from ledgerline.models import (
     BankAccount,
     BankTransaction,
     Contact,
+    FeedbackEntry,
     InboxDocument,
     JournalEntry,
     Membership,
@@ -33,6 +34,8 @@ def seed_tenant(tenant_id: int, owner_id: int | None = None) -> dict:
         user_id = owner_id or s.scalar(select(Membership.user_id).where(
             Membership.tenant_id == tenant_id))
         inbox.receive(s, books.id, "bill.xml", ubl([("Hosting", 1000, "S", 21)]), "upload")
+        s.add(FeedbackEntry(administration_id=books.id, user_id=user_id,
+                            body=f"seed feedback of tenant {tenant_id}"))
         _, secret = tokens.create_token(s, s.get(User, user_id), books.id, "Phone")
         s.commit()
         first = {m: s.scalar(select(m.id).where(m.administration_id == books.id).order_by(m.id))
