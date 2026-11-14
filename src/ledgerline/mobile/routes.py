@@ -11,12 +11,22 @@ from ledgerline.config import get_settings
 from ledgerline.db import get_sessionmaker
 from ledgerline.inbox import service as inbox
 from ledgerline.mobile import tokens
-from ledgerline.models import ApiToken
-from ledgerline.web import AdminDep, ManagerDep, OwnerDep, SessionDep, UserDep, flash, render
+from ledgerline.models import Administration, ApiToken
+from ledgerline.web import (
+    AdminDep,
+    ManagerDep,
+    OwnerDep,
+    SessionDep,
+    UserDep,
+    csrf_token,
+    flash,
+    render,
+)
 
 router = APIRouter()
 STATIC = Path(__file__).resolve().parent.parent / "static"
 MULTIPART_SLACK = 64 * 1024
+INT4_MAX = 2**31 - 1
 
 
 @router.get("/manifest.webmanifest", include_in_schema=False)
@@ -40,8 +50,19 @@ def capture_form(request: Request, user: UserDep, admin: AdminDep):
         "mobile/capture.html",
         {
             "admin": admin,
+            "user_id": user.id,
+            "tenant_id": request.state.tenant.id,
             "max_mb": get_settings().max_upload_bytes // (1024 * 1024),
         },
+    )
+
+
+@router.get("/capture/context", include_in_schema=False)
+def capture_context(request: Request, user: UserDep):
+    """Who is signed in and a CSRF token, for the offline queue (page and service worker)."""
+    return JSONResponse(
+        {"userId": user.id, "tenantId": request.state.tenant.id, "csrf": csrf_token(request)},
+        headers={"Cache-Control": "no-store"},
     )
 
 
@@ -50,14 +71,35 @@ async def capture_submit(request: Request, user: OwnerDep, admin: AdminDep, sess
     form = await request.form()
     note = str(form.get("note") or "")
     chosen = [f for f in form.getlist("files") if hasattr(f, "read") and f.filename]
+    wants_json = "application/json" in request.headers.get("accept", "")
     if not chosen:
+        if wants_json:
+            return JSONResponse({"detail": "no file"}, 400)
         flash(request, "Choose a photo or file first.", "error")
         return RedirectResponse("/capture", 303)
+    # A queued upload names the administration it was captured for, not whichever is selected now.
+    target = _capture_target(session, admin, form.get("administration_id"))
+    if target is None:
+        return JSONResponse({"detail": "administration not available"}, 409)
     payloads = [(f.filename, await f.read()) for f in chosen]
     results = await run_in_threadpool(
-        _ingest, session, admin.id, user.id, payloads, note.strip() or None
+        _ingest, session, target.id, user.id, payloads, note.strip() or None
     )
-    return render(request, "mobile/captured.html", {"admin": admin, "results": results})
+    if wants_json:
+        return JSONResponse({"administration": target.name, "results": results})
+    return render(request, "mobile/captured.html", {"admin": target, "results": results})
+
+
+def _capture_target(session, current, requested) -> Administration | None:
+    if requested in (None, ""):
+        return current
+    if not str(requested).isdigit():
+        return None
+    if int(requested) == current.id:
+        return current
+    if int(requested) > INT4_MAX:
+        return None
+    return session.get(Administration, int(requested))
 
 
 def _ingest(session, admin_id: int, user_id: int, payloads, subject):

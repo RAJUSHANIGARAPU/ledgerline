@@ -2,7 +2,8 @@
 {% import "components/macros.html" as ui with context %}
 {% block title %}Uploaded{% endblock %}
 {% block heading %}Upload result{% endblock %}
-{% block head %}<script src="{{ url_for('static', path='js/capture.js') }}" defer></script>{% endblock %}
+{% block head %}<script src="{{ url_for('static', path='js/capture-queue.js') }}" defer></script>
+<script src="{{ url_for('static', path='js/capture.js') }}" defer></script>{% endblock %}
 {% block content %}
 <div class="stack">
   {% for r in results %}
