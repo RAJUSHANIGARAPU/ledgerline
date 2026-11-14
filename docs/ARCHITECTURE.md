@@ -61,7 +61,7 @@ flowchart LR
     backup -->|ping| hc
 ```
 
-Not connected on purpose: banks (statements are uploaded as CAMT.053/MT940 files), the
+Not connected on purpose: banks (statements are uploaded as CAMT.053/MT940/CSV files), the
 Belastingdienst (the VAT return is prepared, the owner files it in Mijn Belastingdienst Zakelijk)
 and Peppol (UBL files are generated, not sent).
 
@@ -149,7 +149,7 @@ A restore brings back tenants that were deleted after the backup was taken: re-r
 |---|---|
 | `ledgerline.ledger` | Double-entry posting, chart of accounts, period lock (rules also enforced by database triggers) |
 | `ledgerline.invoicing` | Sales and purchase invoices, PDF (WeasyPrint), UBL export |
-| `ledgerline.banking` | CAMT.053 / MT940 import, matching, SEPA payment files |
+| `ledgerline.banking` | CAMT.053 / MT940 / CSV import, matching, SEPA payment files |
 | `ledgerline.vat` | VAT codes, return per rubriek with sources (`vat/sources.py`), ICP |
 | `ledgerline.reports` | Dashboard, P&L, balance sheet, aged debtors and creditors |
 | `ledgerline.inbox` | Intake, extraction pipeline, email polling, worker |

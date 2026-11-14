@@ -4,14 +4,16 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal
 from hashlib import sha256
+from uuid import uuid4
 
 from schwifty import IBAN
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ledgerline import audit
-from ledgerline.banking import matching, sepa
-from ledgerline.banking.importer import file_sha256, parse_statement
+from ledgerline.banking import csv_import, matching, sepa
+from ledgerline.banking.csv_import import CsvMapping
+from ledgerline.banking.importer import file_sha256, parse_statement, sniff
 from ledgerline.banking.parsed import ParsedStatement, ParsedTx, StatementError
 from ledgerline.config import get_settings
 from ledgerline.ledger.service import (
@@ -44,12 +46,23 @@ class BankingError(ValueError):
     """A rule was broken; the message is safe to show to the user."""
 
 
+class MappingNeeded(BankingError):
+    """A CSV file with no preset or saved mapping: the user has to pick the columns."""
+
+    def __init__(self, headers: list[str], rows: list[list[str]]):
+        super().__init__("choose which column holds what for this CSV file")
+        self.headers = headers
+        self.rows = rows
+
+
 @dataclass
 class ImportResult:
     statement: BankStatement
     created: int
     skipped: int
     warnings: list[str] = field(default_factory=list)
+    # Lines left out because the same payment is already stored from another format or by hand.
+    cross_format_duplicates: int = 0
 
 
 @dataclass(frozen=True)
@@ -139,12 +152,97 @@ def _dedupe_keys(parsed: list[ParsedTx]) -> list[str]:
     return keys
 
 
+def _parse(
+    bank_account: BankAccount, content: bytes, mapping: CsvMapping | None
+) -> tuple[ParsedStatement, CsvMapping | None]:
+    """Parse any supported file; the CSV mapping that was used is returned, else None."""
+    try:
+        if sniff(content):
+            parsed = parse_statement(content)
+            if parsed.iban != bank_account.iban:
+                raise BankingError(
+                    f"the statement is for {parsed.iban}, not for {bank_account.iban}"
+                )
+            return parsed, None
+        table = csv_import.read_table(content)
+    except StatementError as exc:
+        raise BankingError(str(exc)) from exc
+    preset = csv_import.detect_preset(table.headers)
+    saved = CsvMapping.from_json(bank_account.csv_mapping) if bank_account.csv_mapping else None
+    chosen = mapping or (preset.mapping if preset else None) or saved
+    if chosen is None:
+        raise MappingNeeded(table.headers, table.rows[:5])
+    try:
+        return csv_import.parse_csv(content, chosen, bank_account.iban), chosen
+    except csv_import.MissingColumns as exc:
+        if chosen is saved and mapping is None:
+            raise MappingNeeded(table.headers, table.rows[:5]) from exc
+        raise BankingError(str(exc)) from exc
+    except StatementError as exc:
+        raise BankingError(str(exc)) from exc
+
+
+def _compatible_iban(left: str | None, right: str | None) -> bool:
+    return not left or not right or left == right
+
+
+def _cross_format_duplicates(
+    session: Session, bank_account: BankAccount, parsed: ParsedStatement, fresh: list[int]
+) -> set[int]:
+    """Indexes of `fresh` lines already stored from another format or entered by hand.
+
+    A file of another format has other references and wording, so the dedupe key cannot match.
+    Instead a stored line counts as the same payment when amount and date agree (booking or
+    value date on either side) and the counterparty IBANs do not contradict each other. Each
+    stored line is used once, so two equal payments on one day still need two stored lines.
+    """
+    if not fresh:
+        return set()
+    days = [d for i in fresh for d in (parsed.transactions[i].booking_date,
+                                       parsed.transactions[i].value_date) if d]
+    low, high = min(days), max(days)
+    pool = list(session.execute(
+        select(
+            BankTransaction.booking_date, BankTransaction.value_date,
+            BankTransaction.amount_cents, BankTransaction.counterparty_iban,
+        )
+        .outerjoin(BankStatement, BankStatement.id == BankTransaction.statement_id)
+        .where(
+            BankTransaction.bank_account_id == bank_account.id,
+            (BankStatement.id.is_(None)) | (BankStatement.file_format != parsed.file_format),
+            BankTransaction.booking_date.between(low, high)
+            | BankTransaction.value_date.between(low, high),
+        )
+    ))
+    taken: set[int] = set()
+    duplicates: set[int] = set()
+    for strict in (True, False):
+        for i in fresh:
+            if i in duplicates:
+                continue
+            tx = parsed.transactions[i]
+            mine = {tx.booking_date, tx.value_date} - {None}
+            for n, (booked, valued, amount, iban) in enumerate(pool):
+                if n in taken or amount != tx.amount_cents or not mine & {booked, valued}:
+                    continue
+                if strict and not (iban and iban == tx.counterparty_iban):
+                    continue
+                if not _compatible_iban(iban, tx.counterparty_iban):
+                    continue
+                taken.add(n)
+                duplicates.add(i)
+                break
+    return duplicates
+
+
 def import_statement(
     session: Session,
     bank_account: BankAccount,
     filename: str,
     content: bytes,
     user_id: int | None = None,
+    mapping: CsvMapping | None = None,
+    save_mapping: bool = False,
 ) -> ImportResult:
     if len(content) > get_settings().max_upload_bytes:
         raise BankingError("the file is too large")
@@ -157,14 +255,7 @@ def import_statement(
         )
     ):
         raise BankingError("this file has already been imported")
-    try:
-        parsed: ParsedStatement = parse_statement(content)
-    except StatementError as exc:
-        raise BankingError(str(exc)) from exc
-    if parsed.iban != bank_account.iban:
-        raise BankingError(
-            f"the statement is for {parsed.iban}, not for {bank_account.iban}"
-        )
+    parsed, used_mapping = _parse(bank_account, content, mapping)
 
     statement = BankStatement(
         bank_account_id=bank_account.id,
@@ -186,10 +277,13 @@ def import_statement(
             )
         )
     )
+    fresh = [i for i, key in enumerate(keys) if key not in existing]
+    cross = _cross_format_duplicates(session, bank_account, parsed, fresh)
     created = 0
-    for tx, key in zip(parsed.transactions, keys, strict=True):
-        if key in existing:
+    for i in fresh:
+        if i in cross:
             continue
+        tx = parsed.transactions[i]
         session.add(
             BankTransaction(
                 bank_account_id=bank_account.id,
@@ -202,7 +296,7 @@ def import_statement(
                 description=tx.description,
                 end_to_end_id=tx.end_to_end_id,
                 bank_reference=tx.bank_reference,
-                dedupe_key=key,
+                dedupe_key=keys[i],
                 status=TxStatus.UNMATCHED,
             )
         )
@@ -210,7 +304,12 @@ def import_statement(
     session.flush()
     skipped = len(parsed.transactions) - created
 
-    warnings = []
+    warnings = list(parsed.notes)
+    if cross:
+        warnings.append(
+            f"{len(cross)} lines were left out because the same payment is already stored "
+            "from another file format or was entered by hand."
+        )
     if parsed.opening_cents is not None and parsed.closing_cents is not None:
         total = sum(t.amount_cents for t in parsed.transactions)
         if parsed.opening_cents + total != parsed.closing_cents:
@@ -218,13 +317,71 @@ def import_statement(
                 "Opening balance plus transactions does not equal the closing balance "
                 f"({parsed.opening_cents} + {total} != {parsed.closing_cents} cents)."
             )
+    if save_mapping and used_mapping is not None:
+        bank_account.csv_mapping = used_mapping.to_json()
+        audit.record(
+            session, "bank_account.csv_mapping_save", user_id=user_id,
+            administration_id=bank_account.administration_id, entity_type="bank_account",
+            entity_id=bank_account.id, details=used_mapping.to_json(),
+        )
     audit.record(
         session, "bank_statement.import", user_id=user_id,
         administration_id=bank_account.administration_id, entity_type="bank_statement",
         entity_id=statement.id,
-        details={"file": filename[:255], "created": created, "skipped": skipped},
+        details={"file": filename[:255], "format": parsed.file_format, "created": created,
+                 "skipped": skipped, "cross_format_duplicates": len(cross)},
     )
-    return ImportResult(statement, created, skipped, warnings)
+    return ImportResult(statement, created, skipped, warnings, len(cross))
+
+
+def add_manual_transaction(
+    session: Session,
+    bank_account: BankAccount,
+    booking_date: date,
+    amount_cents: int,
+    counterparty_name: str | None,
+    counterparty_iban: str | None,
+    description: str | None,
+    reason: str,
+    user_id: int | None = None,
+    today: date | None = None,
+) -> BankTransaction:
+    """A bank line typed in by a person. It is marked manual everywhere and logged with a reason."""
+    name = (counterparty_name or "").strip()
+    text = " ".join((description or "").split())
+    reason = " ".join(reason.split())
+    if amount_cents == 0:
+        raise BankingError("the amount cannot be zero")
+    if booking_date > (today or date.today()):
+        raise BankingError("a bank line cannot be dated in the future")
+    if not name and not text:
+        raise BankingError("enter a counterparty or a description")
+    if len(reason) < 3:
+        raise BankingError("say why this line is entered by hand")
+    iban = normalise_iban(counterparty_iban) if (counterparty_iban or "").strip() else None
+    tx = BankTransaction(
+        bank_account_id=bank_account.id,
+        statement_id=None,
+        booking_date=booking_date,
+        amount_cents=amount_cents,
+        counterparty_name=name[:200] or None,
+        counterparty_iban=iban,
+        description=text or None,
+        dedupe_key=sha256(f"manual|{uuid4()}".encode()).hexdigest(),
+        status=TxStatus.UNMATCHED,
+        entry_source="manual",
+        entered_by_user_id=user_id,
+    )
+    session.add(tx)
+    session.flush()
+    audit.record(
+        session, "bank_transaction.manual_entry", user_id=user_id,
+        administration_id=bank_account.administration_id, entity_type="bank_transaction",
+        entity_id=tx.id,
+        details={"source": "manual", "date": booking_date.isoformat(),
+                 "amount_cents": amount_cents, "reason": reason[:300]},
+    )
+    return tx
 
 
 def suggest(

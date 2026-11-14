@@ -44,7 +44,7 @@
         <dt>Date</dt><dd>{{ tx.booking_date|nldate }}</dd>
         {% if tx.counterparty_iban %}<dt>IBAN</dt><dd>{{ tx.counterparty_iban }}</dd>{% endif %}
         {% if tx.description %}<dt>Description</dt><dd>{{ tx.description }}</dd>{% endif %}
-        <dt>Status</dt><dd>{{ ui.badge(tx.status) }}</dd>
+        <dt>Status</dt><dd>{{ ui.badge(tx.status) }}{% if tx.entry_source == "manual" %} <span class="pill">Manually entered</span>{% endif %}</dd>
       </dl>
 
       {% if status == "unmatched" %}

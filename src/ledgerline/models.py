@@ -395,6 +395,8 @@ class BankAccount(TenantScoped, Base):
     iban: Mapped[str] = mapped_column(String(34))
     name: Mapped[str] = mapped_column(String(100))
     ledger_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    # Column mapping last used for a generic CSV export of this account (see banking.csv_import).
+    csv_mapping: Mapped[dict | None] = mapped_column(JSONB)
 
 
 class BankStatement(TenantScoped, Base):
@@ -414,10 +416,17 @@ class BankStatement(TenantScoped, Base):
 
 class BankTransaction(TenantScoped, Base):
     __tablename__ = "bank_transactions"
-    __table_args__ = (UniqueConstraint("bank_account_id", "dedupe_key"),)
+    __table_args__ = (
+        UniqueConstraint("bank_account_id", "dedupe_key"),
+        CheckConstraint("entry_source IN ('import', 'manual')", name="ck_bank_tx_entry_source"),
+        CheckConstraint(
+            "(entry_source = 'manual') = (statement_id IS NULL)", name="ck_bank_tx_manual_no_file"
+        ),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     bank_account_id: Mapped[int] = mapped_column(ForeignKey("bank_accounts.id"), index=True)
-    statement_id: Mapped[int] = mapped_column(ForeignKey("bank_statements.id"))
+    # None for a manually entered line: there is no file behind it.
+    statement_id: Mapped[int | None] = mapped_column(ForeignKey("bank_statements.id"))
     booking_date: Mapped[date] = mapped_column(Date, index=True)
     value_date: Mapped[date | None] = mapped_column(Date)
     # Signed: positive = money in, negative = money out.
@@ -431,6 +440,11 @@ class BankTransaction(TenantScoped, Base):
     dedupe_key: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(20), default=TxStatus.UNMATCHED)
     journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"))
+    # import = parsed from a bank file; manual = typed in by a person, no bank evidence.
+    entry_source: Mapped[str] = mapped_column(
+        String(10), default="import", server_default=text("'import'")
+    )
+    entered_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
 
 class PaymentAllocation(TenantScoped, Base):

@@ -16,7 +16,7 @@ posting, the BTW (VAT) return and ICP overview, and the standard financial repor
 | Inbox | Supplier invoices by email (IMAP), upload or phone; e-invoices (UBL) read exactly, PDF text read with sanity checks, photos and scans read by an optional, opt-in extraction service; review before anything is booked |
 | Phone | Installable web app that opens on the camera, plus an iOS share-sheet shortcut with revocable upload keys ([docs/IPHONE.md](docs/IPHONE.md)) |
 | Purchases | Entry with expense account and VAT as stated by the supplier, reverse charge (domestic, EU, non-EU), PDF/image attachment, duplicate guard |
-| Bank | CAMT.053 (.001.02/.08) and MT940 import, duplicate/overlap detection, ranked match suggestions, book-to-account, undo, SEPA credit-transfer file for paying suppliers |
+| Bank | CAMT.053 (.001.02/.08), MT940 and CSV import (Rabobank preset, column mapper), manual bank lines, duplicate/overlap detection across formats, ranked match suggestions, book-to-account, undo, SEPA credit-transfer file for paying suppliers |
 | Ledger | Journal with manual entries, reversals, chart of accounts, per-account ledger, period lock |
 | VAT | Return per month/quarter/year mapped to the rubrieken with drill-down to the bookings, ICP overview, optional settlement entry |
 | Reports | Dashboard, profit & loss, balance sheet, trial balance, aged receivables/payables, CSV export |
