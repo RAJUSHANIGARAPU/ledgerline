@@ -11,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     Numeric,
@@ -61,6 +62,9 @@ class SystemRole(StrEnum):
     SUSPENSE = "suspense"
     BANK_COSTS = "bank_costs"
     RETAINED_EARNINGS = "retained_earnings"
+    CASH = "cash"
+    CARD_CLEARING = "card_clearing"
+    TAKINGS_OTHER = "takings_other"
 
 
 class ContactKind(StrEnum):
@@ -294,6 +298,46 @@ class NumberSequence(TenantScoped, Base):
     kind: Mapped[str] = mapped_column(String(20), primary_key=True)
     year: Mapped[int] = mapped_column(Integer, primary_key=True)
     last_value: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class DailyTakings(TenantScoped, Base):
+    """One day of till sales, gross per VAT rate and by how it was received.
+
+    Never edited: a correction reverses the journal entry (reversed_at is set) and posts anew.
+    """
+
+    __tablename__ = "daily_takings"
+    __table_args__ = (
+        CheckConstraint(
+            "gross_high_cents >= 0 AND gross_low_cents >= 0 AND gross_zero_cents >= 0 "
+            "AND cash_cents >= 0 AND card_cents >= 0 AND other_cents >= 0",
+            name="ck_takings_non_negative"),
+        CheckConstraint(
+            "gross_high_cents + gross_low_cents + gross_zero_cents "
+            "= cash_cents + card_cents + other_cents",
+            name="ck_takings_balanced"),
+        Index("uq_daily_takings_active_day", "administration_id", "takings_date", unique=True,
+              postgresql_where=text("reversed_at IS NULL")),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
+    takings_date: Mapped[date] = mapped_column(Date, index=True)
+    gross_high_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    gross_low_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    gross_zero_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    cash_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    card_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    other_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    note: Mapped[str | None] = mapped_column(String(200))
+    journal_entry_id: Mapped[int] = mapped_column(ForeignKey("journal_entries.id"))
+    reversal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"))
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = _now()
+
+    @property
+    def gross_total_cents(self) -> int:
+        return self.gross_high_cents + self.gross_low_cents + self.gross_zero_cents
 
 
 class Attachment(TenantScoped, Base):

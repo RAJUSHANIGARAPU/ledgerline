@@ -18,6 +18,7 @@ MODULES = [
     "ledgerline.invoicing.routes",
     "ledgerline.banking.routes",
     "ledgerline.vat.routes",
+    "ledgerline.takings.routes",
     "ledgerline.platform.routes",
     "ledgerline.inbox.routes",
     "ledgerline.mobile.routes",

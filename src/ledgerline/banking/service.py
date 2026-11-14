@@ -2,7 +2,7 @@
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from hashlib import sha256
 
 from schwifty import IBAN
@@ -36,6 +36,7 @@ from ledgerline.models import (
     SystemRole,
     TxStatus,
 )
+from ledgerline.money import vat_in_gross
 from ledgerline.vat import codes as vat_codes
 from ledgerline.vat.codes import Direction
 
@@ -334,8 +335,7 @@ def match(
 
 
 def _split_vat(gross_cents: int, rate: Decimal) -> int:
-    vat = Decimal(gross_cents) * rate / (Decimal(100) + rate)
-    return int(vat.quantize(Decimal(1), rounding=ROUND_HALF_UP))
+    return vat_in_gross(gross_cents, rate)
 
 
 def book_to_account(

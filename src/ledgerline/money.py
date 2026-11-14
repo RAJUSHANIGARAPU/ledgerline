@@ -39,6 +39,12 @@ def percent_of(base_cents: int, rate_percent: Decimal) -> int:
     return int(exact.quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
+def vat_in_gross(gross_cents: int, rate_percent: Decimal) -> int:
+    """The VAT inside a VAT-inclusive amount (gross * rate / (100 + rate)), rounded half-up."""
+    exact = Decimal(gross_cents) * rate_percent / (Decimal(100) + rate_percent)
+    return int(exact.quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
 def format_eur(cents: int) -> str:
     """Dutch display format with a no-break space: € 1.234,56 and -€ 1.234,56."""
     sign = "-" if cents < 0 else ""
