@@ -45,7 +45,7 @@ Samen: de **Partijen**. Datum ingang: [DATUM].
 
 3.1 Aard: opslaan, ordenen, raadplegen, weergeven, exporteren, back-uppen en verwijderen van gegevens in een boekhoudapplicatie; het inlezen van binnenkomende documenten (upload, e-mail, telefoon) en het voorstellen van factuurgegevens.
 
-3.2 Doel: het voeren van de administratie van de Verwerkingsverantwoordelijke, het opstellen van facturen, de btw-aangifte voor te bereiden en bankmutaties te verwerken. Er is geen ander doel.
+3.2 Doel: het voeren van de administratie van de Verwerkingsverantwoordelijke, het opstellen van facturen, de btw-aangifte voor te bereiden en bankmutaties te verwerken. Tijdens de pilot verwerkt de Verwerker feedbackberichten en inboxcijfers ook om de dienst te verbeteren; [CONTROLEER MET JURIST: eigen verwerkingsdoel van de Verwerker of op instructie van de Verwerkingsverantwoordelijke]. Er is verder geen ander doel.
 
 ### Artikel 4. Soorten persoonsgegevens en betrokkenen
 
@@ -54,6 +54,7 @@ Samen: de **Partijen**. Datum ingang: [DATUM].
 | Gebruikers van de Verwerkingsverantwoordelijke (eigenaar, boekhouder, accountant) | naam of e-mailadres, wachtwoord-hash (argon2id), rol, inlog- en auditgegevens (gebruiker, tijdstip, handeling) |
 | Klanten en leveranciers die natuurlijke personen zijn (bijvoorbeeld eenmanszaken) | naam, adres, e-mailadres, btw-nummer, KvK-nummer, IBAN, factuur- en betaalgegevens |
 | Contactpersonen bij zakelijke klanten en leveranciers | naam, e-mailadres, functie of vermelding op een document |
+| Gebruikers van de Verwerkingsverantwoordelijke | tekst van feedbackberichten die zij in de applicatie invoeren (vrije tekst, bewaard zoals getypt), met gebruiker, administratie en tijdstip; auditgebeurtenissen van de documentinbox (kanaal, reden van weigering, tijdstip; geen bestandsnamen of inhoud) |
 | Personen op ingelezen documenten en bankmutaties | wat op facturen, bonnen en bankafschriften staat, waaronder tegenpartijnaam, IBAN en omschrijving |
 
 4.2 Er worden geen bijzondere categorieën persoonsgegevens (art. 9 AVG) bewust verwerkt. De Verwerkingsverantwoordelijke laat die niet in de administratie opnemen. Vrije tekstvelden en bijlagen kunnen zulke gegevens toevallig bevatten; dat is de verantwoordelijkheid van de Verwerkingsverantwoordelijke.

@@ -47,7 +47,7 @@ To disable it again, set `LEDGERLINE_EXTRACTION_PROVIDER=none` (or remove it) an
 | Variable | Default | Meaning |
 |---|---|---|
 | `LEDGERLINE_EXTRACTION_PROVIDER` | `none` | `none`, `anthropic` or `openrouter` |
-| `LEDGERLINE_EXTRACTION_MODEL` | `claude-opus-5-5` in the code; `docker-compose.yml`, `.env.example` and the deploy template use `claude-haiku-5-5` | model id sent to the API; for `openrouter` it must be an OpenRouter id such as `vendor/model-name` |
+| `LEDGERLINE_EXTRACTION_MODEL` | `claude-haiku-5-5` | model id sent to the API; for `openrouter` it must be an OpenRouter id such as `vendor/model-name` |
 | `LEDGERLINE_EXTRACTION_MONTHLY_LIMIT` | `200` | documents read by the vision step per administration per calendar month (UTC) |
 | `ANTHROPIC_API_KEY` | unset | the Anthropic API key |
 | `OPENROUTER_API_KEY` | unset | the OpenRouter API key |
