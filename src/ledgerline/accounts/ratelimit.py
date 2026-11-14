@@ -34,9 +34,10 @@ reset_by_email = Limiter(3, 3600)
 invite_by_user = Limiter(30, 3600)
 totp_failures = Limiter(10, 15 * 60)
 password_failures_by_ip = Limiter(30, 15 * 60)
+feedback_by_user = Limiter(20, 3600)
 
 
 def reset_all() -> None:
     for limiter in (reset_by_ip, reset_by_email, invite_by_user, totp_failures,
-                    password_failures_by_ip):
+                    password_failures_by_ip, feedback_by_user):
         limiter.reset()

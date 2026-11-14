@@ -1,3 +1,4 @@
+import logging
 from importlib import import_module
 from pathlib import Path
 
@@ -7,9 +8,19 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from ledgerline.config import get_settings
-from ledgerline.web import LoginRequired, TenantRequired, TwoFactorRequired
+from ledgerline.web import (
+    CaptureOnly,
+    LoginRequired,
+    NoAdministration,
+    TenantRequired,
+    TwoFactorRequired,
+    render,
+)
 
-# Each module exposes `router`. Order sets nothing but readability.
+log = logging.getLogger("ledgerline")
+
+# Each module exposes `router`. Order matters only where a fixed path must beat a `{id}` route
+# (imports before platform).
 MODULES = [
     "ledgerline.auth",
     "ledgerline.accounts.routes",
@@ -18,6 +29,8 @@ MODULES = [
     "ledgerline.invoicing.routes",
     "ledgerline.banking.routes",
     "ledgerline.vat.routes",
+    "ledgerline.takings.routes",
+    "ledgerline.imports.routes",
     "ledgerline.platform.routes",
     "ledgerline.inbox.routes",
     "ledgerline.mobile.routes",
@@ -49,6 +62,11 @@ def create_app() -> FastAPI:
         https_only=settings.cookie_secure,
     )
 
+    missing = settings.operator_identity.missing()
+    if settings.environment == "production" and missing:
+        log.error("operator identity not set (%s); the legal pages show placeholders and "
+                  "/healthz/deep fails", ", ".join(missing))
+
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
@@ -62,11 +80,21 @@ def create_app() -> FastAPI:
             return RedirectResponse("/login", 303, headers={"HX-Redirect": "/login"})
         return RedirectResponse("/login", 303)
 
+    @app.exception_handler(CaptureOnly)
+    async def to_capture(request: Request, _exc: CaptureOnly):
+        return RedirectResponse("/capture", 303)
+
     @app.exception_handler(TenantRequired)
     async def to_tenants(request: Request, _exc: TenantRequired):
         if request.headers.get("hx-request"):
             return RedirectResponse("/tenants", 303, headers={"HX-Redirect": "/tenants"})
         return RedirectResponse("/tenants", 303)
+
+    @app.exception_handler(NoAdministration)
+    async def no_administration(request: Request, _exc: NoAdministration):
+        if request.headers.get("hx-request"):
+            return RedirectResponse("/", 303, headers={"HX-Redirect": "/"})
+        return render(request, "auth/no_administration.html", status_code=409)
 
     @app.exception_handler(TwoFactorRequired)
     async def to_two_factor_setup(request: Request, _exc: TwoFactorRequired):

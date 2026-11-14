@@ -85,8 +85,13 @@
                 </select></td>
                 <td><input class="input num" name="line_amount" value="{{ row.amount }}" inputmode="decimal" aria-label="Amount excl. VAT"></td>
                 <td><select class="input" name="line_vat_code" aria-label="VAT code">
+                  {% if not row.vat_code %}<option value="" selected>Choose a VAT code</option>{% endif %}
                   {% for c in vat_codes %}<option value="{{ c.code }}"{% if c.code == row.vat_code %} selected{% endif %}>{{ c.code }} · {{ c.rate }}%{% if c.reverse_charge %} (reverse charge){% endif %}</option>{% endfor %}
-                </select></td>
+                </select>
+                {% if row.vat_check %}
+                  <input type="hidden" name="vat_flagged" value="{{ loop.index0 }}">
+                  <label class="field-hint"><input type="checkbox" name="vat_confirmed" value="{{ loop.index0 }}"{% if row.vat_confirmed %} checked{% endif %}> No VAT applies here (confirm)</label>
+                {% endif %}</td>
                 <td><input class="input num" name="line_vat" value="{{ row.vat }}" inputmode="decimal" aria-label="VAT amount"></td>
               </tr>
             {% endfor %}

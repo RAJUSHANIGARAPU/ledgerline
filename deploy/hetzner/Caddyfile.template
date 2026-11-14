@@ -1,5 +1,10 @@
 {{DOMAIN}} {
     encode zstd gzip
+    header {
+        # Start short; raise to 31536000 once HTTPS has held for a few weeks (browsers cache it).
+        Strict-Transport-Security "max-age=3600"
+        -Server
+    }
     request_body {
         max_size 12MB
     }

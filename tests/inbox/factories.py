@@ -169,3 +169,71 @@ def eml(
 
 def jpeg_bytes() -> bytes:
     return b"\xff\xd8\xff\xe0" + b"\x00" * 64
+
+
+def _eur_nl(cents: int, space: bool = False) -> str:
+    euros, rest = divmod(abs(cents), 100)
+    sep = " " if space else "."
+    body = f"{euros:,}".replace(",", sep)
+    return f"{'-' if cents < 0 else ''}{body},{rest:02d}"
+
+
+def _rows(rows: list[tuple[str, str]]) -> str:
+    return "".join(f"<p><span>{a}</span> <span>{b}</span></p>" for a, b in rows)
+
+
+def uber_statement_html(
+    *, start="5/4/26", end="5/10/26", sales=40250, orders=14, fee=6030, fee_vat=1266,
+    tips=0, adjustments=(("Promoties voor items", -2000),), payout=None, days=None,
+) -> str:
+    """A synthetic Uber Eats weekly overview (fake restaurant, fake amounts)."""
+    net = sales - fee - fee_vat
+    total = net + tips + sum(c for _, c in adjustments) if payout is None else payout
+    rows = [("Totaal", f"{orders} {_eur_nl(sales, True)} €"),
+            ("Uber Eats-servicekosten", f"{_eur_nl(-fee, True)} €"),
+            ("Btw op servicekosten", f"{_eur_nl(-fee_vat, True)} €"),
+            ("Netto verkopen", f"{_eur_nl(net, True)} €")]
+    if tips:
+        rows.append(("Fooi", f"{_eur_nl(tips, True)} €"))
+    rows += [(label, f"{_eur_nl(c, True)} €") for label, c in adjustments]
+    rows.append(("Totale betaling", f"{_eur_nl(total, True)} €"))
+    daily = days if days is not None else [("5/5/26", orders, sales)]
+    day_rows = [(d, f"{n} {_eur_nl(c, True)} €") for d, n, c in daily]
+    return (f"<h1>Test Bistro Voorbeeld</h1><p>Betaaloverzicht voor {start} - {end}</p>"
+            f"<p>Hi Test Bistro Voorbeeld ,</p>{_rows(day_rows)}{_rows(rows)}")
+
+
+def thuisbezorgd_statement_html(
+    *, start="01-03-2026", end="07-03-2026", total=100000, cash=4000, tips=600, refund=0,
+    commission=14000, extras=(("TopRank: 10 bestellingen", 2500),), admin=700, payout=None,
+    invoice_no="900000001",
+) -> str:
+    """A synthetic Thuisbezorgd invoice plus overview (fake restaurant, fake amounts)."""
+    online = total - cash
+    fee_lines = [(f"Kosten: 14,00% van € {_eur_nl(total)}", commission),
+                 *[(label, cents) for label, cents in extras], ("Kosten: € 0,21 x 33", admin)]
+    subtotal = sum(c for _, c in fee_lines)
+    vat = round(subtotal * 21 / 100)
+    invoice = subtotal + vat
+    outstanding = online + tips + refund
+    paid = outstanding - invoice if payout is None else payout
+    intro = f"Thuisbezorgd.nl ({start} t/m {end}): 33 bestellingen t.w.v. € {_eur_nl(total)}"
+    spec = [("Totaal", f"33 bestellingen t.w.v. € {_eur_nl(total)}")]
+    if cash:
+        spec.append(("Betaald bij bezorging", f"2 bestellingen t.w.v. € {_eur_nl(cash)}"))
+    spec += [("Online betaald *", f"31 bestellingen t.w.v. € {_eur_nl(online)}")]
+    if tips:
+        spec.append(("Fooien", f"5 bestellingen t.w.v. € {_eur_nl(tips)}"))
+    if refund:
+        spec.append(("terugboeking", f"1 bestellingen t.w.v. € {_eur_nl(refund)}"))
+    return (
+        f"<h1>Factuur</h1><p>Test Bistro Voorbeeld</p><p>Datum: 08-03-2026 "
+        f"Factuurnummer: {invoice_no}</p><p>De volgende diensten brengen wij u in rekening:</p>"
+        f"<p>{intro}</p>{_rows([(a, f'€ {_eur_nl(b)}') for a, b in fee_lines])}"
+        f"{_rows([('Subtotaal', f'€ {_eur_nl(subtotal)}')])}"
+        f"{_rows([(f'BTW (21% over € {_eur_nl(subtotal)})', f'€ {_eur_nl(vat)}')])}"
+        f"{_rows([('Totaalbedrag van deze factuur', f'€ {_eur_nl(invoice)}')])}"
+        "<h1>Specificaties</h1>"
+        f"<p>Periode: {start} t/m {end}</p>{_rows(spec)}"
+        f"{_rows([('Uitstaand saldo online betalingen op 08-03-2026 **', f'€ {_eur_nl(outstanding)}'), ('Verrekening van factuur ' + invoice_no, f'€ {_eur_nl(invoice)}'), ('Uitbetaling naar rekening NL00TEST0000000000 t.n.v. Test Bistro ', f'€ {_eur_nl(paid)}')])}"
+    )

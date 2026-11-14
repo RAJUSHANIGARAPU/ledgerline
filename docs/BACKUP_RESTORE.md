@@ -17,10 +17,12 @@ Manual backup at any time: `scripts/backup.sh` (local dump only, to `./backups` 
 ## Restore
 
 ```sh
-scripts/restore.sh backups/ledgerline-20261107T020000Z.dump
+scripts/restore.sh --project <compose project> backups/ledgerline-20261107T020000Z.dump
 ```
 
-Restoring on a new server: start the stack once so `ledgerline ensure-app-role` recreates the `ledgerline_app` role and its grants after the restore (restart the app container). The script asks you to type `restore` unless you pass `--yes`. It stops the app, runs `pg_restore --clean --if-exists --no-owner` into the compose database, then starts the app again. Existing data is replaced.
+`--project` (or `LEDGERLINE_RESTORE_PROJECT`) is required and must equal the compose project of the directory you run it in (`docker compose ls` shows it; on the server it is the directory name, normally `ledgerline`). A different value is refused before anything changes. Without `--yes` you confirm by typing the project name.
+
+Restoring on a new server: start the stack once so `ledgerline ensure-app-role` recreates the `ledgerline_app` role and its grants after the restore (restart the app container). `--yes` skips the typed confirmation for scripted use, not the project check. It stops the app, runs `pg_restore --clean --if-exists --no-owner` into the compose database, then starts the app again. Existing data is replaced.
 
 To fetch a dump from the off-site repository, see "Restore" in OPERATIONS.md.
 

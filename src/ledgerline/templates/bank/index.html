@@ -21,12 +21,35 @@
         <form method="post" action="/bank/accounts/{{ a.id }}/import" enctype="multipart/form-data" class="stack">
           {{ ui.csrf() }}
           <label class="field">
-            <span class="field-label">Statement file (CAMT.053 or MT940)</span>
-            <input class="input" type="file" name="file" accept=".xml,.sta,.mt940,.txt,.940" required>
-            <span class="field-hint">Up to {{ max_mb }} MB. Importing does not post anything to the ledger.</span>
+            <span class="field-label">Statement file (CAMT.053, MT940 or CSV)</span>
+            <input class="input" type="file" name="file" accept=".xml,.sta,.mt940,.txt,.940,.csv" required>
+            <span class="field-hint">Up to {{ max_mb }} MB. Importing does not post anything to the ledger. A CSV from a bank without a built-in layout asks you to pick the columns once.</span>
           </label>
           <div class="form-actions"><button class="btn btn-primary" type="submit">Import</button></div>
         </form>
+        <details>
+          <summary>Add a line by hand</summary>
+          <form method="post" action="/bank/accounts/{{ a.id }}/manual" class="stack">
+            {{ ui.csrf() }}
+            <p class="field-hint">Only for a few lines when no bank file is available. These lines are marked as manually entered in the reconciliation and in the audit log.</p>
+            <div class="form-grid">
+              {{ ui.field("booking_date", "Date", "", "date", True) }}
+              {{ ui.field("amount", "Amount", "", "text", True) }}
+              <label class="field">
+                <span class="field-label">Direction</span>
+                <select class="input" name="direction" required>
+                  <option value="in">Money in</option>
+                  <option value="out">Money out</option>
+                </select>
+              </label>
+              {{ ui.field("counterparty_name", "Counterparty", "", "text", False) }}
+              {{ ui.field("counterparty_iban", "Counterparty IBAN", "", "text", False) }}
+              {{ ui.field("description", "Description", "", "text", False) }}
+              {{ ui.field("reason", "Why by hand? (e.g. from the banking app)", "", "text", True) }}
+            </div>
+            <div class="form-actions"><button class="btn btn-secondary" type="submit">Add line</button></div>
+          </form>
+        </details>
         {% if n %}
         <form method="post" action="/bank/accounts/{{ a.id }}/accept-exact">
           {{ ui.csrf() }}

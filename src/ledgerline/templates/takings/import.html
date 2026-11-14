@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Import takings{% endblock %}
+{% block heading %}Import daily takings{% endblock %}
+{% block content %}
+{% if errors %}
+<div class="flash flash-error" role="alert" data-testid="import-errors">Nothing was imported. Fix these and upload the file again:
+  <ul>{% for line, message in errors %}<li>{% if line %}Line {{ line }}: {% endif %}{{ message }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+<div class="card"><form method="post" action="/takings/import" enctype="multipart/form-data" class="card-body stack">
+  {{ ui.csrf() }}
+  <p>One row per day. Download the <a href="/takings/template.csv">template</a>: columns date, gross_21, gross_9, gross_0 (sales including VAT per rate), cash, card, other (how it was received), note. Dates are YYYY-MM-DD or DD-MM-YYYY, amounts like 1234.56 or 1.234,56. The file is only posted when every row is valid.</p>
+  <label class="field"><span class="field-label">CSV file (max {{ max_mb }} MB)</span>
+    <input class="input" type="file" name="file" accept=".csv,.txt" required></label>
+  <div class="form-actions"><button class="btn btn-primary" type="submit">Import</button> <a class="btn btn-secondary" href="/takings">Cancel</a></div>
+</form></div>
+{% endblock %}

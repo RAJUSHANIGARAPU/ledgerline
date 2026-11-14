@@ -35,6 +35,9 @@ def owner_url():
         engine = create_engine(url)
         with engine.begin() as conn:
             conn.execute(text(f"ALTER ROLE ledgerline_app LOGIN PASSWORD '{APP_ROLE_PASSWORD}'"))
+            # The migrations seed an empty "Default" tenant. The per-test cleanup removes it
+            # after the first test, so drop it up front: every test then sees the same state.
+            conn.execute(text("DELETE FROM tenants WHERE name = 'Default'"))
         engine.dispose()
         yield url
 
@@ -196,6 +199,16 @@ def client(owner, admin):
 def readonly_client(session, admin, owner):
     accountant = _user(session, "accountant@example.com", Role.ACCOUNTANT)
     return _login(accountant.email)
+
+
+@pytest.fixture
+def uploader(session, admin, owner):
+    return _user(session, "uploader@example.com", Role.UPLOADER)
+
+
+@pytest.fixture
+def uploader_client(uploader):
+    return _login(uploader.email)
 
 
 @pytest.fixture(autouse=True)

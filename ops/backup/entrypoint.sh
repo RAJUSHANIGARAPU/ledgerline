@@ -16,7 +16,13 @@ stale() {
   marker="$OPS_DIR/last_backup_ok"
   [ -f "$marker" ] || return 0
   last="$(sed -n 's/^epoch=//p' "$marker")"
-  [ $(( $(date -u +%s) - ${last:-0} )) -gt 86400 ]
+  [ $(( $(date -u +%s) - ${last:-0} )) -gt 86400 ] && return 0
+  # A repository was configured after the last (local-only) run: copy off-site now instead of
+  # waiting for the next scheduled hour.
+  if [ -n "${RESTIC_REPOSITORY:-}" ] && [ -n "${RESTIC_PASSWORD:-}${RESTIC_PASSWORD_FILE:-}" ]; then
+    [ "$(sed -n 's/^offsite=//p' "$marker")" = "1" ] || return 0
+  fi
+  return 1
 }
 
 failed=0

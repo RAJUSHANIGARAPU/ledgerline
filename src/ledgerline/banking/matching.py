@@ -7,6 +7,7 @@ from difflib import SequenceMatcher
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ledgerline.config import get_settings
 from ledgerline.models import (
     BankAccount,
     BankTransaction,
@@ -19,10 +20,20 @@ SALES = "sales"
 PURCHASE = "purchase"
 
 SCORE_AMOUNT = 50
+SCORE_AMOUNT_NEAR = 45
+DEFAULT_TOLERANCE_CENTS = 2
 SCORE_NUMBER = 40
 SCORE_IBAN = 25
 SCORE_NAME = 15
+SCORE_DATE_NEAR = 10
+SCORE_DATE_CLOSE = 5
+PENALTY_BEFORE_INVOICE = 40
 NAME_THRESHOLD = 0.6
+RECOMMEND_MARGIN = 10
+DATE_NEAR_DAYS = 4
+DATE_CLOSE_DAYS = 14
+# Banks book a few days after the date printed on an invoice, never before it.
+INVOICE_DATE_SLACK_DAYS = 4
 
 
 @dataclass(frozen=True)
@@ -35,6 +46,7 @@ class Candidate:
     contact_iban: str | None
     remaining_cents: int
     due_date: date | None
+    invoice_date: date | None = None
 
 
 @dataclass
@@ -43,7 +55,14 @@ class Suggestion:
     score: int
     reasons: list[str] = field(default_factory=list)
     exact_amount: bool = False
+    # Invoice remaining minus the payment, when that is a few cents (rounding), else 0.
+    difference_cents: int = 0
     number_hit: bool = False
+    # The payment predates the invoice: a same-amount hit is a coincidence until the owner says so.
+    before_invoice: bool = False
+    gap: int = 10**6
+    # Safe to pre-select: nothing else fits as well and the dates are plausible.
+    recommended: bool = False
 
     @property
     def reason(self) -> str:
@@ -79,12 +98,19 @@ def name_similarity(a: str | None, b: str | None) -> float:
     return SequenceMatcher(None, left, right).ratio()
 
 
+def _date_gap(booking_date: date, cand: Candidate) -> int | None:
+    reference = cand.due_date or cand.invoice_date
+    return abs((booking_date - reference).days) if reference else None
+
+
 def score_candidates(
     amount_cents: int,
     description: str | None,
     counterparty_iban: str | None,
     counterparty_name: str | None,
     candidates: list[Candidate],
+    booking_date: date | None = None,
+    tolerance_cents: int = DEFAULT_TOLERANCE_CENTS,
 ) -> list[Suggestion]:
     kind = SALES if amount_cents > 0 else PURCHASE
     paid = abs(amount_cents)
@@ -98,6 +124,10 @@ def score_candidates(
             sug.score += SCORE_AMOUNT
             sug.exact_amount = True
             sug.reasons.append("exact amount")
+        elif 0 < abs(cand.remaining_cents - paid) <= tolerance_cents:
+            sug.score += SCORE_AMOUNT_NEAR
+            sug.difference_cents = cand.remaining_cents - paid
+            sug.reasons.append(f"difference €{abs(sug.difference_cents) / 100:.2f}")
         if number_in_text(cand.number, text):
             sug.score += SCORE_NUMBER
             sug.number_hit = True
@@ -110,13 +140,30 @@ def score_candidates(
         if similarity >= NAME_THRESHOLD:
             sug.score += round(SCORE_NAME * similarity)
             sug.reasons.append(f"name similar ({round(similarity * 100)}%)")
-        if sug.score and not sug.exact_amount and paid < cand.remaining_cents:
+        if (sug.score and not sug.exact_amount and not sug.difference_cents
+                and paid < cand.remaining_cents):
             sug.reasons.append("partial payment")
+        if booking_date is not None and sug.score:
+            _score_dates(sug, booking_date)
         suggestions.append(sug)
-    suggestions.sort(
-        key=lambda s: (-s.score, s.candidate.due_date or date.max, s.candidate.invoice_id)
-    )
+    suggestions.sort(key=lambda s: (-s.score, s.gap, s.candidate.invoice_id))
     return suggestions
+
+
+def _score_dates(sug: Suggestion, booking_date: date) -> None:
+    cand = sug.candidate
+    gap = _date_gap(booking_date, cand)
+    sug.gap = gap if gap is not None else 10**6
+    if cand.invoice_date and (cand.invoice_date - booking_date).days > INVOICE_DATE_SLACK_DAYS:
+        sug.before_invoice = True
+        sug.score -= PENALTY_BEFORE_INVOICE
+        sug.reasons.append(f"invoice dated {cand.invoice_date.isoformat()}, after this payment")
+    elif gap is not None and gap <= DATE_NEAR_DAYS:
+        sug.score += SCORE_DATE_NEAR
+        sug.reasons.append("paid around the due date")
+    elif gap is not None and gap <= DATE_CLOSE_DAYS:
+        sug.score += SCORE_DATE_CLOSE
+        sug.reasons.append("paid within two weeks of the due date")
 
 
 def load_candidates(session: Session, administration_id: int) -> list[Candidate]:
@@ -131,6 +178,7 @@ def load_candidates(session: Session, administration_id: int) -> list[Candidate]
             Candidate(
                 SALES, inv.id, inv.number or f"#{inv.id}", inv.contact_id, inv.contact.name,
                 inv.contact.iban, inv.total_incl_cents - inv.paid_cents, inv.due_date,
+                inv.issue_date,
             )
         )
     for inv in session.scalars(
@@ -143,6 +191,7 @@ def load_candidates(session: Session, administration_id: int) -> list[Candidate]
             Candidate(
                 PURCHASE, inv.id, inv.supplier_reference, inv.contact_id, inv.contact.name,
                 inv.contact.iban, inv.total_incl_cents - inv.paid_cents, inv.due_date,
+                inv.invoice_date,
             )
         )
     return result
@@ -159,6 +208,48 @@ def suggest(
         admin_id = session.get(BankAccount, tx.bank_account_id).administration_id
         candidates = load_candidates(session, admin_id)
     ranked = score_candidates(
-        tx.amount_cents, tx.description, tx.counterparty_iban, tx.counterparty_name, candidates
+        tx.amount_cents, tx.description, tx.counterparty_iban, tx.counterparty_name, candidates,
+        tx.booking_date, tolerance_cents=get_settings().bank_match_tolerance_cents,
     )
+    _recommend(ranked)
     return ranked if include_all else [s for s in ranked if s.score > 0]
+
+
+def _recommend(ranked: list[Suggestion]) -> None:
+    """Pre-select the top suggestion only when it clearly beats the runner-up."""
+    live = [s for s in ranked if s.score > 0]
+    if not live or live[0].before_invoice:
+        return
+    if len(live) == 1 or live[0].score - live[1].score >= RECOMMEND_MARGIN:
+        live[0].recommended = True
+
+
+PAYOUT_WINDOW_DAYS = 21
+
+
+@dataclass(frozen=True)
+class PayoutHint:
+    document_id: int
+    label: str
+    clearing_account_id: int
+
+
+def platform_payout_hints(session: Session, tx: BankTransaction) -> list[PayoutHint]:
+    """Booked delivery-platform statements whose payout equals this bank line."""
+    from ledgerline.inbox.platform_booking import clearing_account, statement_of
+    from ledgerline.models import InboxDocument, InboxStatus
+
+    admin_id = session.get(BankAccount, tx.bank_account_id).administration_id
+    hints = []
+    for doc in session.scalars(select(InboxDocument).where(
+            InboxDocument.administration_id == admin_id,
+            InboxDocument.status == InboxStatus.BOOKED,
+            InboxDocument.purchase_invoice_id.is_(None))):
+        st = statement_of(doc)
+        if st is None or st.payout_cents != tx.amount_cents:
+            continue
+        days = (tx.booking_date - st.period_end).days
+        if 0 <= days <= PAYOUT_WINDOW_DAYS:
+            hints.append(PayoutHint(doc.id, st.label,
+                                    clearing_account(session, admin_id, st.platform).id))
+    return hints

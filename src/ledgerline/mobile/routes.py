@@ -11,12 +11,23 @@ from ledgerline.config import get_settings
 from ledgerline.db import get_sessionmaker
 from ledgerline.inbox import service as inbox
 from ledgerline.mobile import tokens
-from ledgerline.models import ApiToken
-from ledgerline.web import AdminDep, ManagerDep, OwnerDep, SessionDep, UserDep, flash, render
+from ledgerline.models import Administration, ApiToken
+from ledgerline.web import (
+    AdminDep,
+    CaptureAdminDep,
+    CaptureDep,
+    ManagerDep,
+    MemberDep,
+    SessionDep,
+    csrf_token,
+    flash,
+    render,
+)
 
 router = APIRouter()
 STATIC = Path(__file__).resolve().parent.parent / "static"
 MULTIPART_SLACK = 64 * 1024
+INT4_MAX = 2**31 - 1
 
 
 @router.get("/manifest.webmanifest", include_in_schema=False)
@@ -34,30 +45,64 @@ def service_worker():
 
 
 @router.get("/capture")
-def capture_form(request: Request, user: UserDep, admin: AdminDep):
+def capture_form(request: Request, user: CaptureDep, admin: CaptureAdminDep):
     return render(
         request,
         "mobile/capture.html",
         {
             "admin": admin,
+            "user_id": user.id,
+            "tenant_id": request.state.tenant.id,
             "max_mb": get_settings().max_upload_bytes // (1024 * 1024),
         },
     )
 
 
+@router.get("/capture/context", include_in_schema=False)
+def capture_context(request: Request, user: MemberDep):
+    """Who is signed in and a CSRF token, for the offline queue (page and service worker)."""
+    return JSONResponse(
+        {"userId": user.id, "tenantId": request.state.tenant.id, "csrf": csrf_token(request)},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @router.post("/capture")
-async def capture_submit(request: Request, user: OwnerDep, admin: AdminDep, session: SessionDep):
+async def capture_submit(
+    request: Request, user: CaptureDep, admin: CaptureAdminDep, session: SessionDep
+):
     form = await request.form()
     note = str(form.get("note") or "")
     chosen = [f for f in form.getlist("files") if hasattr(f, "read") and f.filename]
+    wants_json = "application/json" in request.headers.get("accept", "")
     if not chosen:
+        if wants_json:
+            return JSONResponse({"detail": "no file"}, 400)
         flash(request, "Choose a photo or file first.", "error")
         return RedirectResponse("/capture", 303)
+    # A queued upload names the administration it was captured for, not whichever is selected now.
+    target = _capture_target(session, admin, form.get("administration_id"))
+    if target is None:
+        return JSONResponse({"detail": "administration not available"}, 409)
     payloads = [(f.filename, await f.read()) for f in chosen]
     results = await run_in_threadpool(
-        _ingest, session, admin.id, user.id, payloads, note.strip() or None
+        _ingest, session, target.id, user.id, payloads, note.strip() or None
     )
-    return render(request, "mobile/captured.html", {"admin": admin, "results": results})
+    if wants_json:
+        return JSONResponse({"administration": target.name, "results": results})
+    return render(request, "mobile/captured.html", {"admin": target, "results": results})
+
+
+def _capture_target(session, current, requested) -> Administration | None:
+    if requested in (None, ""):
+        return current
+    if not str(requested).isdigit():
+        return None
+    if int(requested) == current.id:
+        return current
+    if int(requested) > INT4_MAX:
+        return None
+    return session.get(Administration, int(requested))
 
 
 def _ingest(session, admin_id: int, user_id: int, payloads, subject):
@@ -68,6 +113,7 @@ def _ingest(session, admin_id: int, user_id: int, payloads, subject):
                 session, admin_id, name, content, "phone", subject=subject, user_id=user_id
             )
         except inbox.InboxError as exc:
+            inbox.record_rejection(session, admin_id, "phone", exc, user_id=user_id)
             results.append({"name": name, "error": _friendly(str(exc))})
             continue
         results.append({"name": name, "id": document.id, "duplicate": not created})
@@ -116,6 +162,23 @@ async def _read_upload(request: Request, limit: int) -> tuple[str, bytes] | JSON
     return filename, content
 
 
+def _reject(session, token: ApiToken, error: inbox.InboxError) -> None:
+    inbox.record_rejection(
+        session, token.administration_id, "shortcut", error, user_id=token.user_id)
+    session.commit()
+
+
+def _failure_code(status_code: int) -> str:
+    return "too_large" if status_code == 413 else "invalid"
+
+
+def _reject_upload(token_value: str, code: str) -> None:
+    with get_sessionmaker()() as session:
+        token = tokens.authenticate(session, token_value)
+        if token is not None:
+            _reject(session, token, inbox.InboxError(code, code))
+
+
 def _store(token_value: str, filename: str, content: bytes) -> JSONResponse:
     with get_sessionmaker()() as session:
         token = tokens.authenticate(session, token_value)
@@ -124,9 +187,11 @@ def _store(token_value: str, filename: str, content: bytes) -> JSONResponse:
         try:
             inbox.sniff_type(content)
         except inbox.InboxError as exc:
+            _reject(session, token, exc)
             return JSONResponse({"detail": str(exc)}, 415)
         document, created = inbox.receive(
-            session, token.administration_id, filename, content, "phone", user_id=token.user_id
+            session, token.administration_id, filename, content, "phone",
+            user_id=token.user_id, channel="shortcut",
         )
         audit.record(
             session,
@@ -165,9 +230,11 @@ async def api_upload(request: Request):
     limit = get_settings().max_upload_bytes
     read = await _read_upload(request, limit)
     if isinstance(read, Response):
+        await run_in_threadpool(_reject_upload, value, _failure_code(read.status_code))
         return read
     filename, content = read
     if not content:
+        await run_in_threadpool(_reject_upload, value, "empty")
         return JSONResponse({"detail": "the file is empty"}, 400)
     return await run_in_threadpool(_store, value, filename, content)
 

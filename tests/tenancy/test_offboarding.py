@@ -1,3 +1,4 @@
+import json
 import zipfile
 
 import pytest
@@ -42,6 +43,8 @@ def test_delete_tenant_exports_then_removes_only_that_tenant(
     with zipfile.ZipFile(exports[-1]) as zf:
         assert "data/journal_entries.json" in zf.namelist()
         assert any(name.startswith("attachments/") for name in zf.namelist())
+        for table in ("daily_takings", "inbox_documents"):
+            assert json.loads(zf.read(f"data/{table}.json")), f"{table} missing from the export"
 
     assert set(_counts(owner_engine, tenant.id).values()) == {0}
     assert _counts(owner_engine, other_tenant.id) == before_b

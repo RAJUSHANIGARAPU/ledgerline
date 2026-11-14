@@ -6,7 +6,7 @@ This guide is for a Dutch sole trader (eenmanszaak, ZZP) who keeps their own boo
 
 1. Install it: see the README (quick start) and `DEPLOY.md` in the docs folder. Both explain the one-command Docker setup and how to create the first owner.
 2. Sign in at `/login` with the owner email and password. Use at least 12 characters for the password; you can change it under [Settings](/settings).
-3. Open the [setup wizard](/setup). It has seven short steps. Every step can be skipped and picked up later: progress is read from your data, so a step shows "done" once the data exists.
+3. Open the [setup wizard](/setup). It has eight short steps. Every step can be skipped and picked up later: progress is read from your data, so a step shows "done" once the data exists.
 
 | Step | What you do |
 |---|---|
@@ -14,17 +14,30 @@ This guide is for a Dutch sole trader (eenmanszaak, ZZP) who keeps their own boo
 | 2. VAT situation | Regular VAT or the small business scheme (KOR) |
 | 3. Bank account | Register your business account |
 | 4. Opening balances | Optional: the bank balance on your start date |
-| 5. First customer and invoice | Shortcuts to add a customer and create an invoice |
-| 6. Inbox and phone | Where supplier invoices come in |
-| 7. Accountant review | Reminder to have the first quarter reviewed, and the exports |
+| 5. Open invoices | Optional: unpaid sales and purchase invoices on your start date, when you move from another system |
+| 6. First customer and invoice | Shortcuts to add a customer and create an invoice |
+| 7. Inbox and phone | Where supplier invoices come in |
+| 8. Accountant review | Reminder to have the first quarter reviewed, and the exports |
 
 The VAT choice matters: with the KOR (turnover at most EUR 20,000 per calendar year) you do not charge VAT and cannot deduct input VAT. You register for the KOR with the Belastingdienst yourself; the setting only tells Ledgerline how to book. Details: [belastingdienst.nl/kleineondernemersregeling](https://www.belastingdienst.nl/kleineondernemersregeling). Ledgerline does not watch the turnover limit.
 
 Opening balances: if you start mid-year, enter the balance of each bank account on your start date. Ledgerline posts one journal entry (bank against owner's equity). A second one is refused until you reverse the first (see [Troubleshooting](#troubleshooting-and-faq)).
 
+## Moving in from another system
+
+If you already have a business, pick a start date (usually the first day of a quarter) and bring three things over: your contacts, your unpaid invoices and your bank balance. Everything before the start date stays in the old system and in the VAT returns you filed from it.
+
+1. **Contacts.** On [Contacts](/contacts) choose Import CSV. Download the template (separator ; for Dutch Excel, or ,), fill it in or export from your old system, upload it and read the preview. Each row says create, skip or error. A row is skipped as a duplicate when its VAT number or KvK number is already known, or its name and postcode are. Rows with errors are not imported: correct them in your file and upload again. UTF-8 files with or without a BOM work; amounts and dates are not needed here.
+2. **Bank balance.** Step 4 of the [setup wizard](/setup), dated on your start date.
+3. **Open invoices.** Step 5 of the wizard. Add them one by one or import a CSV: type (sales or purchase), your original invoice number or the supplier's reference, the contact, invoice date, due date, total including VAT and the amount still open. Amounts like 1.234,56 are fine and dates are yyyy-mm-dd or dd-mm-yyyy. The contacts must exist first. The whole file is imported or none of it.
+4. **Check.** The step shows "Assets = Liabilities + Equity" on the start date. Compare the receivables and payables it lists with your old system.
+
+What an open invoice does: you see it in the aging reports, and a bank payment that mentions its number is suggested for matching like any open invoice. What it does not do: it is not revenue, a cost or VAT in Ledgerline, so it is not on your VAT return, the ICP overview or your profit and loss; you reported it in the old system. Opening items cannot be edited, credited or downloaded as a PDF; remove one (this reverses its entry) and add it again if it was entered wrongly. Command line: `ledgerline import-contacts --file contacts.csv` and `ledgerline import-opening-items --file open.csv --start-date 2026-10-01` preview first and only save with `--apply`.
+
 ## Daily and weekly routine
 
 - Once a week: process the [Inbox](/inbox) (supplier invoices that arrived by email, upload or phone).
+- If you sell over a counter: enter the till's daily takings on [Daily takings](/takings).
 - Download your bank file and import it on the [Bank](/bank) page.
 - Match payments to invoices on the reconcile screen; book everything else to an account.
 - Look at the [dashboard](/): unmatched bank transactions, overdue and draft invoices.
@@ -85,12 +98,63 @@ Or enter it by hand: [New purchase invoice](/purchases/new). Fill in the supplie
 
 Always check the amounts and the VAT code before booking. Reverse-charge codes (for example IEU21 for EU purchases) post both the VAT you owe and the VAT you deduct. Keep the original documents: records must be kept 7 years (10 for real estate). Ledgerline stores the attachment in its database, so it is part of every backup.
 
+## Forward invoices from Gmail / Outlook automatically
+
+Ledgerline never connects to your mailbox. Instead your mailbox forwards the invoice mails to your administration's private address, shown on the [Inbox](/inbox) page (`mailbox+<token>@domain`). Keep the address private. Only mail with attachments (PDF, JPEG, PNG, UBL XML) creates documents, and nothing is booked without your review. Only new mail is forwarded, not mail already in the mailbox.
+
+### Gmail
+
+1. Gmail, Settings, **Forwarding and POP/IMAP**, add your Ledgerline address as a forwarding address. Gmail sends it a verification link ([Google: forward Gmail messages](https://support.google.com/mail/answer/10957)).
+2. That mail arrives in Ledgerline. The owner sees the link as a notice at the top of the Inbox page, for 7 days or until dismissed. Open it while signed in to Gmail, then refresh Gmail's forwarding settings. Ledgerline never opens the link itself and shows only links on google.com.
+3. Turn off "Forward a copy of incoming mail" if it was switched on: by default Gmail forwards all mail to a new address. Then create a filter instead ([Google: create filters](https://support.google.com/mail/answer/6579)): in the search options use a query like
+
+   `has:attachment filename:pdf (factuur OR invoice OR rekening)`
+
+   and add your suppliers with `from:` (for example `{from:leverancier.example from:energie.example}`, which matches either). Operators are described in [Google: search operators](https://support.google.com/mail/answer/7190). Click **Create filter**, choose **Forward it to** and select the Ledgerline address.
+4. Test the query in the Gmail search bar first. If an invoice is missed, add its sender to the `from:` list.
+
+### Outlook
+
+1. Outlook on the web: Settings, Mail, Rules, Add rule. Choose the conditions you need, and the action **Forward to** with your Ledgerline address ([Microsoft: use rules to automatically forward messages](https://support.microsoft.com/office/45aa9664-4911-4f96-9663-ece42816d746)). Use "Forward to", not "Forward as attachment": the invoice must arrive as an attachment of its own.
+2. Business Microsoft 365: an administrator can block automatic forwarding to external addresses. The rule then does not work and the sender gets a bounce ([Microsoft: control automatic external email forwarding](https://learn.microsoft.com/defender-office-365/outbound-spam-policies-external-email-forwarding)). Ask your IT administrator to allow it for this mailbox.
+3. Not verified: whether Outlook needs a separate confirmation step for the new address, and which sender such a mail would use. Ledgerline only shows the confirmation notice for Gmail.
+
+## Daily takings (till sales)
+
+For businesses that sell over a counter. Until the till's own data is connected, you enter the figures from its daily report (Z-report) by hand. Open [Daily takings](/takings).
+
+- Record a day: the date, the sales including VAT per rate (21%, 9%, 0%) and how the money came in (cash, card/pin, other such as vouchers). The sales per rate must add up to the amounts received; otherwise the day is refused and the difference is shown.
+- Ledgerline posts one journal entry per day: revenue per rate, the VAT inside the gross amounts (gross x rate / (100 + rate), rounded half-up to the cent per rate per day), and the amounts received. The VAT lands in the VAT return like an invoice at the same rate.
+- Cash goes to Cash. Card payments go to Card payments to receive and other receipts to Vouchers and other receipts to settle. When the card payout reaches your bank, import the statement and on the reconcile screen use "Book to an account" with Card payments to receive; the balance of that account then shows what the acquirer still owes you.
+- Bulk entry: Import CSV. Download the template (one row per day; columns date, gross_21, gross_9, gross_0, cash, card, other, note), fill in a quarter and upload it. The whole file is checked first: every problem is listed with its line number and nothing is posted unless all rows are valid.
+- Each date can be recorded once. To change a day use Correct (reverses the day with a reversing entry and posts the new amounts) or Reverse. A day in a locked period cannot be recorded, corrected or reversed.
+- Negative days (more refunds than sales) are not accepted; book those with a journal entry.
+- Weekly and monthly totals: [Totals](/takings/totals) sums the recorded days per week (Monday to Sunday) or month, per rate and per receipt method, so you can compare them with the till's own period report.
+- The 0% column uses the code for sales at 0% or not taxed in NL. Ledgerline does not decide for you which of your sales are exempt or at 0%; check that with your accountant or the Belastingdienst.
+
 ## Bank
 
-- Add the account on [Bank](/bank) (name, IBAN). In your online banking look for "Download transactions" and choose CAMT.053 or MT940, then upload it with Import. Importing posts nothing to the ledger.
-- Reconcile: for each transaction, Match selected pairs it with open invoices, "Accept all exact matches" takes every exact amount match in one go, "Book to an account" posts a cost or receipt with an optional VAT code, Ignore sets it aside.
+- Add the account on [Bank](/bank) (name, IBAN). In your online banking look for "Download transactions" and choose CAMT.053 or MT940 if your bank offers them, then upload the file with Import. If it does not, a CSV works too. Importing posts nothing to the ledger.
+- Reconcile: for each transaction, Match selected pairs it with open invoices, "Accept all exact matches" takes every exact amount match in one go (an invoice that differs by a cent or two is proposed with its difference; tick the box to book the difference to Rounding differences, 4890; the tolerance is `LEDGERLINE_BANK_MATCH_TOLERANCE_CENTS`, default 2), "Book to an account" posts a cost or receipt with an optional VAT code, Ignore sets it aside.
 - Undo: on the Matched and Ignored tabs, Undo reverses the match (a reversing journal entry is posted) and puts the transaction back to Unmatched.
 - The same file twice is refused ("this file has already been imported").
+
+### CSV files
+
+- Rabobank: the standard 26-column CSV (header starts with "IBAN/BBAN", "Munt", "BIC", "Volgnr") is recognised and needs no setup. Layout source: Rabobank, "Formaatbeschrijving CSV (csv-extensie)", version 1.2, April 2022, <https://media.rabobank.com/m/4a7130f6f0042a57/original/pdf_formaatbeschrijving_csv-pdf.pdf> (read 2026-11-14). A file holding several accounts is imported for the account you chose; the other rows are left out and reported.
+- ING, ABN AMRO, bunq and Knab have no built-in layout, because none of them publishes the column layout of its CSV or TXT export on its own site (checked 2026-11-14; ING's layout only turned up on third-party mirrors, the others in forum posts and converters). Their files use the column mapper below.
+- Column mapper: when a CSV is not recognised, Ledgerline shows the first rows and asks which column is the date, the amount (one signed column, an amount with an Af/Bij or D/C column, or separate debit and credit columns), the counterparty, IBAN and description. Date format and decimal separator can stay on Detect. A file may hold at most 20,000 lines (about the size limit of 10 MB); split a longer export by period. Header words such as "Bedrag (EUR)" and "Af Bij" are pre-selected, but check the choices before importing. Lines of a reconcile page that you book often (rent, card settlements, cash deposits) are proposed from your earlier bookings; nothing is booked until you confirm. Tick "Remember this mapping" and the next file of that account imports without the step; if its headers change you are asked again.
+- Read as: separators ; , tab; UTF-8 (with or without BOM) or Windows-1252; amounts like 1.234,56, 1,234.56, -12,50, 12,50-, (12,50) and +99,00; dates like 2026-06-30, 30-06-2026, 30/06/2026, 30.06.2026 and 20260630 (day first when in doubt). An amount such as 1.234 or 1,234 with exactly three digits after one separator is refused as ambiguous: set the decimal separator in the mapper. Only EUR is supported. Any bad row stops the import and names its row number; nothing is half-imported.
+
+### Importing the same payments in two formats
+
+Say you import a CAMT.053 for June and later a CSV that also covers June. Different formats carry different references and wording, so file contents cannot be compared. Ledgerline instead treats a CSV or CAMT line as already stored when a line of another format (or a manual line) on the same bank account has the same amount, a booking or value date that agrees on both sides, and a counterparty IBAN that does not contradict (an unknown IBAN is not a contradiction). Each stored line is used up once, so two equal payments on one day need two stored lines. Lines left out are counted in the import message. Within one format, repeated payments are handled by the bank reference or, without one, by date, amount, IBAN and text. The rule can wrongly drop a genuinely new payment that has the same amount and date as a stored one from a counterparty with no IBAN in the file; check the "left out" count after mixing formats.
+
+### Lines entered by hand
+
+A bank statement uploaded as a PDF to the inbox is not read: it is filed under Not invoices with a hint to import the CSV or CAMT export under Bank.
+
+Use "Add a line by hand" under the bank account only when no file is available. Enter date, amount and direction, counterparty and a reason (for example "read from the banking app"). The line is labelled "Manually entered" in the reconciliation, also after matching, and the audit log records who entered it, when, and the reason. A later file containing the same payment does not add it again (see above). A manual line can be matched, booked, ignored or undone like any other.
 - A payment to the Belastingdienst: book it to the VAT settlement account (see below).
 
 ## The BTW quarter
@@ -132,7 +196,13 @@ If email is not set up on the server, invitations are refused with a message and
 
 ## Accountant access
 
-Settings, Users: invite a user with role accountant. That user can read everything and change nothing. The bookkeeper role can write the books but cannot manage users or phone tokens; only the owner can. Send reports as CSV, or the full administration ZIP from [Privacy and data](/settings/privacy) (owner only).
+Settings, Users: invite a user with role accountant. That user can read everything and change nothing. The bookkeeper role can write the books but cannot manage users or phone tokens; only the owner can. Roles are owner, bookkeeper, accountant and uploader. Send reports as CSV, or the full administration ZIP from [Privacy and data](/settings/privacy) (owner only).
+
+## Staff who only upload receipts
+
+Settings, Users: invite a user with role uploader (phone capture only). Kitchen or floor staff can sign in on their phone, open [Capture](/capture), photograph a supplier invoice and send it. The two-factor and password rules are the same as for everyone else. An uploader sees a confirmation and nothing more: no inbox, ledger, reports, contacts, bank data, settings or users, not even the documents they sent. The bookkeeper reviews what arrives in the inbox, and the audit log records which user uploaded each document.
+
+Uploaders cannot create phone tokens for the iOS shortcut; only the owner can, under Settings, Devices. Deactivate an uploader from Settings, Users when they leave: access ends on their next request.
 
 ## Privacy requests
 

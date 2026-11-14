@@ -19,9 +19,13 @@ def marker(path, age_hours=1.0, offsite=1):
 
 
 @pytest.fixture
-def healthy(ops_dir):
+def healthy(ops_dir, monkeypatch):
     beat(ops_dir / "worker.heartbeat", 3)
     marker(ops_dir / "last_backup_ok")
+    # A fixed half-empty disk, so the result does not depend on the machine running the tests.
+    monkeypatch.setattr(
+        health.shutil, "disk_usage", lambda _p: SimpleNamespace(total=1000, used=500, free=500)
+    )
     return ops_dir
 
 
@@ -34,7 +38,7 @@ def test_all_checks_pass(deep_client, healthy):
     response, body = get(deep_client)
     assert response.status_code == 200
     assert body["status"] == "ok"
-    assert set(body["checks"]) == {"database", "worker", "backup", "disk"}
+    assert set(body["checks"]) == {"database", "worker", "backup", "disk", "legal"}
     assert all(check["ok"] for check in body["checks"].values())
     assert body["checks"]["worker"]["age_seconds"] in range(2, 10)
     assert body["checks"]["backup"]["offsite"] is True
@@ -116,7 +120,10 @@ def test_database_down_is_503_without_leaking_the_error(deep_client, healthy, mo
     assert body["checks"]["worker"]["ok"] is True
 
 
-def test_every_failure_is_reported_at_once(deep_client, ops_dir):
+def test_every_failure_is_reported_at_once(deep_client, ops_dir, monkeypatch):
+    monkeypatch.setattr(
+        health.shutil, "disk_usage", lambda _p: SimpleNamespace(total=1000, used=500, free=500)
+    )
     response, body = get(deep_client)
     assert response.status_code == 503
     failing = {name for name, check in body["checks"].items() if not check["ok"]}
@@ -146,3 +153,27 @@ def test_rate_limiter_window_slides():
 
 def test_plain_healthz_is_unchanged(deep_client):
     assert deep_client.get("/healthz").json() == {"status": "ok"}
+
+
+def settings_with(**env):
+    from ledgerline.config import Settings
+
+    return Settings(_env_file=None, secret_key="test", **env)
+
+
+def test_disk_threshold_defaults_to_ten_percent():
+    assert settings_with().health_min_free_disk_percent == 10
+
+
+def test_disk_threshold_is_read_from_the_environment(monkeypatch):
+    monkeypatch.setenv("LEDGERLINE_HEALTH_MIN_FREE_DISK_PERCENT", "5")
+    assert settings_with().health_min_free_disk_percent == 5
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "100", "250", "ten", "", "7.5"])
+def test_disk_threshold_rejects_nonsense(monkeypatch, value):
+    from pydantic import ValidationError
+
+    monkeypatch.setenv("LEDGERLINE_HEALTH_MIN_FREE_DISK_PERCENT", value)
+    with pytest.raises(ValidationError):
+        settings_with()

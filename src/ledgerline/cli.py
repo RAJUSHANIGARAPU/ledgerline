@@ -6,6 +6,7 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, func, select
 
+from ledgerline.accounts import tokens
 from ledgerline.auth import hash_password
 from ledgerline.config import get_settings
 from ledgerline.db import get_sessionmaker, tenant_session
@@ -42,6 +43,17 @@ def create_tenant(args: argparse.Namespace) -> int:
         session.add(tenant)
         session.commit()
         print(f"Created tenant {tenant.id}: {tenant.name}")
+        new_id = tenant.id
+    from ledgerline.platform import offboarding
+
+    engine = create_engine(get_settings().owner_database_url)
+    try:
+        with engine.begin() as conn:
+            dropped = offboarding.drop_empty_seeded_tenant(conn, new_id)
+    finally:
+        engine.dispose()
+    if dropped is not None:
+        print(f"Removed the empty seeded tenant {dropped} ({offboarding.SEEDED_TENANT_NAME}).")
     return 0
 
 
@@ -74,6 +86,57 @@ def delete_tenant(args: argparse.Namespace) -> int:
     total = sum(report.deleted_rows.values())
     print(f"Deleted tenant {args.tenant} ({name}): {total} rows, {report.deleted_users} logins.")
     print("Backups still hold this data until their retention ends; see docs/OPERATIONS.md.")
+    return 0
+
+
+def _date_range(args: argparse.Namespace):
+    from datetime import date
+
+    start, end = date.fromisoformat(args.start), date.fromisoformat(args.end)
+    if end < start:
+        raise SystemExit("error: --to is before --from")
+    return start, end
+
+
+def _tenant_sessions(args: argparse.Namespace):
+    from sqlalchemy import select
+
+    from ledgerline.db import for_each_tenant, get_sessionmaker, rls_bypass_reason
+    from ledgerline.models import Tenant
+
+    with get_sessionmaker()() as probe:
+        known = set(probe.scalars(select(Tenant.id)))
+        reason = rls_bypass_reason(probe)
+    if reason and not args.allow_rls_bypass:
+        raise SystemExit(
+            f"error: refusing to run, {reason}, so tenants would not be isolated. Use the "
+            "application role (LEDGERLINE_DATABASE_URL), or pass --allow-rls-bypass.")
+    if args.tenant is not None and args.tenant not in known:
+        raise SystemExit(f"error: no tenant with id {args.tenant}")
+    for tid, session in for_each_tenant():
+        if args.tenant is None or tid == args.tenant:
+            yield tid, session
+
+
+def pilot_report(args: argparse.Namespace) -> int:
+    from ledgerline.platform import pilot
+
+    start, end = _date_range(args)
+    for tid, (reports, feedback) in pilot.report_by_tenant(
+        _tenant_sessions(args), start, end
+    ).items():
+        print(pilot.render_text(tid, reports, feedback, start, end), end="\n\n")
+    return 0
+
+
+def feedback_export(args: argparse.Namespace) -> int:
+    from ledgerline.platform import pilot
+
+    start, end = _date_range(args)
+    rows = []
+    for _, session in _tenant_sessions(args):
+        rows += pilot.feedback_rows(session, start, end)
+    sys.stdout.write(pilot.feedback_csv(rows))
     return 0
 
 
@@ -122,6 +185,42 @@ def add_membership(args: argparse.Namespace) -> int:
     return 0
 
 
+def invite_owner(args: argparse.Namespace) -> int:
+    """Send the normal invitation mail to the first owner of a tenant (no password, no login)."""
+    from ledgerline import mail
+    from ledgerline.accounts import invitations
+    from ledgerline.platform import validation as v
+
+    address, err = v.check_email(args.email)
+    if err or not address:
+        print(f"error: {err or '--email is required'}", file=sys.stderr)
+        return 1
+    address = address.lower()
+    if not mail.can_deliver():
+        print("error: email is not set up (LEDGERLINE_SMTP_HOST and LEDGERLINE_SMTP_FROM), "
+              "so the invitation cannot be sent", file=sys.stderr)
+        return 1
+    with tenant_session(args.tenant) as session:
+        tenant = session.get(Tenant, args.tenant)
+        if tenant is None:
+            print(f"error: tenant {args.tenant} does not exist", file=sys.stderr)
+            return 1
+        invitation = invitations.prepare(session, tenant, address, Role.OWNER.value)
+        if invitation is None:
+            print(f"{address} is already a member of tenant {tenant.id}; nothing sent.")
+            return 0
+        delivered = invitations.deliver(session, invitation, role=Role.OWNER.value,
+                                        actor_id=None, source="cli")
+        session.commit()
+    if not delivered:
+        print(f"error: the invitation email to {address} could not be sent. Check the SMTP "
+              "settings and run the command again; it issues a fresh link.", file=sys.stderr)
+        return 1
+    print(f"Invitation sent to {address} as owner of tenant {args.tenant} "
+          f"(the link works for {tokens.INVITE_TTL.days} days).")
+    return 0
+
+
 def create_administration(args: argparse.Namespace) -> int:
     from ledgerline.ledger.chart import create_administration as create
 
@@ -133,6 +232,115 @@ def create_administration(args: argparse.Namespace) -> int:
         admin = create(session, name=args.name, legal_form=args.legal_form)
         session.commit()
         print(f"Created administration {admin.id}: {admin.name} (tenant {tenant_id})")
+    return 0
+
+
+def _import_context(session, args):
+    """The administration and acting user for an import, or None after printing why not."""
+    from ledgerline.models import Administration
+
+    admins = list(session.scalars(select(Administration).order_by(Administration.id)))
+    if args.administration is not None:
+        admins = [a for a in admins if a.id == args.administration]
+    if len(admins) != 1:
+        print("error: pass --administration (this tenant has "
+              f"{len(admins)} matching administrations)", file=sys.stderr)
+        return None
+    user = None
+    if args.user:
+        user = session.scalar(select(User).where(func.lower(User.email) == args.user.lower()))
+        if user is None:
+            print(f"error: no user {args.user}", file=sys.stderr)
+            return None
+    return admins[0], user
+
+
+def _print_rows(rows, columns) -> None:
+    for r in rows:
+        notes = r.reason or ""
+        if r.warnings:
+            notes = "; ".join(filter(None, [notes, *r.warnings]))
+        print(f"row {r.row:>4}  {r.action:<6}  {columns(r)}  {notes}".rstrip())
+
+
+def import_contacts(args: argparse.Namespace) -> int:
+    from ledgerline.imports import contacts as contact_import
+    from ledgerline.imports.csvio import CsvError
+
+    content = Path(args.file).read_bytes()
+    with get_sessionmaker()() as lookup:
+        tenant_id = _resolve_tenant(lookup, args.tenant)
+    if tenant_id is None:
+        return 1
+    with tenant_session(tenant_id) as session:
+        context = _import_context(session, args)
+        if context is None:
+            return 1
+        admin, user = context
+        try:
+            plan = contact_import.plan_contacts(session, admin, content)
+        except CsvError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        for warning in plan.warnings:
+            print(f"note: {warning}")
+        _print_rows(plan.rows, lambda r: (r.data.get("name") or "")[:40].ljust(40))
+        print(f"{plan.count('create')} to create, {plan.count('skip')} duplicates skipped, "
+              f"{plan.count('error')} with errors.")
+        if not args.apply:
+            print("Dry run: nothing was saved. Run again with --apply to create the contacts.")
+            return 0
+        created = contact_import.apply_plan(session, admin, plan, user.id if user else None,
+                                            Path(args.file).name)
+        session.commit()
+        print(f"Created {created} contacts.")
+    return 0
+
+
+def import_opening_items(args: argparse.Namespace) -> int:
+    from ledgerline.imports import opening
+    from ledgerline.imports.csvio import CsvError
+
+    content = Path(args.file).read_bytes()
+    with get_sessionmaker()() as lookup:
+        tenant_id = _resolve_tenant(lookup, args.tenant)
+    if tenant_id is None:
+        return 1
+    with tenant_session(tenant_id) as session:
+        context = _import_context(session, args)
+        if context is None:
+            return 1
+        admin, user = context
+        try:
+            start = opening.resolve_start_date(session, admin, args.start_date or "")
+            rows, warnings, _ = opening.plan_csv(session, admin, content, start)
+        except (opening.OpeningError, CsvError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        for warning in warnings:
+            print(f"note: {warning}")
+        _print_rows(rows, lambda r: f"{r.kind or '?':<8} {r.number[:20]:<20} "
+                                    f"{r.contact_name[:28]:<28} open {r.open_cents / 100:>10.2f}")
+        creates = sum(1 for r in rows if r.action == "create")
+        errors = sum(1 for r in rows if r.action == "error")
+        skipped = sum(1 for r in rows if r.action == "skip")
+        print(f"Start date {start}: {creates} to create, {skipped} already imported, "
+              f"{errors} with errors.")
+        if errors:
+            print("error: fix the rows with errors first; nothing was saved.", file=sys.stderr)
+            return 1
+        if not args.apply:
+            print("Dry run: nothing was saved. Run again with --apply to post the items.")
+            return 0
+        try:
+            created = opening.apply_items(session, admin, rows, start, user.id if user else None,
+                                          Path(args.file).name)
+            session.commit()
+        except opening.OpeningError as exc:
+            session.rollback()
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(f"Posted {created} opening items dated {start}.")
     return 0
 
 
@@ -169,6 +377,9 @@ WHERE p.pronamespace = 'public'::regnamespace AND p.proname LIKE 'ledgerline\\_%
 """
 
 
+NO_UPDATE_TABLES = {"feedback_entries"}
+
+
 def grant_app_role(raw) -> list[str]:
     """Grant the app role data access on protected tables only; return the tables granted.
 
@@ -182,8 +393,8 @@ def grant_app_role(raw) -> list[str]:
     tables = sorted({*protected, *SHARED_TABLES})
     for table in tables:
         raw.execute(
-            sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON {} TO ledgerline_app").format(
-                sql.Identifier(table)
+            sql.SQL("GRANT SELECT, INSERT, {}DELETE ON {} TO ledgerline_app").format(
+                sql.SQL("" if table in NO_UPDATE_TABLES else "UPDATE, "), sql.Identifier(table)
             )
         )
     for (sequence,) in raw.execute(OWNED_SEQUENCES, (tables,)).fetchall():
@@ -302,6 +513,12 @@ def build_parser() -> argparse.ArgumentParser:
     member.add_argument("--tenant", type=int, help="tenant id (optional with a single tenant)")
     member.set_defaults(func=add_membership)
 
+    inv = sub.add_parser("invite-owner",
+                         help="email the first owner of a tenant the normal invitation link")
+    inv.add_argument("--tenant", type=int, required=True)
+    inv.add_argument("--email", required=True)
+    inv.set_defaults(func=invite_owner)
+
     admin = sub.add_parser("create-administration", help="create an administration")
     admin.add_argument("--name", required=True)
     admin.add_argument("--legal-form", default="eenmanszaak")
@@ -320,6 +537,39 @@ def build_parser() -> argparse.ArgumentParser:
     seed = sub.add_parser("seed-demo", help="load demo data into a new tenant")
     seed.add_argument("--email", help="existing user to make owner of the demo tenant")
     seed.set_defaults(func=seed_demo)
+
+    for name, handler, blurb in (
+        ("pilot-report", pilot_report, "uploads, processing time, feedback for a date range"),
+        ("feedback-export", feedback_export, "feedback entries as CSV (verbatim)"),
+    ):
+        cmd = sub.add_parser(name, help=blurb)
+        cmd.add_argument("--from", dest="start", required=True, help="YYYY-MM-DD, inclusive")
+        cmd.add_argument("--to", dest="end", required=True, help="YYYY-MM-DD, inclusive")
+        cmd.add_argument("--tenant", type=int, help="limit to one tenant")
+        cmd.add_argument("--allow-rls-bypass", action="store_true",
+                         help="run even if the database role bypasses row-level security")
+        cmd.set_defaults(func=handler)
+
+    imp = sub.add_parser("import-contacts",
+                         help="import customers and suppliers from a CSV file (dry run by default)")
+    imp.add_argument("--file", required=True)
+    imp.add_argument("--tenant", type=int, help="tenant id (optional with a single tenant)")
+    imp.add_argument("--administration", type=int, help="administration id (optional if only one)")
+    imp.add_argument("--user", help="email of the user to record in the audit trail")
+    imp.add_argument("--apply", action="store_true", help="save instead of only previewing")
+    imp.set_defaults(func=import_contacts)
+
+    items = sub.add_parser("import-opening-items",
+                           help="import unpaid invoices open on the start date from a CSV file "
+                                "(dry run by default)")
+    items.add_argument("--file", required=True)
+    items.add_argument("--start-date", help="yyyy-mm-dd; optional once opening figures exist")
+    items.add_argument("--tenant", type=int, help="tenant id (optional with a single tenant)")
+    items.add_argument("--administration", type=int,
+                       help="administration id (optional if only one)")
+    items.add_argument("--user", help="email of the user to record in the audit trail")
+    items.add_argument("--apply", action="store_true", help="save instead of only previewing")
+    items.set_defaults(func=import_opening_items)
 
     work = sub.add_parser("worker", help="read incoming documents and poll the invoice mailbox")
     work.set_defaults(func=worker)

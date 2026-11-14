@@ -46,7 +46,12 @@ fi
 for service in app worker migrate backup; do
   cid="$(docker compose ps -a -q "$service" | head -n 1)"
   [ -n "$cid" ] || continue
-  echo "$(docker inspect -f '{{.Config.Image}}' "$cid") $(docker inspect -f '{{.Image}}' "$cid")" >> "$IMAGES_FILE"
+  name="$(docker inspect -f '{{.Config.Image}}' "$cid")"
+  id="$(docker inspect -f '{{.Image}}' "$cid")"
+  # Keep the image reachable under its own tag: with the containerd image store an image that
+  # loses its tag to a rebuild can no longer be found by id, so "docker tag $id" fails later.
+  docker tag "$id" "$name:rollback" || say "warning: could not keep $name for a rollback"
+  echo "$name $id" >> "$IMAGES_FILE"
 done
 
 git fetch --tags --prune origin
@@ -57,12 +62,14 @@ rollback() {
   say "ROLLING BACK to $(echo "$PREVIOUS_COMMIT" | cut -c1-7)"
   git checkout --quiet "$PREVIOUS_COMMIT"
   # Point the image names back at the previous builds, then start them without building.
-  while read -r name id; do docker tag "$id" "$name"; done < "$IMAGES_FILE"
+  while read -r name id; do docker tag "$name:rollback" "$name" || docker tag "$id" "$name" || true; done < "$IMAGES_FILE"
   docker compose up -d --no-build
   if wait_healthy; then
     say "rollback healthy. The new version is NOT deployed; check: docker compose logs app migrate"
   else
-    say "rollback did not become healthy either; check: docker compose logs app"
+    say "rollback did not become healthy either; check: docker compose logs app migrate"
+    say "if the new version ran a migration, the old code cannot start on the newer schema (alembic"
+    say "does not know the revision): restore the pre-update backup, see docs/OPERATIONS.md Restore"
   fi
   [ "$PREVIOUS_BRANCH" = "HEAD" ] || git checkout --quiet "$PREVIOUS_BRANCH" 2>/dev/null || true
   exit 1

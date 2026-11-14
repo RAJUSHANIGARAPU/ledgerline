@@ -18,10 +18,11 @@ from sqlalchemy.orm import Session
 
 from ledgerline.config import get_settings
 from ledgerline.db import tenant_session
-from ledgerline.inbox import email_intake, review, service, worker
+from ledgerline.inbox import email_intake, forwarding, platform_booking, review, service, worker
 from ledgerline.inbox.extract import pipeline
 from ledgerline.invoicing import forms
 from ledgerline.invoicing.calc import InvoiceError
+from ledgerline.invoicing.service import purchase_line_accounts
 from ledgerline.models import (
     WRITE_ROLES,
     Account,
@@ -30,16 +31,19 @@ from ledgerline.models import (
     InboxDocument,
     InboxStatus,
     PurchaseInvoice,
+    Role,
 )
+from ledgerline.money import MoneyError, to_cents
 from ledgerline.vat import codes
 from ledgerline.vat.codes import Direction
-from ledgerline.web import AdminDep, OwnerDep, SessionDep, UserDep, flash, render
+from ledgerline.web import AdminDep, ManagerDep, OwnerDep, SessionDep, UserDep, flash, render
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
 TABS = (
     ("review", "To review", InboxStatus.REVIEW),
+    ("other", "Not invoices", InboxStatus.REVIEW),
     ("new", "Processing", InboxStatus.NEW),
     ("booked", "Booked", InboxStatus.BOOKED),
     ("rejected", "Rejected", InboxStatus.REJECTED),
@@ -72,10 +76,8 @@ def _process_in_background(tenant_id: int, ids: list[int]) -> None:
 def inbox_list(request: Request, session: SessionDep, user: UserDep, admin: AdminDep,
                tab: str = "review", dup: str = ""):
     tab = tab if tab in {t[0] for t in TABS} else "review"
-    status = next(t[2] for t in TABS if t[0] == tab)
     documents = list(session.scalars(
-        select(InboxDocument)
-        .where(InboxDocument.administration_id == admin.id, InboxDocument.status == status)
+        select(InboxDocument).where(*review.in_tab(tab, admin.id))
         .order_by(InboxDocument.id.desc()).limit(200)
     ))
     counts = review.status_counts(session, admin.id)
@@ -90,10 +92,22 @@ def inbox_list(request: Request, session: SessionDep, user: UserDep, admin: Admi
     return render(request, "inbox/index.html", {
         "documents": documents, "tab": tab, "tabs": TABS, "counts": counts,
         "duplicates": duplicates, "names": names, "labels": review.METHODS,
+        "types": review.DOCUMENT_TYPES, "user_can_write": user.role in WRITE_ROLES,
         "max_mb": get_settings().max_upload_bytes // (1024 * 1024),
         "inbox_address": email_intake.inbox_address(get_settings(), admin.inbox_token)
         if user.role in WRITE_ROLES else None,
+        "notices": forwarding.active_notices(session, admin.id)
+        if user.role == Role.OWNER else [],
     })
+
+
+@router.post("/inbox/forwarding-notices/{notice_id}/dismiss")
+def forwarding_notice_dismiss(notice_id: int, session: SessionDep, manager: ManagerDep,
+                              admin: AdminDep):
+    if not forwarding.dismiss(session, admin.id, notice_id, manager.id):
+        raise HTTPException(404, "notice not found")
+    session.commit()
+    return _redirect("/inbox")
 
 
 @router.post("/inbox/upload")
@@ -110,6 +124,7 @@ def inbox_upload(request: Request, session: SessionDep, owner: OwnerDep, admin: 
                 user_id=owner.id,
             )
         except service.InboxError as exc:
+            service.record_rejection(session, admin.id, "web", exc, user_id=owner.id)
             flash(request, f"{upload.filename}: {exc}", "error")
             continue
         (new_ids if created else duplicate_ids).append(document.id)
@@ -123,11 +138,7 @@ def inbox_upload(request: Request, session: SessionDep, owner: OwnerDep, admin: 
 
 
 def _accounts(session: Session, admin_id: int) -> list[Account]:
-    return list(session.scalars(
-        select(Account).where(Account.administration_id == admin_id,
-                              Account.type == AccountType.EXPENSE, Account.is_active.is_(True))
-        .order_by(Account.code)
-    ))
+    return purchase_line_accounts(session, admin_id)
 
 
 def _detail_ctx(session: Session, admin, document: InboxDocument, proposal=None, values=None,
@@ -153,10 +164,32 @@ def _detail_ctx(session: Session, admin, document: InboxDocument, proposal=None,
     }
 
 
+def _statement_ctx(session: Session, admin, document: InboxDocument, errors=None, values=None):
+    st = platform_booking.statement_of(document)
+    attachment = session.get(Attachment, document.attachment_id)
+    entry = platform_booking.existing_entry(session, admin.id, st)
+    return {
+        "document": document, "attachment": attachment, "st": st, "errors": errors or [],
+        "decisions": platform_booking.pending_decisions(st), "entry": entry,
+        "values": values or {}, "fee_rate_needs_input": platform_booking.fee_rate_needs_input(st),
+        "sales_codes": [
+            c for c in codes.for_direction(Direction.SALES) if not c.reverse_charge],
+        "accounts": list(session.scalars(
+            select(Account).where(Account.administration_id == admin.id,
+                                  Account.is_active.is_(True),
+                                  Account.type.in_((AccountType.REVENUE, AccountType.EXPENSE,
+                                                    AccountType.LIABILITY)))
+            .order_by(Account.code))),
+    }
+
+
 @router.get("/inbox/{document_id}")
 def inbox_detail(document_id: int, request: Request, session: SessionDep, user: UserDep,
                  admin: AdminDep):
     document = _document_or_404(session, admin.id, document_id)
+    if platform_booking.statement_of(document) is not None:
+        return render(request, "inbox/statement.html",
+                      _statement_ctx(session, admin, document))
     return render(request, "inbox/detail.html", _detail_ctx(session, admin, document))
 
 
@@ -184,6 +217,7 @@ def review_form(
     new_country: FormText = "NL",
     line_description: FormList = None, line_account: FormList = None,
     line_amount: FormList = None, line_vat_code: FormList = None, line_vat: FormList = None,
+    vat_flagged: FormList = None, vat_confirmed: FormList = None,
 ) -> review.ReviewForm:
     count = len(line_description or [])
     vat = (line_vat or []) + [""] * count
@@ -193,6 +227,8 @@ def review_form(
     return review.ReviewForm(
         contact_id, supplier_reference, invoice_date, due_date, description, rows,
         new_name, new_vat, new_kvk, new_iban, new_country,
+        [int(n) for n in vat_flagged or [] if n.isdigit()],
+        [int(n) for n in vat_confirmed or [] if n.isdigit()],
     )
 
 
@@ -208,6 +244,10 @@ def _rerender(request, session, admin, document, data: review.ReviewForm, errors
         "invoice_date": data.invoice_date, "due_date": data.due_date,
         "description": data.description,
     }
+    for number in data.vat_flagged:
+        if number < len(data.rows):
+            data.rows[number]["vat_check"] = "1"
+            data.rows[number]["vat_confirmed"] = "1" if number in data.vat_confirmed else ""
     ctx = _detail_ctx(session, admin, document, values=values, rows=data.rows, errors=errors)
     ctx["new_supplier"] = data
     return render(request, "inbox/detail.html", ctx, status_code=422)
@@ -256,6 +296,15 @@ def inbox_reject(document_id: int, request: Request, session: SessionDep, owner:
     return _redirect("/inbox")
 
 
+@router.post("/inbox/reject-non-invoices")
+def inbox_reject_non_invoices(request: Request, session: SessionDep, owner: OwnerDep,
+                              admin: AdminDep):
+    count = review.reject_non_invoices(session, admin, owner)
+    session.commit()
+    flash(request, f"{count} document(s) rejected.")
+    return _redirect("/inbox")
+
+
 @router.post("/inbox/{document_id}/rerun")
 def inbox_rerun(document_id: int, request: Request, session: SessionDep, owner: OwnerDep,
                 admin: AdminDep):
@@ -266,4 +315,43 @@ def inbox_rerun(document_id: int, request: Request, session: SessionDep, owner: 
     pipeline.run(session, document)
     session.commit()
     flash(request, "The document was read again.")
+    return _redirect(f"/inbox/{document.id}")
+
+
+def _split(sales_code: FormList, sales_amount: FormList) -> list[tuple[str, int]]:
+    pairs = zip(sales_code or [], sales_amount or [], strict=False)
+    try:
+        return [(code, to_cents(amount)) for code, amount in pairs if amount.strip()]
+    except MoneyError as exc:
+        raise platform_booking.PlatformBookingError(str(exc)) from exc
+
+
+def _account_id(value: str) -> int | None:
+    return int(value) if value.isdigit() else None
+
+
+@router.post("/inbox/{document_id}/book-statement")
+def inbox_book_statement(
+    document_id: int, request: Request, session: SessionDep, owner: OwnerDep, admin: AdminDep,
+    sales_code: FormList = None, sales_amount: FormList = None, tips_account: FormText = "",
+    adjustments_account: FormText = "", accept_difference: FormText = "",
+    fee_vat_rate: FormText = "",
+):
+    document = _document_or_404(session, admin.id, document_id)
+    try:
+        choices = platform_booking.StatementChoices(
+            _split(sales_code, sales_amount), _account_id(tips_account),
+            _account_id(adjustments_account), accept_difference == "1", _account_id(fee_vat_rate))
+        entry = platform_booking.book_statement(session, admin, owner, document, choices)
+        session.commit()
+    except platform_booking.PlatformBookingError as exc:
+        session.rollback()
+        document = session.get(InboxDocument, document.id)
+        values = {"tips_account": tips_account, "adjustments_account": adjustments_account,
+                  "fee_vat_rate": fee_vat_rate,
+                  "split": dict(zip(sales_code or [], sales_amount or [], strict=False))}
+        ctx = _statement_ctx(session, admin, document, exc.problems, values)
+        return render(request, "inbox/statement.html", ctx, status_code=422)
+    flash(request, f"Statement booked as journal entry {entry.number}. Book the payout from "
+                   "the bank screen when it arrives.")
     return _redirect(f"/inbox/{document.id}")
