@@ -31,6 +31,8 @@ class ExtractedInvoice:
     total_vat_cents: int | None = None
     total_incl_cents: int | None = None
     reverse_charge: bool = False
+    # invoice | statement | reminder | contract | own_sales; only "invoice" is a purchase
+    document_type: str = "invoice"
     lines: list[ExtractedLine] = field(default_factory=list)
     # Problems the reviewer should look at, e.g. "totals do not add up".
     warnings: list[str] = field(default_factory=list)

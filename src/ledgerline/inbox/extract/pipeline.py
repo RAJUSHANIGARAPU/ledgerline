@@ -26,7 +26,7 @@ def _vision_extractor(session: Session, administration_id: int) -> Extractor | N
 
 
 def build_extractors(session: Session, admin: Administration) -> list[Extractor]:
-    own = ([admin.vat_number], [admin.iban], [admin.kvk_number])
+    own = ([admin.vat_number], [admin.iban], [admin.kvk_number], [admin.name])
     extractors: list[Extractor] = [UblExtractor(), PdfTextExtractor(*own)]
     vision = _vision_extractor(session, admin.id)
     if vision is not None:

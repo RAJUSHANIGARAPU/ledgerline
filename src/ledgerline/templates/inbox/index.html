@@ -31,11 +31,18 @@
 </div>
 <div class="tabs" role="tablist">
   {% for key, label, status in tabs %}
-    <a class="tab{% if tab == key %} is-active{% endif %}" href="/inbox?tab={{ key }}">{{ label }} <span class="pill">{{ counts.get(status, 0) }}</span></a>
+    <a class="tab{% if tab == key %} is-active{% endif %}" href="/inbox?tab={{ key }}">{{ label }} <span class="pill">{{ counts.get(key, 0) }}</span></a>
   {% endfor %}
 </div>
 <div id="inbox-list"{% if tab == 'new' and documents %} hx-get="/inbox?tab=new" hx-trigger="every 4s" hx-select="#inbox-list" hx-target="#inbox-list" hx-swap="outerHTML"{% endif %}>
 {% if documents %}
+{% if tab == 'other' and user_can_write %}
+<form method="post" action="/inbox/reject-non-invoices" class="card"><div class="card-body stack">
+  {{ ui.csrf() }}
+  <span class="field-hint">Payout statements, payment reminders, contracts and your own sales invoices. They are kept out of the review list.</span>
+  <div class="form-actions"><button class="btn" type="submit">Reject all {{ documents|length }}</button></div>
+</div></form>
+{% endif %}
 <div class="card">
   <div class="table-wrap">
     <table class="table">
@@ -47,7 +54,7 @@
           <td><a href="/inbox/{{ d.id }}">{{ names.get(d.attachment_id, 'document') }}</a></td>
           <td class="muted">{{ d.sender or d.subject or d.source }}</td>
           <td class="muted">{{ d.received_at|nldate }}</td>
-          <td class="muted">{{ labels.get(d.extraction_method, ('', ''))[0] if d.extraction_method else 'Waiting to be read' }}</td>
+          <td class="muted">{{ types.get((d.extraction or {}).get('document_type')) or (labels.get(d.extraction_method, ('', ''))[0] if d.extraction_method else 'Waiting to be read') }}</td>
           <td><span class="badge badge-{{ status_badge[d.status] }}">{{ d.status }}</span></td>
         </tr>
       {% endfor %}
