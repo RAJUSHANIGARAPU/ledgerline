@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from ledgerline.config import get_settings
 from ledgerline.db import tenant_session
-from ledgerline.inbox import email_intake, forwarding, review, service, worker
+from ledgerline.inbox import email_intake, forwarding, platform_booking, review, service, worker
 from ledgerline.inbox.extract import pipeline
 from ledgerline.invoicing import forms
 from ledgerline.invoicing.calc import InvoiceError
@@ -32,6 +32,7 @@ from ledgerline.models import (
     PurchaseInvoice,
     Role,
 )
+from ledgerline.money import MoneyError, to_cents
 from ledgerline.vat import codes
 from ledgerline.vat.codes import Direction
 from ledgerline.web import AdminDep, ManagerDep, OwnerDep, SessionDep, UserDep, flash, render
@@ -166,10 +167,31 @@ def _detail_ctx(session: Session, admin, document: InboxDocument, proposal=None,
     }
 
 
+def _statement_ctx(session: Session, admin, document: InboxDocument, errors=None, values=None):
+    st = platform_booking.statement_of(document)
+    attachment = session.get(Attachment, document.attachment_id)
+    entry = platform_booking.existing_entry(session, admin.id, st)
+    return {
+        "document": document, "attachment": attachment, "st": st, "errors": errors or [],
+        "decisions": platform_booking.pending_decisions(st), "entry": entry,
+        "values": values or {}, "sales_codes": [
+            c for c in codes.for_direction(Direction.SALES) if not c.reverse_charge],
+        "accounts": list(session.scalars(
+            select(Account).where(Account.administration_id == admin.id,
+                                  Account.is_active.is_(True),
+                                  Account.type.in_((AccountType.REVENUE, AccountType.EXPENSE,
+                                                    AccountType.LIABILITY)))
+            .order_by(Account.code))),
+    }
+
+
 @router.get("/inbox/{document_id}")
 def inbox_detail(document_id: int, request: Request, session: SessionDep, user: UserDep,
                  admin: AdminDep):
     document = _document_or_404(session, admin.id, document_id)
+    if platform_booking.statement_of(document) is not None:
+        return render(request, "inbox/statement.html",
+                      _statement_ctx(session, admin, document))
     return render(request, "inbox/detail.html", _detail_ctx(session, admin, document))
 
 
@@ -288,4 +310,41 @@ def inbox_rerun(document_id: int, request: Request, session: SessionDep, owner: 
     pipeline.run(session, document)
     session.commit()
     flash(request, "The document was read again.")
+    return _redirect(f"/inbox/{document.id}")
+
+
+def _split(sales_code: FormList, sales_amount: FormList) -> list[tuple[str, int]]:
+    pairs = zip(sales_code or [], sales_amount or [], strict=False)
+    try:
+        return [(code, to_cents(amount)) for code, amount in pairs if amount.strip()]
+    except MoneyError as exc:
+        raise platform_booking.PlatformBookingError(str(exc)) from exc
+
+
+def _account_id(value: str) -> int | None:
+    return int(value) if value.isdigit() else None
+
+
+@router.post("/inbox/{document_id}/book-statement")
+def inbox_book_statement(
+    document_id: int, request: Request, session: SessionDep, owner: OwnerDep, admin: AdminDep,
+    sales_code: FormList = None, sales_amount: FormList = None, tips_account: FormText = "",
+    adjustments_account: FormText = "", accept_difference: FormText = "",
+):
+    document = _document_or_404(session, admin.id, document_id)
+    try:
+        choices = platform_booking.StatementChoices(
+            _split(sales_code, sales_amount), _account_id(tips_account),
+            _account_id(adjustments_account), accept_difference == "1")
+        entry = platform_booking.book_statement(session, admin, owner, document, choices)
+        session.commit()
+    except platform_booking.PlatformBookingError as exc:
+        session.rollback()
+        document = session.get(InboxDocument, document.id)
+        values = {"tips_account": tips_account, "adjustments_account": adjustments_account,
+                  "split": dict(zip(sales_code or [], sales_amount or [], strict=False))}
+        ctx = _statement_ctx(session, admin, document, exc.problems, values)
+        return render(request, "inbox/statement.html", ctx, status_code=422)
+    flash(request, f"Statement booked as journal entry {entry.number}. Book the payout from "
+                   "the bank screen when it arrives.")
     return _redirect(f"/inbox/{document.id}")

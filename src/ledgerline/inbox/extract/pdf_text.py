@@ -16,6 +16,7 @@ from schwifty import IBAN
 from schwifty.exceptions import SchwiftyException
 
 from ledgerline.inbox.extract import ExtractedInvoice, ExtractedLine, ExtractionError
+from ledgerline.inbox.extract.platform import parse_platform_text
 from ledgerline.money import MoneyError, percent_of, to_cents
 
 log = logging.getLogger(__name__)
@@ -549,4 +550,15 @@ class PdfTextExtractor:
         return content_type == "application/pdf"
 
     def extract(self, content_type: str, content: bytes) -> ExtractedInvoice:
-        return parse_texts(read_texts(content), *self.ignore)
+        texts = read_texts(content)
+        # A platform statement is recognised before the invoice/credit-note/reminder
+        # classification: it is a settlement report with its own booking flow.
+        for text in texts:
+            statement = parse_platform_text(text)
+            if statement is not None:
+                return ExtractedInvoice(
+                    supplier_name=statement.name, invoice_number=statement.reference,
+                    invoice_date=statement.period_end, warnings=statement.warnings,
+                    platform_statement=statement.to_json(),
+                )
+        return parse_texts(texts, *self.ignore)

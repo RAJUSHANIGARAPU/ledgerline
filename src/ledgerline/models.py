@@ -65,6 +65,9 @@ class SystemRole(StrEnum):
     CASH = "cash"
     CARD_CLEARING = "card_clearing"
     TAKINGS_OTHER = "takings_other"
+    UBER_EATS_CLEARING = "uber_eats_clearing"
+    THUISBEZORGD_CLEARING = "thuisbezorgd_clearing"
+    PLATFORM_FEES = "platform_fees"
 
 
 class ContactKind(StrEnum):
