@@ -162,3 +162,34 @@ def suggest(
         tx.amount_cents, tx.description, tx.counterparty_iban, tx.counterparty_name, candidates
     )
     return ranked if include_all else [s for s in ranked if s.score > 0]
+
+
+PAYOUT_WINDOW_DAYS = 21
+
+
+@dataclass(frozen=True)
+class PayoutHint:
+    document_id: int
+    label: str
+    clearing_account_id: int
+
+
+def platform_payout_hints(session: Session, tx: BankTransaction) -> list[PayoutHint]:
+    """Booked delivery-platform statements whose payout equals this bank line."""
+    from ledgerline.inbox.platform_booking import clearing_account, statement_of
+    from ledgerline.models import InboxDocument, InboxStatus
+
+    admin_id = session.get(BankAccount, tx.bank_account_id).administration_id
+    hints = []
+    for doc in session.scalars(select(InboxDocument).where(
+            InboxDocument.administration_id == admin_id,
+            InboxDocument.status == InboxStatus.BOOKED,
+            InboxDocument.purchase_invoice_id.is_(None))):
+        st = statement_of(doc)
+        if st is None or st.payout_cents != tx.amount_cents:
+            continue
+        days = (tx.booking_date - st.period_end).days
+        if 0 <= days <= PAYOUT_WINDOW_DAYS:
+            hints.append(PayoutHint(doc.id, st.label,
+                                    clearing_account(session, admin_id, st.platform).id))
+    return hints

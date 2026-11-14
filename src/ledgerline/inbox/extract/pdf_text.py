@@ -14,6 +14,7 @@ from schwifty import IBAN
 from schwifty.exceptions import SchwiftyException
 
 from ledgerline.inbox.extract import ExtractedInvoice, ExtractedLine, ExtractionError
+from ledgerline.inbox.extract.platform import parse_platform_text
 from ledgerline.money import MoneyError, percent_of, to_cents
 
 MAX_PAGES = 20
@@ -287,4 +288,12 @@ class PdfTextExtractor:
         return content_type == "application/pdf"
 
     def extract(self, content_type: str, content: bytes) -> ExtractedInvoice:
-        return parse_text(read_text(content), *self.ignore)
+        text = read_text(content)
+        statement = parse_platform_text(text)
+        if statement is not None:
+            return ExtractedInvoice(
+                supplier_name=statement.name, invoice_number=statement.reference,
+                invoice_date=statement.period_end, warnings=statement.warnings,
+                platform_statement=statement.to_json(),
+            )
+        return parse_text(text, *self.ignore)

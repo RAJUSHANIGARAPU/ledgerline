@@ -96,6 +96,15 @@
         </details>
         {% endif %}
 
+        {% for hint in row.payout_hints %}
+        <form method="post" action="/bank/transactions/{{ tx.id }}/book" class="stack">
+          {{ ui.csrf() }}
+          <input type="hidden" name="account_id" value="{{ hint.clearing_account_id }}">
+          <input type="hidden" name="description" value="Payout {{ hint.label }}">
+          <p>Payout for <a href="/inbox/{{ hint.document_id }}">{{ hint.label }}</a>: same amount as the statement.</p>
+          <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit">Book against the clearing account</button></div>
+        </form>
+        {% endfor %}
         <details>
           <summary>Book to an account</summary>
           <form method="post" action="/bank/transactions/{{ tx.id }}/book" class="stack">

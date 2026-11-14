@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}{{ attachment.filename }}{% endblock %}
+{% block heading %}{{ st.name }} statement <span class="badge badge-{{ 'posted' if document.status == 'booked' else 'open' }}">{{ document.status }}</span>{% endblock %}
+{% block actions %}<a class="btn btn-secondary" href="/inbox">Back to inbox</a>{% endblock %}
+{% block content %}
+{% for e in errors %}<div class="flash flash-error" role="alert">{{ e }}</div>{% endfor %}
+{% for w in st.warnings %}<div class="flash flash-error" role="alert">{{ w }}</div>{% endfor %}
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header"><h2 class="card-title">Document</h2></div>
+    <div class="card-body">
+      <iframe src="/inbox/{{ document.id }}/file" title="Document preview" width="100%" height="760"></iframe>
+    </div>
+  </div>
+  <div class="stack">
+    <div class="card">
+      <div class="card-header"><h2 class="card-title">Read from the document</h2></div>
+      <div class="card-body">
+        <dl class="kv">
+          <dt>Period</dt><dd>{{ st.period_start|nldate }} - {{ st.period_end|nldate }}</dd>
+          {% if st.reference %}<dt>Invoice number</dt><dd>{{ st.reference }}</dd>{% endif %}
+          <dt>Gross sales</dt><dd>{{ st.gross_sales_cents|eur }}</dd>
+          <dt>Platform fees</dt><dd>{{ st.fees_cents|eur }}</dd>
+          <dt>VAT on fees (as printed){% if st.fee_vat_rate_percent %} {{ st.fee_vat_rate_percent }}%{% endif %}</dt><dd>{{ st.fee_vat_cents|eur }}</dd>
+          <dt>Tips</dt><dd>{{ st.tips_cents|eur }}</dd>
+          <dt>Cash collected by the restaurant</dt><dd>{{ st.cash_collected_cents|eur }}</dd>
+          {% for label, cents in st.adjustment_lines %}<dt>{{ label }}</dt><dd>{{ cents|eur }}</dd>{% endfor %}
+          <dt>Payout</dt><dd><strong>{{ st.payout_cents|eur }}</strong></dd>
+        </dl>
+        <p class="fine-print">{{ 'The components add up to the payout.' if st.arithmetic_ok else 'The components do NOT add up to the payout.' }}</p>
+      </div>
+    </div>
+    {% if document.status == 'booked' %}
+      <div class="card"><div class="card-body">{% if entry %}<p>Booked as journal entry {{ entry.number }}. Book the payout from the bank screen.</p>{% endif %}</div></div>
+    {% else %}
+    <form method="post" action="/inbox/{{ document.id }}/book-statement" class="stack">
+      {{ ui.csrf() }}
+      <div class="card">
+        <div class="card-header"><h2 class="card-title">Your input</h2></div>
+        <div class="card-body stack">
+          <ul>{% for d in decisions %}<li>{{ d }}</li>{% endfor %}</ul>
+          <p class="fine-print">Confirm with your adviser how these sales, tips and adjustments are taxed. Sales amounts are treated as including VAT.</p>
+          <table class="table">
+            <thead><tr><th>VAT code</th><th class="num">Gross sales ({{ st.gross_sales_cents|eur }} in total)</th></tr></thead>
+            <tbody>
+            {% for c in sales_codes if c.code in ('V21', 'V9', 'V0') %}
+              <tr><td>{{ c.code }} · {{ c.rate }}%<input type="hidden" name="sales_code" value="{{ c.code }}"></td>
+              <td><input class="input num" name="sales_amount" inputmode="decimal" aria-label="Gross sales {{ c.code }}" value="{{ values.split.get(c.code, '') if values.split else '' }}"></td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+          {% if st.tips_cents %}
+          <label class="field"><span class="field-label">Account for tips</span>
+            <select class="input" name="tips_account"><option value="">Choose an account</option>
+              {% for a in accounts %}<option value="{{ a.id }}"{% if a.id|string == values.tips_account %} selected{% endif %}>{{ a.code }} {{ a.name }}</option>{% endfor %}
+            </select></label>
+          {% endif %}
+          {% if st.adjustments_cents %}
+          <label class="field"><span class="field-label">Account for promotions, refunds and corrections</span>
+            <select class="input" name="adjustments_account"><option value="">Choose an account</option>
+              {% for a in accounts %}<option value="{{ a.id }}"{% if a.id|string == values.adjustments_account %} selected{% endif %}>{{ a.code }} {{ a.name }}</option>{% endfor %}
+            </select></label>
+          {% endif %}
+          {% if not st.arithmetic_ok %}
+          <label class="row"><input type="checkbox" name="accept_difference" value="1"> I checked the difference; book it to suspense.</label>
+          {% endif %}
+        </div>
+      </div>
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit" data-confirm="Book this statement to the journal?">Book statement</button>
+      </div>
+    </form>
+    <div class="row">
+      <form method="post" action="/inbox/{{ document.id }}/reject">{{ ui.csrf() }}<button class="btn btn-danger btn-sm" type="submit" data-confirm="Reject this document?">Reject</button></form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

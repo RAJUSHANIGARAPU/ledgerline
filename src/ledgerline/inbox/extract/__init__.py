@@ -34,6 +34,8 @@ class ExtractedInvoice:
     lines: list[ExtractedLine] = field(default_factory=list)
     # Problems the reviewer should look at, e.g. "totals do not add up".
     warnings: list[str] = field(default_factory=list)
+    # Set when the document is a delivery-platform payout statement, not a supplier invoice.
+    platform_statement: dict | None = None
 
     def to_json(self) -> dict:
         data = asdict(self)

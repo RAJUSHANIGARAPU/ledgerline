@@ -177,6 +177,8 @@ def reconcile(
                 "tx": tx,
                 "suggestions": [s for s in ranked if s.score > 0],
                 "others": [s for s in ranked if s.score == 0],
+                "payout_hints": matching.platform_payout_hints(session, tx)
+                if status == TxStatus.UNMATCHED else [],
             }
         )
     chart = session.scalars(
