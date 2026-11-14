@@ -64,6 +64,8 @@ class ImportResult:
     warnings: list[str] = field(default_factory=list)
     # Lines left out because the same payment is already stored from another format or by hand.
     cross_format_duplicates: int = 0
+    # The skipped lines themselves, so the owner can import any of them anyway.
+    left_out: list[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -332,7 +334,60 @@ def import_statement(
         details={"file": filename[:255], "format": parsed.file_format, "created": created,
                  "skipped": skipped, "cross_format_duplicates": len(cross)},
     )
-    return ImportResult(statement, created, skipped, warnings, len(cross))
+    left_out = [_left_out_line(parsed.transactions[i], keys[i]) for i in sorted(cross)]
+    return ImportResult(statement, created, skipped, warnings, len(cross), left_out)
+
+
+def _left_out_line(tx: ParsedTx, key: str) -> dict:
+    return {
+        "booking_date": tx.booking_date.isoformat(),
+        "value_date": tx.value_date.isoformat() if tx.value_date else None,
+        "amount_cents": tx.amount_cents, "counterparty_name": tx.counterparty_name,
+        "counterparty_iban": tx.counterparty_iban, "description": tx.description,
+        "end_to_end_id": tx.end_to_end_id, "bank_reference": tx.bank_reference,
+        "dedupe_key": key,
+    }
+
+
+def import_left_out_lines(
+    session: Session, bank_account: BankAccount, statement_id: int, lines: list[dict],
+    user_id: int | None = None,
+) -> int:
+    """Import lines the cross-format check left out, because the owner says they are genuine.
+
+    Each line is audited as an override. A line whose key is already stored is ignored.
+    """
+    statement = session.get(BankStatement, statement_id)
+    if statement is None or statement.bank_account_id != bank_account.id:
+        raise BankingError("unknown statement")
+    created = 0
+    for line in lines:
+        try:
+            booking = date.fromisoformat(line["booking_date"])
+            value = date.fromisoformat(line["value_date"]) if line.get("value_date") else None
+            amount, key = int(line["amount_cents"]), str(line["dedupe_key"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise BankingError("invalid line data") from exc
+        if len(key) != 64 or session.scalar(select(BankTransaction.id).where(
+                BankTransaction.bank_account_id == bank_account.id,
+                BankTransaction.dedupe_key == key)):
+            continue
+        name = line.get("counterparty_name")
+        tx = BankTransaction(
+            bank_account_id=bank_account.id, statement_id=statement.id, booking_date=booking,
+            value_date=value, amount_cents=amount, counterparty_name=name[:200] if name else None,
+            counterparty_iban=line.get("counterparty_iban"), description=line.get("description"),
+            end_to_end_id=line.get("end_to_end_id"), bank_reference=line.get("bank_reference"),
+            dedupe_key=key, status=TxStatus.UNMATCHED)
+        session.add(tx)
+        session.flush()
+        audit.record(
+            session, "bank_transaction.import_despite_duplicate", user_id=user_id,
+            administration_id=bank_account.administration_id, entity_type="bank_transaction",
+            entity_id=tx.id, details={"statement_id": statement.id, "amount_cents": amount,
+                                      "booking_date": booking.isoformat()})
+        created += 1
+    return created
 
 
 def add_manual_transaction(

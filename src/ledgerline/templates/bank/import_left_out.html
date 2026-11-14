@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Lines left out{% endblock %}
+{% block heading %}Lines left out of {{ statement.file_name }}{% endblock %}
+{% block content %}
+<div class="page-grid">
+  <section class="card">
+    <div class="card-header"><h2 class="card-title">{{ lines|length }} line(s) look like payments you already have</h2></div>
+    <div class="card-body">
+      <p>Same amount and date as a line stored from another file or entered by hand. Two genuine payments can look alike, so tick any line that is a separate payment and import it anyway. Each override is recorded in the audit trail.</p>
+      <form method="post" action="/bank/accounts/{{ account.id }}/import/left-out" class="stack">
+        {{ ui.csrf() }}
+        <input type="hidden" name="statement_id" value="{{ statement.id }}">
+        <div class="table-wrap">
+          <table class="table table-compact">
+            <thead><tr><th>Import</th><th>Date</th><th>Counterparty</th><th>Description</th><th class="num">Amount</th></tr></thead>
+            <tbody>
+            {% for l in lines %}
+              <tr>
+                <td><input class="checkbox" type="checkbox" name="line" value="{{ l.json }}" aria-label="Import line {{ loop.index }} anyway"></td>
+                <td>{{ l.booking_date }}</td>
+                <td>{{ l.counterparty_name or '' }}{% if l.counterparty_iban %} <span class="muted">{{ l.counterparty_iban }}</span>{% endif %}</td>
+                <td>{{ l.description or '' }}</td>
+                <td class="num {{ 'amount-pos' if l.amount_cents > 0 else 'amount-neg' }}">{{ l.amount_cents|eur }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="actions">
+          <button class="btn btn-primary" type="submit">Import selected lines</button>
+          <a class="btn btn-ghost" href="/bank/reconcile?account_id={{ account.id }}">Leave them out</a>
+        </div>
+      </form>
+    </div>
+  </section>
+</div>
+{% endblock %}

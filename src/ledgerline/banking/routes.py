@@ -1,5 +1,6 @@
 import base64
 import binascii
+import json
 from datetime import date
 from typing import Annotated
 
@@ -119,6 +120,39 @@ def _after_import(request: Request, account: BankAccount, result: service.Import
     )
     for warning in result.warnings:
         flash(request, warning, "info")
+    if result.left_out:
+        # Show each left-out line: a genuine payment with the same amount and date can look
+        # like a duplicate, so the owner decides line by line.
+        return render(
+            request, "bank/import_left_out.html",
+            {"account": account, "statement": result.statement,
+             "lines": [{**ln, "json": json.dumps(ln)} for ln in result.left_out]},
+        )
+    return _redirect(f"/bank/reconcile?account_id={account.id}")
+
+
+@router.post("/accounts/{account_id}/import/left-out")
+def import_left_out(
+    account_id: int,
+    request: Request,
+    session: SessionDep,
+    user: OwnerDep,
+    admin: AdminDep,
+    statement_id: Annotated[int, Form()],
+    line: Annotated[list[str] | None, Form()] = None,
+):
+    account = _account_or_404(session, admin, account_id)
+    try:
+        chosen = [json.loads(raw) for raw in line or []]
+        if not all(isinstance(c, dict) for c in chosen):
+            raise service.BankingError("invalid line data")
+        created = service.import_left_out_lines(session, account, statement_id, chosen, user.id)
+        session.commit()
+    except (json.JSONDecodeError, *ERRORS) as exc:
+        session.rollback()
+        flash(request, str(exc) if isinstance(exc, ERRORS) else "invalid line data", "error")
+        return _redirect()
+    flash(request, f"Imported {created} line(s) that looked like duplicates.")
     return _redirect(f"/bank/reconcile?account_id={account.id}")
 
 
