@@ -54,3 +54,13 @@ def invalidate_resets(session: Session, user_id: int) -> None:
                AuthToken.used_at.is_(None))
         .values(used_at=clock.now())
     )
+
+
+def invalidate_invites(session: Session, membership_id: int) -> None:
+    """A new invitation link replaces any earlier unused one for the same membership."""
+    session.execute(
+        update(AuthToken)
+        .where(AuthToken.membership_id == membership_id, AuthToken.purpose == "invite",
+               AuthToken.used_at.is_(None))
+        .values(used_at=clock.now())
+    )

@@ -1,6 +1,9 @@
+import re
+
 from fastapi import APIRouter, Request
 
-from ledgerline.web import render
+from ledgerline.config import get_settings
+from ledgerline.web import render, templates
 
 router = APIRouter(prefix="/legal")
 
@@ -11,10 +14,42 @@ PAGES = {
     "disclaimer": "Disclaimer",
 }
 
+_PLACEHOLDERS = {
+    "legal_name": "[OPERATOR NAME]",
+    "kvk_number": "[KVK NUMBER]",
+    "address": "[ADDRESS]",
+    "contact_email": "[PRIVACY CONTACT EMAIL]",
+}
+
+
+def operator_context() -> dict:
+    """The operator's identity for the legal pages; an unset field shows its old placeholder, so
+    a half-configured installation is visibly incomplete (and production health fails)."""
+    identity = get_settings().operator_identity
+    return {name: getattr(identity, name) or placeholder
+            for name, placeholder in _PLACEHOLDERS.items()}
+
+
+# A leftover drafting marker such as [HOSTING PROVIDER] or [NEEDS REVIEW].
+_PLACEHOLDER_MARKER = re.compile(r"\[[A-Z][A-Z0-9 ,.'/&-]*[A-Z0-9]\]")
+
+
+def unresolved_placeholders() -> dict[str, list[str]]:
+    """Render every legal partial and list the bracketed markers still in it, per page."""
+    found = {}
+    for name in sorted(templates.env.list_templates(
+            filter_func=lambda n: n.startswith("legal/_") and n.endswith(".html"))):
+        text = templates.env.get_template(name).render(operator=operator_context())
+        markers = sorted(set(_PLACEHOLDER_MARKER.findall(text)))
+        if markers:
+            found[name.removeprefix("legal/_").removesuffix(".html")] = markers
+    return found
+
 
 def _page(request: Request, slug: str):
     return render(request, "legal/page.html",
-                  {"title": PAGES[slug], "partial": f"legal/_{slug}.html", "pages": PAGES})
+                  {"title": PAGES[slug], "partial": f"legal/_{slug}.html", "pages": PAGES,
+                   "operator": operator_context()})
 
 
 @router.get("/privacy")

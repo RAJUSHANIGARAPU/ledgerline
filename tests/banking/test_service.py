@@ -130,6 +130,56 @@ def test_match_posts_balanced_entry_and_marks_invoice_paid(session, admin, bank)
     assert account_balance_cents(session, bank.ledger_account_id) == 12_100
 
 
+def rounding_tx(session, bank, cents):
+    tx = service.add_manual_transaction(
+        session, bank, date(2026, 6, 2), cents, None, None, "Betaling 2026-0001",
+        "bank rounding test", today=date(2026, 6, 2))
+    session.commit()
+    return tx
+
+
+def test_one_cent_difference_is_refused_until_confirmed_then_booked_to_rounding(
+        session, admin, bank):
+    klant = contact(session, admin)
+    invoice = sales_invoice(session, admin, klant, "2026-0001", 12_100)
+    session.commit()
+    tx = rounding_tx(session, bank, 12_099)
+    [top] = service.suggest(session, tx)
+    assert top.candidate.invoice_id == invoice.id and top.difference_cents == 1
+    allocation = [Allocation("sales", invoice.id, 12_100)]
+    with pytest.raises(BankingError, match="differs from the invoice by €0.01"):
+        service.match(session, tx, allocation)
+    entry = service.match(session, tx, allocation, allow_rounding=True)
+    session.commit()
+    assert entry_totals(entry) == (12_100, 12_100)
+    by_account = {line.account_id: line for line in entry.lines}
+    assert by_account[account(session, admin, "4890").id].debit_cents == 1
+    assert by_account[bank.ledger_account_id].debit_cents == 12_099
+    session.refresh(invoice)
+    assert (invoice.paid_cents, invoice.status) == (12_100, InvoiceStatus.PAID)
+
+
+def test_paying_a_cent_less_on_a_purchase_books_rounding_income(session, admin, bank):
+    supplier = contact(session, admin, name="Leverancier BV", kind=ContactKind.SUPPLIER)
+    invoice = purchase_invoice(session, admin, supplier, "INK-1", 5_000)
+    session.commit()
+    tx = rounding_tx(session, bank, -4_999)
+    entry = service.match(session, tx, [Allocation("purchase", invoice.id, 5_000)],
+                          allow_rounding=True)
+    assert entry_totals(entry) == (5_000, 5_000)
+    by_account = {line.account_id: line for line in entry.lines}
+    assert by_account[account(session, admin, "4890").id].credit_cents == 1
+
+
+def test_a_difference_above_the_tolerance_is_never_rounded_away(session, admin, bank):
+    klant = contact(session, admin)
+    invoice = sales_invoice(session, admin, klant, "2026-0001", 12_100)
+    session.commit()
+    tx = rounding_tx(session, bank, 12_097)
+    with pytest.raises(BankingError, match="add up"):
+        service.match(session, tx, [Allocation("sales", invoice.id, 12_100)], allow_rounding=True)
+
+
 def test_purchase_payment_debits_creditors(session, admin, bank):
     supplier = contact(session, admin, name="Leverancier BV", kind=ContactKind.SUPPLIER)
     invoice = purchase_invoice(session, admin, supplier, "INK-77", 5_000)
@@ -323,3 +373,73 @@ def test_sepa_export_uses_remaining_amount_and_requires_iban(session, admin, ban
         service.sepa_export(session, admin, bank, [bad.id], date(2026, 6, 20))
     with pytest.raises(BankingError, match="not found"):
         service.sepa_export(session, admin, bank, [first.id, 99_999], date(2026, 6, 20))
+
+
+def _bank_line(session, bank, day, cents, name, iban, text):
+    return service.add_manual_transaction(
+        session, bank, day, cents, name, iban, text, "synthetic fixture", None, date(2026, 12, 31)
+    )
+
+
+LANDLORD = "NL42TEST0000000002"
+
+
+def test_booking_hint_repeats_an_earlier_booking_for_the_same_iban(session, admin, bank):
+    from ledgerline.banking.booking_hints import booking_hint
+
+    rent = account(session, admin, "4000")
+    first = _bank_line(session, bank, date(2026, 4, 1), -380_000, "Landlord", LANDLORD, "rent")
+    second = _bank_line(session, bank, date(2026, 5, 1), -380_000, "Landlord", LANDLORD, "rent")
+    other = _bank_line(session, bank, date(2026, 5, 2), -1_000, "Other", "NL69TEST0000000001", "x")
+    assert booking_hint(session, second) is None
+    service.book_to_account(session, first, rent.id, "I21")
+    hint = booking_hint(session, second)
+    assert (hint.account_id, hint.vat_code) == (rent.id, "I21")
+    assert booking_hint(session, other) is None
+
+
+def test_booking_hint_proposes_clearing_accounts_for_card_settlements_and_cash(
+    session, admin, bank
+):
+    from ledgerline.banking.booking_hints import booking_hint
+
+    card = _bank_line(
+        session, bank, date(2026, 4, 2), 22_543, "Acquirer", None, "Settlement card sales"
+    )
+    cash = _bank_line(
+        session, bank, date(2026, 4, 7), 90_000, "Own deposit", None, "Storting contant"
+    )
+    plain = _bank_line(session, bank, date(2026, 4, 8), 1_500, "Friend", None, "birthday")
+    outgoing = _bank_line(session, bank, date(2026, 4, 9), -1_500, "Acquirer", None, "Settlement")
+    assert booking_hint(session, card).account_id == account(session, admin, "1310").id
+    assert booking_hint(session, cash).account_id == account(session, admin, "1000").id
+    assert booking_hint(session, plain) is None
+    assert booking_hint(session, outgoing) is None
+    costs = _bank_line(
+        session, bank, date(2026, 4, 30), -1_750, "ING Bank kosten", None, "Kosten rekening"
+    )
+    assert booking_hint(session, costs).account_id == account(session, admin, "4800").id
+
+
+def test_purchase_with_a_deposit_line_is_payable_in_full_and_matches_the_bank_payment(
+    session, admin, bank
+):
+    from ledgerline.invoicing.service import (
+        PurchaseLineInput,
+        book_purchase_invoice,
+        create_purchase_invoice,
+    )
+
+    supplier = contact(session, admin, "Drinks Wholesale", ContactKind.SUPPLIER)
+    goods, deposit = account(session, admin, "7000"), account(session, admin, "1350")
+    invoice = create_purchase_invoice(
+        session, admin, supplier,
+        [PurchaseLineInput("Beer", goods.id, 60_000, "I21"),
+         PurchaseLineInput("Emballage", deposit.id, 6_676, "I0")],
+        supplier_reference="D-1", invoice_date=date(2026, 6, 1), due_date=date(2026, 6, 8),
+    )
+    book_purchase_invoice(session, admin, invoice, None)
+    assert (invoice.total_vat_cents, invoice.total_incl_cents) == (12_600, 79_276)
+    tx = _bank_line(session, bank, date(2026, 6, 8), -79_276, "Drinks Wholesale", None, "D-1")
+    [top] = matching.suggest(session, tx)
+    assert top.exact_amount and top.number_hit and top.recommended

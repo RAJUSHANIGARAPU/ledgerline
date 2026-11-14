@@ -22,6 +22,7 @@ dependencies = [
     "weasyprint>=63",
     "mt-940>=4.30",
     "anthropic>=2.6",
+    "httpx>=0.28",
     "pypdf>=5.1",
     "pyotp>=2.10.0",
     "segno>=1.6.6",
@@ -36,7 +37,6 @@ dev = [
     "pytest>=8.3",
     "hypothesis>=6.120",
     "testcontainers[postgres]>=4.9",
-    "httpx>=0.28",
     "ruff>=0.8",
     "mutmut>=3.2",
 ]

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Import contacts{% endblock %}
+{% block heading %}Import contacts{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="/contacts">Back to contacts</a>{% endblock %}
+{% block content %}
+<div class="card"><div class="card-header"><h2 class="card-title">Upload a CSV file</h2></div>
+  <div class="card-body stack">
+    {% if error %}<div class="flash flash-error" role="alert" data-testid="import-error">{{ error }}</div>{% endif %}
+    <p class="muted">One row per customer or supplier. Separators ; or , are detected, and UTF-8 files with or without a BOM (as saved by Excel) are accepted. You see a preview of every row before anything is saved.</p>
+    <p class="muted">Columns: <code>{{ columns|join(", ") }}</code>. Only <code>name</code> is required. <code>kind</code> is customer, supplier or both. A contact counts as a duplicate when its VAT number or KvK number is already known, or its name and postcode are.</p>
+    <p><a href="/contacts/import/template.csv">Template (separator ;)</a> · <a href="/contacts/import/template.csv?sep=comma">Template (separator ,)</a></p>
+    <form method="post" action="/contacts/import/preview" enctype="multipart/form-data" class="stack">
+      {{ ui.csrf() }}
+      <label class="field"><span class="field-label">CSV file</span>
+        <input class="input" type="file" name="file" accept=".csv,text/csv" required data-testid="contacts-file"></label>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Preview</button></div>
+    </form>
+  </div></div>
+{% endblock %}

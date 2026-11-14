@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% set standalone = true %}
+{% block title %}No access yet{% endblock %}
+{% block public %}
+<div class="auth-page">
+  <div class="card auth-card">
+    <div class="brand brand-lg">
+      <img src="{{ url_for('static', path='img/mark.svg') }}" alt="" width="36" height="36">
+      <span>Ledgerline</span>
+    </div>
+    <h1 class="page-title">No access yet</h1>
+    <p>You don't have access to any administration yet.</p>
+    <p class="muted">Ask the owner of your account to give you access. You can sign in again once they have.</p>
+    {% if can_switch_tenant %}<p><a href="/tenants">Choose another workspace</a></p>{% endif %}
+    <form method="post" action="/logout" data-purge-queue>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="link-button" type="submit">Sign out</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

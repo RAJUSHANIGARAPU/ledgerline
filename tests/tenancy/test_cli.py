@@ -1,7 +1,8 @@
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from ledgerline import cli
+from ledgerline.ledger.chart import create_administration
 from ledgerline.models import Administration, Membership, Tenant, User
 from tests.conftest import tenant_db
 
@@ -62,3 +63,43 @@ def test_seed_demo_without_user_says_how_to_get_access(session, tenant, capsys):
     assert "add-membership" in capsys.readouterr().out
     assert cli.main(["seed-demo", "--email", "ghost@example.com"]) == 1
     assert session.scalar(select(User.id)) is None
+
+
+def _default_tenants(owner_engine):
+    with owner_engine.connect() as conn:
+        return conn.execute(text("SELECT id FROM tenants WHERE name = 'Default'")).scalars().all()
+
+
+def test_create_tenant_removes_the_empty_seeded_default_tenant(owner_engine, session, capsys):
+    with owner_engine.begin() as conn:
+        seeded = conn.execute(text(
+            "INSERT INTO tenants (name) VALUES ('Default') RETURNING id")).scalar_one()
+    assert cli.main(["create-tenant", "--name", "Kantoor Jansen"]) == 0
+    assert _default_tenants(owner_engine) == []
+    assert f"Removed the empty seeded tenant {seeded}" in capsys.readouterr().out
+    assert session.scalar(select(Tenant.id).where(Tenant.name == "Kantoor Jansen"))
+
+
+def test_create_tenant_keeps_a_default_tenant_that_has_a_login(
+        owner_engine, session, owner, capsys):
+    with owner_engine.begin() as conn:
+        used = conn.execute(text(
+            "INSERT INTO tenants (name) VALUES ('Default') RETURNING id")).scalar_one()
+        conn.execute(text(
+            "INSERT INTO memberships (user_id, tenant_id, role) VALUES (:u, :t, 'owner')"),
+            {"u": owner.id, "t": used})
+    assert cli.main(["create-tenant", "--name", "Kantoor Jansen"]) == 0
+    assert _default_tenants(owner_engine) == [used]
+    assert "Removed" not in capsys.readouterr().out
+
+
+def test_create_tenant_keeps_a_default_tenant_that_has_an_administration(
+        owner_engine, session, capsys):
+    with owner_engine.begin() as conn:
+        used = conn.execute(text(
+            "INSERT INTO tenants (name) VALUES ('Default') RETURNING id")).scalar_one()
+    with tenant_db(used) as s:
+        create_administration(s, name="Bestaand")
+        s.commit()
+    assert cli.main(["create-tenant", "--name", "Kantoor Jansen"]) == 0
+    assert _default_tenants(owner_engine) == [used]

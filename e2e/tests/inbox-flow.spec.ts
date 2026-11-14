@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import fs from 'node:fs';
 import path from 'node:path';
 import { signIn } from './auth';
 
@@ -25,6 +26,27 @@ test('a supplier PDF uploaded to the inbox becomes a purchase draft', async ({ p
   await page.getByRole('button', { name: 'Create purchase draft' }).click();
   await expect(page).toHaveURL(/\/purchases\/\d+/);
   await expect(page.locator('body')).toContainText('145,20');
+});
+
+test('an inbox with a long file name does not scroll the page sideways', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/inbox');
+  const original = fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'supplier-invoice.pdf'));
+  await page.locator('input[type="file"][name="files"]').setInputFiles({
+    name: `${'Invoice_with_a_very_long_descriptive_file_name_'.repeat(4)}copy.pdf`,
+    mimeType: 'application/pdf',
+    buffer: Buffer.concat([original, Buffer.from('\n% another copy\n')]),
+  });
+  await page.getByRole('button', { name: 'Upload' }).click();
+  for (const width of [1280, 400]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto('/inbox?tab=review');
+    await expect(page.locator('a[href^="/inbox/"]').filter({ hasText: /very_long/ })).toBeVisible();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, `page wider than the ${width}px viewport`).toBeLessThanOrEqual(0);
+  }
 });
 
 test('phone capture page and devices page render', async ({ page }) => {

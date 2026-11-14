@@ -10,7 +10,14 @@ from ledgerline.models import Attachment, InboxDocument, InboxStatus
 
 
 class InboxError(ValueError):
-    pass
+    """Refused document. `code` is a fixed reason for metrics; the message is for the user."""
+
+    def __init__(self, message: str, code: str = "invalid"):
+        super().__init__(message)
+        self.code = code
+
+
+CHANNELS = {"upload": "web", "phone": "phone", "email": "email"}
 
 
 ACCEPTED_TYPES = {
@@ -27,7 +34,7 @@ def sniff_type(content: bytes) -> str:
     for content_type, signatures in ACCEPTED_TYPES.items():
         if any(head.startswith(sig) for sig in signatures):
             return content_type
-    raise InboxError("Only PDF, JPEG, PNG and UBL/XML files are accepted")
+    raise InboxError("Only PDF, JPEG, PNG and UBL/XML files are accepted", "unsupported_type")
 
 
 def receive(
@@ -41,12 +48,13 @@ def receive(
     subject: str | None = None,
     email_message_id: str | None = None,
     user_id: int | None = None,
+    channel: str | None = None,
 ) -> tuple[InboxDocument, bool]:
     """Store a document and queue it for extraction. Returns (document, created)."""
     if not content:
-        raise InboxError("The file is empty")
+        raise InboxError("The file is empty", "empty")
     if len(content) > get_settings().max_upload_bytes:
-        raise InboxError("The file is too large")
+        raise InboxError("The file is too large", "too_large")
     content_type = sniff_type(content)
     digest = hashlib.sha256(content).hexdigest()
     existing = session.scalar(
@@ -80,5 +88,16 @@ def receive(
     session.add(document)
     session.flush()
     audit.record(session, "inbox.receive", user_id=user_id, administration_id=administration_id,
-                 entity_type="inbox_document", entity_id=document.id, details={"source": source})
+                 entity_type="inbox_document", entity_id=document.id,
+                 details={"source": source, "channel": channel or CHANNELS[source]})
     return document, True
+
+
+def record_rejection(
+    session: Session, administration_id: int, channel: str, error: InboxError,
+    *, user_id: int | None = None,
+) -> None:
+    """Count a refused upload (channel and reason code only; the caller commits)."""
+    audit.record(session, "inbox.receive_failed", user_id=user_id,
+                 administration_id=administration_id,
+                 details={"channel": channel, "reason": error.code})

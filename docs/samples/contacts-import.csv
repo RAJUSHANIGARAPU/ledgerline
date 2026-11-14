@@ -1,0 +1,6 @@
+name;kind;email;address;postcode;city;country;vat_number;kvk;iban
+Bakkerij De Gouden Korst BV;customer;administratie@goudenkorst.example;Brouwersgracht 14;1015 GV;Amsterdam;NL;NL123456782B01;12345678;NL91ABNA0417164300
+Studio Waterlelie;customer;info@waterlelie.example;Havenstraat 7;3011 TV;Rotterdam;NL;;23456789;
+Fietsenmaker Van der Berg;both;;Dorpsstraat 22;5611 AB;Eindhoven;NL;;34567890;
+Papierhandel Zonneveld;supplier;orders@zonneveld.example;Industrieweg 3;3542 AD;Utrecht;NL;NL234567891B02;45678901;NL02ABNA0123456789
+Duitse Software GmbH;supplier;billing@software.example;Hauptstrasse 5;10115;Berlin;DE;DE123456789;;

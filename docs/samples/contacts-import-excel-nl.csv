@@ -1,0 +1,3 @@
+﻿name,kind,email,address,postcode,city,country,vat_number,kvk,iban
+"Jansen, Zn. & Dochters BV",klant,boekhouding@jansen.example,"Kerkstraat 1, 2e etage",2011 AA,Haarlem,NL,,56789012,
+Café 't Hoekje,customer,,Markt 9,6811 CG,Arnhem,NL,,67890123,

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Map CSV columns{% endblock %}
+{% block heading %}Map the columns of {{ filename }}{% endblock %}
+{% block content %}
+{% macro column_select(name, label, headers, required=False, selected="") %}
+<label class="field">
+  <span class="field-label">{{ label }}</span>
+  <select class="input" name="{{ name }}"{% if required %} required{% endif %}>
+    <option value="">{{ "Choose..." if required else "None" }}</option>
+    {% for h in headers %}<option value="{{ h }}"{% if h == selected %} selected{% endif %}>{{ h }}</option>{% endfor %}
+  </select>
+</label>
+{% endmacro %}
+<div class="page-grid">
+  {% if error %}<div class="alert alert-error" role="alert">{{ error }}</div>{% endif %}
+  <section class="card">
+    <div class="card-header"><h2 class="card-title">First rows of the file</h2></div>
+    <div class="table-wrap">
+      <table class="table table-compact">
+        <thead><tr>{% for h in headers %}<th>{{ h }}</th>{% endfor %}</tr></thead>
+        <tbody>{% for r in sample %}<tr>{% for c in r %}<td>{{ c }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  </section>
+  <section class="card">
+    <div class="card-header"><h2 class="card-title">Which column is what?</h2></div>
+    <div class="card-body">
+      <form method="post" action="/bank/accounts/{{ account.id }}/import/csv" class="stack">
+        {{ ui.csrf() }}
+        <input type="hidden" name="filename" value="{{ filename }}">
+        <input type="hidden" name="content_b64" value="{{ content_b64 }}">
+        <div class="form-grid">
+          {{ column_select("date_column", "Date", headers, True, chosen.get("date")) }}
+          <label class="field">
+            <span class="field-label">Amounts are in</span>
+            <select class="input" name="amount_mode">
+              <option value="single"{% if not (chosen.get("debit") or chosen.get("credit")) %} selected{% endif %}>One column (negative = money out)</option>
+              <option value="split"{% if chosen.get("debit") or chosen.get("credit") %} selected{% endif %}>Separate debit and credit columns</option>
+            </select>
+          </label>
+          {{ column_select("amount", "Amount (one column)", headers, False, chosen.get("amount")) }}
+          {{ column_select("direction", "Debit/credit indicator (Af/Bij, D/C), if the amount has no sign", headers, False, chosen.get("direction")) }}
+          {{ column_select("debit", "Debit column (money out)", headers, False, chosen.get("debit")) }}
+          {{ column_select("credit", "Credit column (money in)", headers, False, chosen.get("credit")) }}
+          {{ column_select("counterparty", "Counterparty name", headers, False, chosen.get("counterparty")) }}
+          {{ column_select("iban", "Counterparty IBAN", headers, False, chosen.get("iban")) }}
+          <label class="field">
+            <span class="field-label">Description (hold Ctrl or Cmd to choose several)</span>
+            <select class="input" name="description" multiple size="4">
+              {% set picked = chosen.get("description") %}
+              {% for h in headers %}<option value="{{ h }}"{% if picked and h in picked %} selected{% endif %}>{{ h }}</option>{% endfor %}
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Date format</span>
+            <select class="input" name="date_format">
+              <option value="auto">Detect (day first)</option>
+              <option value="%d-%m-%Y">31-12-2026</option>
+              <option value="%d/%m/%Y">31/12/2026</option>
+              <option value="%d.%m.%Y">31.12.2026</option>
+              <option value="%Y-%m-%d">2026-12-31</option>
+              <option value="%Y%m%d">20261231</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Decimal separator</span>
+            <select class="input" name="decimal">
+              <option value="auto">Detect</option>
+              <option value=",">Comma (1.234,56)</option>
+              <option value=".">Point (1,234.56)</option>
+            </select>
+          </label>
+        </div>
+        <label class="row"><input class="checkbox" type="checkbox" name="remember" value="true" checked> <span>Remember this mapping for {{ account.name }}</span></label>
+        <div class="form-actions">
+          <button class="btn btn-primary" type="submit">Import</button>
+          <a class="btn btn-secondary" href="/bank">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </section>
+</div>
+{% endblock %}

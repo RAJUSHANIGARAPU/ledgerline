@@ -14,6 +14,8 @@ from ledgerline.models import (
     BankAccount,
     BankTransaction,
     Contact,
+    DailyTakings,
+    ForwardingNotice,
     InboxDocument,
     JournalEntry,
     Membership,
@@ -62,8 +64,12 @@ def entity(path: str, param: str):
         return Contact
     if param == "document_id":
         return InboxDocument
+    if param == "notice_id":
+        return ForwardingNotice
     if param == "token_id":
         return ApiToken
+    if param == "takings_id":
+        return DailyTakings
     if param == "user_id":
         return "user"
     raise AssertionError(f"path parameter {param} of {path} has no tenant isolation test")
@@ -138,8 +144,8 @@ def test_route_table_is_covered():
     for path, _ in ID_ROUTES:
         assert path not in {n[0] for n in NOT_ENTITIES}
         fill(path, {m: 1 for m in (Account, ApiToken, BankAccount, BankTransaction, Contact,
-                                    InboxDocument, JournalEntry, PurchaseInvoice, SalesInvoice,
-                                    "user")})
+                                    DailyTakings, ForwardingNotice, InboxDocument,
+                                    JournalEntry, PurchaseInvoice, SalesInvoice, "user")})
 
 
 POSTS_OPEN_TO_EVERYONE = {
@@ -151,20 +157,22 @@ POSTS_OPEN_TO_EVERYONE = {
 }
 POST_ROUTES = [p for p, m in all_routes() if m == "POST"]
 MANAGER_ONLY = {"/settings/users", "/settings/require-2fa", "/settings/devices",
-                "/settings/users/{user_id}/deactivate", "/settings/devices/{token_id}/revoke"}
+                "/settings/users/{user_id}/deactivate", "/settings/devices/{token_id}/revoke",
+                "/inbox/forwarding-notices/{notice_id}/dismiss"}
 
 
 @pytest.mark.parametrize("path", [p for p in POST_ROUTES if p not in POSTS_OPEN_TO_EVERYONE])
 def test_accountant_cannot_write(readonly_client, path):
     url = path.format_map({k: 1 for k in ("entry_id", "invoice_id", "account_id", "tx_id",
-                                           "contact_id", "document_id", "token_id", "user_id")})
+                                           "contact_id", "document_id", "token_id", "user_id",
+                                           "notice_id", "takings_id")})
     response = call(readonly_client, "POST", url, path)
     assert response.status_code == 403, (path, response.status_code)
 
 
 @pytest.mark.parametrize("path", sorted(MANAGER_ONLY))
 def test_bookkeeper_cannot_manage_users_or_devices(bookkeeper_client, path):
-    url = path.format_map({"user_id": 1, "token_id": 1})
+    url = path.format_map({"user_id": 1, "token_id": 1, "notice_id": 1})
     assert call(bookkeeper_client, "POST", url, path).status_code == 403
 
 

@@ -40,7 +40,7 @@ def test_progress_is_derived_from_data(session, admin):
 def test_setup_pages_render_and_resume(client, session, admin):
     r = client.get("/setup")
     assert r.status_code == 200 and "Finish setting up" in r.text
-    assert "2 of 6 steps done" in r.text
+    assert "2 of 7 steps done" in r.text
     for key in service.STEP_KEYS:
         assert client.get(f"/setup/{key}").status_code == 200
     assert client.get("/setup/nope").status_code == 404

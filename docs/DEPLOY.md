@@ -23,7 +23,7 @@ docker compose exec -e LEDGERLINE_INITIAL_PASSWORD='a-long-passphrase' app \
 docker compose exec app ledgerline create-administration --name "My Company" --legal-form eenmanszaak
 ```
 
-A fresh installation has one tenant (id 1), so `--tenant` can be left out. With several tenants, create one with `ledgerline create-tenant --name "Client BV"` and pass `--tenant <id>` to `create-user` and `create-administration`. `ledgerline add-membership --email a@b.example --tenant 2 --role bookkeeper` gives an existing login access to another tenant (roles: `owner`, `bookkeeper`, `accountant`). `ledgerline seed-demo --email you@example.com` loads demo data into its own tenant and makes that user its owner.
+A fresh installation has one tenant (id 1), so `--tenant` can be left out. With several tenants, create one with `ledgerline create-tenant --name "Client BV"` and pass `--tenant <id>` to `create-user` and `create-administration`. `ledgerline add-membership --email a@b.example --tenant 2 --role bookkeeper` gives an existing login access to another tenant (roles: `owner`, `bookkeeper`, `accountant`, `uploader`). `ledgerline seed-demo --email you@example.com` loads demo data into its own tenant and makes that user its owner.
 
 Remove `LEDGERLINE_INITIAL_PASSWORD` from `.env` once the owner exists.
 

@@ -3,9 +3,11 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
+from ledgerline.models import Base, TenantScoped
 from tests.tenancy.conftest import app_connection, scoped_tables
 
 TRIGGER_GUARDED = {"journal_entries", "journal_lines", "audit_events"}
+NO_UPDATE_GRANT = {"feedback_entries"}
 
 
 def test_every_tenant_table_has_enabled_forced_policy(owner_engine):
@@ -22,7 +24,10 @@ def test_every_tenant_table_has_enabled_forced_policy(owner_engine):
             "SELECT tablename, policyname, qual, with_check FROM pg_policies "
             "WHERE schemaname = 'public'"))}
     assert set(tables) == with_columns - {"memberships"}
-    assert len(tables) == 18
+    # The expected list comes from the models, not a hard-coded count: a new tenant-scoped model
+    # without a migration (or a migration without a model) fails here.
+    assert set(tables) == {m.__tablename__ for m in Base.__subclasses__()
+                           if issubclass(m, TenantScoped)}
     for table in tables:
         assert flags[table] == (True, True), table
         policy = policies[table]
@@ -83,7 +88,7 @@ def test_other_tenants_rows_cannot_be_changed(owner_engine, database_url, tenant
         with app_connection(database_url) as conn:
             conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"),
                          {"t": str(tenant.id)})
-            if table not in TRIGGER_GUARDED:
+            if table not in TRIGGER_GUARDED | NO_UPDATE_GRANT:
                 hit = conn.execute(text(
                     f"UPDATE {table} SET tenant_id = tenant_id WHERE tenant_id = :b"),
                     {"b": other_tenant.id})

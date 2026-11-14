@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine, select, text
@@ -12,6 +13,9 @@ from ledgerline.models import (
     BankAccount,
     BankTransaction,
     Contact,
+    DailyTakings,
+    FeedbackEntry,
+    ForwardingNotice,
     InboxDocument,
     JournalEntry,
     Membership,
@@ -19,6 +23,7 @@ from ledgerline.models import (
     SalesInvoice,
     User,
 )
+from ledgerline.takings import service as takings
 from tests.conftest import tenant_db
 from tests.inbox.factories import ubl
 
@@ -33,11 +38,19 @@ def seed_tenant(tenant_id: int, owner_id: int | None = None) -> dict:
         user_id = owner_id or s.scalar(select(Membership.user_id).where(
             Membership.tenant_id == tenant_id))
         inbox.receive(s, books.id, "bill.xml", ubl([("Hosting", 1000, "S", 21)]), "upload")
+        s.add(FeedbackEntry(administration_id=books.id, user_id=user_id,
+                            body=f"seed feedback of tenant {tenant_id}"))
+        s.add(ForwardingNotice(administration_id=books.id, kind="gmail",
+                               link="https://mail-settings.google.com/x",
+                               expires_at=datetime.now(UTC) + timedelta(days=7)))
         _, secret = tokens.create_token(s, s.get(User, user_id), books.id, "Phone")
+        takings.post_takings(s, books, takings.TakingsInput(
+            date(2026, 1, 15), gross_high_cents=1210, cash_cents=1210), user_id)
         s.commit()
         first = {m: s.scalar(select(m.id).where(m.administration_id == books.id).order_by(m.id))
                  for m in (Account, BankAccount, Contact, InboxDocument, JournalEntry,
-                           PurchaseInvoice, SalesInvoice, ApiToken)}
+                           PurchaseInvoice, SalesInvoice, ApiToken, ForwardingNotice,
+                           DailyTakings)}
         first[BankTransaction] = s.scalar(select(BankTransaction.id).where(
             BankTransaction.bank_account_id == first[BankAccount]).order_by(BankTransaction.id))
         first["user"] = user_id

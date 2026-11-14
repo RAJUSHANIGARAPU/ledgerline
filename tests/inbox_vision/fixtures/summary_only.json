@@ -1,0 +1,29 @@
+{
+  "supplier_name": "Groothandel Voorbeeld B.V.",
+  "supplier_vat_number": "NL123456782B01",
+  "supplier_kvk": "87654321",
+  "supplier_iban": "NL02ABNA0123456789",
+  "invoice_number": "FV-2026-1003",
+  "invoice_date": "2026-11-02",
+  "due_date": "2026-11-16",
+  "currency": "EUR",
+  "reverse_charge": false,
+  "credit_note": false,
+  "paid_at_delivery": false,
+  "vat_summary": [
+    {
+      "vat_rate_percent": 9,
+      "base_excl": "150.00",
+      "vat_amount": "13.50"
+    },
+    {
+      "vat_rate_percent": 21,
+      "base_excl": "80.00",
+      "vat_amount": "16.80"
+    }
+  ],
+  "lines": [],
+  "total_excl": "230.00",
+  "total_vat": "30.30",
+  "total_incl": "260.30"
+}

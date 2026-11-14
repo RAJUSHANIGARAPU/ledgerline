@@ -1,6 +1,21 @@
+from dataclasses import dataclass
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+@dataclass(frozen=True)
+class OperatorIdentity:
+    legal_name: str
+    kvk_number: str
+    address: str
+    contact_email: str
+
+    def missing(self) -> list[str]:
+        """Names of the fields that are empty or still a bracketed placeholder."""
+        return [name for name, value in vars(self).items()
+                if not value or value.startswith("[")]
 
 
 class Settings(BaseSettings):
@@ -36,10 +51,10 @@ class Settings(BaseSettings):
     # Only accept mail from these senders (comma-separated addresses or @domains); empty = any.
     imap_allowed_senders: str = ""
 
-    # Document extraction from photos and scans: "none" or "anthropic" (opt-in, sends documents
-    # to the API provider). The API key is read from ANTHROPIC_API_KEY by the SDK.
+    # Document extraction from photos and scans: "none", "anthropic" or "openrouter" (opt-in,
+    # sends documents to the API provider). Keys: ANTHROPIC_API_KEY or OPENROUTER_API_KEY.
     extraction_provider: str = "none"
-    extraction_model: str = "claude-opus-5-5"
+    extraction_model: str = "claude-haiku-5-5"
     extraction_monthly_limit: int = 200
 
     # Operations: files shared between app, worker and backup job (a compose volume).
@@ -50,10 +65,22 @@ class Settings(BaseSettings):
     # /healthz/deep thresholds.
     health_worker_max_age_seconds: int = 120
     health_backup_max_age_hours: int = 26
-    health_min_free_disk_percent: int = 10
+    # Free space on the ops volume, in percent of its size (1-99); below it the disk check fails.
+    health_min_free_disk_percent: int = Field(default=10, ge=1, le=99)
     # Fail the deep check when the last backup did not reach the off-site repository.
     health_require_offsite_backup: bool = False
     health_rate_limit_per_minute: int = 30
+
+    # A bank payment within this many cents of an open invoice still proposes that invoice; the
+    # owner confirms the difference, which is booked to the rounding-differences account.
+    bank_match_tolerance_cents: int = 2
+
+    # Who runs this installation: shown on the privacy notice and the terms. Production health
+    # fails until all four are set (they are not guessed or defaulted).
+    operator_legal_name: str = ""
+    operator_kvk_number: str = ""
+    operator_address: str = ""
+    operator_contact_email: str = ""
 
     # Outbound email (invitations, password reset). Empty host = email off.
     smtp_host: str = ""
@@ -65,6 +92,15 @@ class Settings(BaseSettings):
     smtp_tls: str = "starttls"
     # "development" prints links to the server log when SMTP is not configured.
     environment: str = "production"
+
+    @property
+    def operator_identity(self) -> "OperatorIdentity":
+        return OperatorIdentity(
+            legal_name=self.operator_legal_name.strip(),
+            kvk_number=self.operator_kvk_number.strip(),
+            address=self.operator_address.strip(),
+            contact_email=self.operator_contact_email.strip(),
+        )
 
     @property
     def owner_database_url(self) -> str:

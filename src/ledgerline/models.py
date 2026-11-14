@@ -11,6 +11,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     Numeric,
@@ -32,9 +33,11 @@ class Role(StrEnum):
     OWNER = "owner"
     BOOKKEEPER = "bookkeeper"  # writes the books, no user or device management
     ACCOUNTANT = "accountant"  # read-only
+    UPLOADER = "uploader"  # capture only: uploads documents, sees nothing else
 
 
 WRITE_ROLES = (Role.OWNER, Role.BOOKKEEPER)
+CAPTURE_ROLES = (*WRITE_ROLES, Role.UPLOADER)
 
 
 class AccountType(StrEnum):
@@ -59,6 +62,13 @@ class SystemRole(StrEnum):
     SUSPENSE = "suspense"
     BANK_COSTS = "bank_costs"
     RETAINED_EARNINGS = "retained_earnings"
+    CASH = "cash"
+    CARD_CLEARING = "card_clearing"
+    TAKINGS_OTHER = "takings_other"
+    UBER_EATS_CLEARING = "uber_eats_clearing"
+    THUISBEZORGD_CLEARING = "thuisbezorgd_clearing"
+    PLATFORM_FEES = "platform_fees"
+    ROUNDING = "rounding"
 
 
 class ContactKind(StrEnum):
@@ -121,8 +131,9 @@ class Membership(Base):
     __tablename__ = "memberships"
     __table_args__ = (
         UniqueConstraint("user_id", "tenant_id", name="uq_memberships_user_tenant"),
-        CheckConstraint("role IN ('owner', 'bookkeeper', 'accountant')",
-                        name="ck_memberships_role"),
+        CheckConstraint(
+            "role IN ('owner', 'bookkeeper', 'accountant', 'uploader')",
+            name="ck_memberships_role"),
         CheckConstraint("status IN ('active', 'pending')", name="ck_memberships_status"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -244,7 +255,12 @@ class JournalEntry(TenantScoped, Base):
     """Immutable once inserted; corrections are reversing entries."""
 
     __tablename__ = "journal_entries"
-    __table_args__ = (UniqueConstraint("administration_id", "number"),)
+    __table_args__ = (
+        UniqueConstraint("administration_id", "number"),
+        # An entry can be reversed once; the database settles two requests racing to do it.
+        Index("uq_journal_entries_reversal_of", "reversal_of_id", unique=True,
+              postgresql_where=text("reversal_of_id IS NOT NULL")),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
     number: Mapped[str] = mapped_column(String(20))
@@ -293,6 +309,46 @@ class NumberSequence(TenantScoped, Base):
     last_value: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class DailyTakings(TenantScoped, Base):
+    """One day of till sales, gross per VAT rate and by how it was received.
+
+    Never edited: a correction reverses the journal entry (reversed_at is set) and posts anew.
+    """
+
+    __tablename__ = "daily_takings"
+    __table_args__ = (
+        CheckConstraint(
+            "gross_high_cents >= 0 AND gross_low_cents >= 0 AND gross_zero_cents >= 0 "
+            "AND cash_cents >= 0 AND card_cents >= 0 AND other_cents >= 0",
+            name="ck_takings_non_negative"),
+        CheckConstraint(
+            "gross_high_cents + gross_low_cents + gross_zero_cents "
+            "= cash_cents + card_cents + other_cents",
+            name="ck_takings_balanced"),
+        Index("uq_daily_takings_active_day", "administration_id", "takings_date", unique=True,
+              postgresql_where=text("reversed_at IS NULL")),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
+    takings_date: Mapped[date] = mapped_column(Date, index=True)
+    gross_high_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    gross_low_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    gross_zero_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    cash_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    card_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    other_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    note: Mapped[str | None] = mapped_column(String(200))
+    journal_entry_id: Mapped[int] = mapped_column(ForeignKey("journal_entries.id"))
+    reversal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"))
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = _now()
+
+    @property
+    def gross_total_cents(self) -> int:
+        return self.gross_high_cents + self.gross_low_cents + self.gross_zero_cents
+
+
 class Attachment(TenantScoped, Base):
     __tablename__ = "attachments"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -326,6 +382,8 @@ class SalesInvoice(TenantScoped, Base):
     paid_cents: Mapped[int] = mapped_column(BigInteger, default=0)
     credit_note_of_id: Mapped[int | None] = mapped_column(ForeignKey("sales_invoices.id"))
     journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"))
+    # Carried over from the previous system: open on the start date, never reported again.
+    is_opening: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _now()
     lines: Mapped[list["SalesInvoiceLine"]] = relationship(
@@ -365,6 +423,7 @@ class PurchaseInvoice(TenantScoped, Base):
     paid_cents: Mapped[int] = mapped_column(BigInteger, default=0)
     attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachments.id"))
     journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"))
+    is_opening: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     created_at: Mapped[datetime] = _now()
     lines: Mapped[list["PurchaseInvoiceLine"]] = relationship(
         back_populates="invoice", order_by="PurchaseInvoiceLine.position", lazy="selectin",
@@ -395,6 +454,8 @@ class BankAccount(TenantScoped, Base):
     iban: Mapped[str] = mapped_column(String(34))
     name: Mapped[str] = mapped_column(String(100))
     ledger_account_id: Mapped[int] = mapped_column(ForeignKey("accounts.id"))
+    # Column mapping last used for a generic CSV export of this account (see banking.csv_import).
+    csv_mapping: Mapped[dict | None] = mapped_column(JSONB)
 
 
 class BankStatement(TenantScoped, Base):
@@ -410,14 +471,23 @@ class BankStatement(TenantScoped, Base):
     opening_balance_cents: Mapped[int | None] = mapped_column(BigInteger)
     closing_balance_cents: Mapped[int | None] = mapped_column(BigInteger)
     imported_at: Mapped[datetime] = _now()
+    # Lines of this file left out as duplicates, kept so the owner can import them by key.
+    left_out: Mapped[list | None] = mapped_column(JSONB)
 
 
 class BankTransaction(TenantScoped, Base):
     __tablename__ = "bank_transactions"
-    __table_args__ = (UniqueConstraint("bank_account_id", "dedupe_key"),)
+    __table_args__ = (
+        UniqueConstraint("bank_account_id", "dedupe_key"),
+        CheckConstraint("entry_source IN ('import', 'manual')", name="ck_bank_tx_entry_source"),
+        CheckConstraint(
+            "(entry_source = 'manual') = (statement_id IS NULL)", name="ck_bank_tx_manual_no_file"
+        ),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     bank_account_id: Mapped[int] = mapped_column(ForeignKey("bank_accounts.id"), index=True)
-    statement_id: Mapped[int] = mapped_column(ForeignKey("bank_statements.id"))
+    # None for a manually entered line: there is no file behind it.
+    statement_id: Mapped[int | None] = mapped_column(ForeignKey("bank_statements.id"))
     booking_date: Mapped[date] = mapped_column(Date, index=True)
     value_date: Mapped[date | None] = mapped_column(Date)
     # Signed: positive = money in, negative = money out.
@@ -431,6 +501,11 @@ class BankTransaction(TenantScoped, Base):
     dedupe_key: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(20), default=TxStatus.UNMATCHED)
     journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"))
+    # import = parsed from a bank file; manual = typed in by a person, no bank evidence.
+    entry_source: Mapped[str] = mapped_column(
+        String(10), default="import", server_default=text("'import'")
+    )
+    entered_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
 
 class PaymentAllocation(TenantScoped, Base):
@@ -491,6 +566,31 @@ class InboxDocument(TenantScoped, Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0)
     purchase_invoice_id: Mapped[int | None] = mapped_column(ForeignKey("purchase_invoices.id"))
     reviewed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+
+
+class FeedbackEntry(TenantScoped, Base):
+    """Pilot feedback, stored verbatim. Personal data: exported with the administration and
+    deleted with the tenant."""
+
+    __tablename__ = "feedback_entries"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = _now()
+
+
+class ForwardingNotice(TenantScoped, Base):
+    """A mail-forwarding confirmation link waiting for the owner. Holds the link, not the mail."""
+
+    __tablename__ = "forwarding_notices"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # gmail
+    link: Mapped[str] = mapped_column(String(600))
+    received_at: Mapped[datetime] = _now()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ApiToken(TenantScoped, Base):

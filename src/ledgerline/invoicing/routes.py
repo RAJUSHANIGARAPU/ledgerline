@@ -19,6 +19,7 @@ from ledgerline.invoicing.service import (
     delete_draft_purchase_invoice,
     delete_draft_sales_invoice,
     issue_sales_invoice,
+    purchase_line_accounts,
     store_attachment,
     update_purchase_invoice,
     update_sales_invoice,
@@ -257,7 +258,7 @@ def sales_detail(invoice_id: int, request: Request, session: SessionDep, user: U
         "remaining": invoice.total_incl_cents - invoice.paid_cents,
         "vat_summary": vat_summary(invoice), "accounts": accounts,
         "can_credit": invoice.status in (InvoiceStatus.OPEN, InvoiceStatus.PAID)
-        and not invoice.credit_note_of_id,
+        and not invoice.credit_note_of_id and not invoice.is_opening,
     })
 
 
@@ -327,6 +328,8 @@ def _issued_or_409(session: Session, admin_id: int, invoice_id: int) -> SalesInv
     invoice = _sales_or_404(session, admin_id, invoice_id)
     if not invoice.number:
         raise HTTPException(409, "issue the invoice first")
+    if invoice.is_opening:
+        raise HTTPException(409, "an opening item has no invoice document here")
     return invoice
 
 
@@ -404,7 +407,7 @@ def _purchase_lines_ctx(accounts, rows):
 
 
 def _purchase_editor_ctx(session, admin, rows, invoice=None, values=None, errors=None):
-    accounts = _accounts(session, admin.id, AccountType.EXPENSE)
+    accounts = purchase_line_accounts(session, admin.id)
     today = date.today()
     values = values or {
         "contact_id": str(invoice.contact_id) if invoice else "",
@@ -442,7 +445,7 @@ def purchases_list(request: Request, session: SessionDep, user: UserDep, admin: 
 
 @router.get("/purchases/new")
 def purchase_new(request: Request, session: SessionDep, user: UserDep, admin: AdminDep):
-    accounts = _accounts(session, admin.id, AccountType.EXPENSE)
+    accounts = purchase_line_accounts(session, admin.id)
     return render(request, "purchases/form.html",
                   _purchase_editor_ctx(session, admin, [_default_purchase_row(accounts)]))
 
@@ -497,7 +500,7 @@ def purchase_create(request: Request, session: SessionDep, owner: OwnerDep, admi
 @router.post("/purchases/preview")
 def purchase_preview(request: Request, session: SessionDep, owner: OwnerDep, admin: AdminDep,
                      data: PurchaseFormDep):
-    accounts = _accounts(session, admin.id, AccountType.EXPENSE)
+    accounts = purchase_line_accounts(session, admin.id)
     rows = data.rows or [_default_purchase_row(accounts)]
     return render(request, "purchases/_lines.html", _purchase_lines_ctx(accounts, rows))
 
@@ -520,7 +523,7 @@ def purchase_detail(invoice_id: int, request: Request, session: SessionDep, user
     entry = session.get(JournalEntry, invoice.journal_entry_id) if invoice.journal_entry_id \
         else None
     attachment = session.get(Attachment, invoice.attachment_id) if invoice.attachment_id else None
-    accounts = {a.id: a for a in _accounts(session, admin.id, AccountType.EXPENSE)}
+    accounts = {a.id: a for a in purchase_line_accounts(session, admin.id)}
     return render(request, "purchases/detail.html", {
         "invoice": invoice, "entry": entry, "attachment": attachment, "accounts": accounts,
         "display_status": _display_status(invoice, date.today()),

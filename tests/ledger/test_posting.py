@@ -157,3 +157,49 @@ def test_trial_balance_always_balances(session, admin, amounts):
     balances = account_balances(session, admin.id)
     assert sum(b.debit_cents for b in balances) == sum(b.credit_cents for b in balances)
     session.rollback()
+
+
+def test_two_concurrent_reversals_post_only_one(session, admin, tenant):
+    import threading
+    import time
+
+    from sqlalchemy import func, select
+
+    from ledgerline.models import JournalEntry
+    from tests.conftest import tenant_db
+
+    entry = _sale(session, admin)
+    session.commit()
+    outcome = {}
+
+    def second_request():
+        with tenant_db(tenant.id) as other:
+            try:
+                reverse_entry(other, other.get(JournalEntry, entry.id), date(2026, 3, 5), "twice")
+                other.commit()
+                outcome["result"] = "posted"
+            except LedgerError as exc:
+                other.rollback()
+                outcome["result"] = str(exc)
+
+    reverse_entry(session, entry, date(2026, 3, 5), "first")
+    worker = threading.Thread(target=second_request)
+    worker.start()
+    time.sleep(0.5)
+    session.commit()
+    worker.join(timeout=20)
+    assert outcome["result"] == "entry has already been reversed"
+    assert session.scalar(select(func.count()).select_from(JournalEntry).where(
+        JournalEntry.reversal_of_id == entry.id)) == 1
+
+
+def test_database_refuses_a_second_reversal_of_the_same_entry(session, admin):
+    entry = _sale(session, admin)
+    reverse_entry(session, entry, date(2026, 3, 5), "first")
+    session.commit()
+    with pytest.raises(DBAPIError, match="uq_journal_entries_reversal_of"):
+        session.execute(text(
+            "INSERT INTO journal_entries (administration_id, number, entry_date, description, "
+            "reversal_of_id) VALUES (:a, 'X-1', '2026-03-06', 'dup', :e)"
+        ), {"a": admin.id, "e": entry.id})
+        session.flush()

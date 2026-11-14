@@ -132,6 +132,7 @@ def test_ensure_app_role_grants_only_protected_tables(
     assert _denied(database_url, "zz_notforced")
     assert not _denied(database_url, "zz_protected")
     assert _denied(database_url, "alembic_version")
+    assert _no_update(owner_engine, "feedback_entries")
     # the real tables keep working
     engine = create_engine(database_url)
     try:
@@ -141,6 +142,12 @@ def test_ensure_app_role_grants_only_protected_tables(
             conn.execute(text("SELECT count(*) FROM memberships"))
     finally:
         engine.dispose()
+
+
+def _no_update(owner_engine, table):
+    with owner_engine.connect() as conn:
+        return not conn.execute(text(
+            "SELECT has_table_privilege('ledgerline_app', :t, 'UPDATE')"), {"t": table}).scalar()
 
 
 def test_app_role_has_no_default_privileges(owner_engine):

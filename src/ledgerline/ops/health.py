@@ -65,6 +65,23 @@ def check_disk(settings: Settings) -> Check:
     return free >= settings.health_min_free_disk_percent, {"free_percent": free}
 
 
+def check_operator_identity(settings: Settings) -> Check:
+    """Production must not serve legal pages with placeholders: neither an unset operator field
+    nor a drafting marker left in the page text. Names only, never values."""
+    if settings.environment != "production":
+        return True, {}
+    from ledgerline.platform.legal import unresolved_placeholders
+
+    missing = settings.operator_identity.missing()
+    placeholders = unresolved_placeholders()
+    detail = {}
+    if missing:
+        detail["missing"] = missing
+    if placeholders:
+        detail["placeholders"] = placeholders
+    return (not detail), detail
+
+
 def run_checks(
     settings: Settings,
     now: Callable[[], float] = time.time,
@@ -75,6 +92,7 @@ def run_checks(
         "worker": check_worker(settings, moment),
         "backup": check_backup(settings, moment),
         "disk": check_disk(settings),
+        "legal": check_operator_identity(settings),
     }
     return {
         "status": "ok" if all(ok for ok, _ in checks.values()) else "fail",

@@ -158,7 +158,8 @@ def build_dashboard(session: Session, admin: Administration, today: date) -> Das
     has_entries = _count(session, select(func.count()).select_from(JournalEntry)
                          .where(JournalEntry.administration_id == aid)) > 0
     has_invoice = _count(session, select(func.count()).select_from(SalesInvoice)
-                         .where(SalesInvoice.administration_id == aid)) > 0
+                         .where(SalesInvoice.administration_id == aid,
+                                SalesInvoice.is_opening.is_(False))) > 0
     has_bank = _count(session, select(func.count()).select_from(BankAccount)
                       .where(BankAccount.administration_id == aid)) > 0
     has_statement = d.unmatched > 0 or _count(

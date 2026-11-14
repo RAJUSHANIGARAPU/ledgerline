@@ -4,9 +4,17 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ledgerline.models import Account, Administration, JournalEntry, JournalLine, SystemRole
+from ledgerline.models import (
+    Account,
+    AccountType,
+    Administration,
+    JournalEntry,
+    JournalLine,
+    SystemRole,
+)
 
 
 class LedgerError(ValueError):
@@ -61,6 +69,25 @@ def system_account(session: Session, administration_id: int, role: SystemRole) -
     )
     if account is None:
         raise LedgerError(f"no account with system role {role} in this administration")
+    return account
+
+
+def rounding_account(session: Session, administration_id: int) -> Account:
+    """The rounding-differences account; administrations created before it existed get it here."""
+    found = session.scalar(select(Account).where(
+        Account.administration_id == administration_id,
+        Account.system_role == SystemRole.ROUNDING))
+    if found is not None:
+        return found
+    taken = session.scalar(select(Account).where(
+        Account.administration_id == administration_id, Account.code == "4890"))
+    if taken is not None:
+        raise LedgerError("account 4890 exists but is not the rounding account; rename it first")
+    account = Account(
+        administration_id=administration_id, code="4890", name="Rounding differences",
+        type=AccountType.EXPENSE, system_role=SystemRole.ROUNDING, default_vat_code="I0")
+    session.add(account)
+    session.flush()
     return account
 
 
@@ -147,28 +174,30 @@ def reverse_entry(
     )
     if already:
         raise LedgerError("entry has already been reversed")
-    return post_entry(
-        session,
-        entry.administration_id,
-        on_date,
-        f"Reversal of {entry.number}: {reason}",
-        [
-            LineSpec(
-                account_id=line.account_id,
-                debit_cents=line.credit_cents,
-                credit_cents=line.debit_cents,
-                description=line.description,
-                contact_id=line.contact_id,
-                vat_code=line.vat_code,
-                vat_role=line.vat_role,
+    specs = [
+        LineSpec(
+            account_id=line.account_id,
+            debit_cents=line.credit_cents,
+            credit_cents=line.debit_cents,
+            description=line.description,
+            contact_id=line.contact_id,
+            vat_code=line.vat_code,
+            vat_role=line.vat_role,
+        )
+        for line in entry.lines
+    ]
+    try:
+        with session.begin_nested():
+            return post_entry(
+                session, entry.administration_id, on_date,
+                f"Reversal of {entry.number}: {reason}", specs,
+                source_type="reversal", source_id=entry.id, reversal_of_id=entry.id,
+                user_id=user_id,
             )
-            for line in entry.lines
-        ],
-        source_type="reversal",
-        source_id=entry.id,
-        reversal_of_id=entry.id,
-        user_id=user_id,
-    )
+    except IntegrityError as exc:
+        if "uq_journal_entries_reversal_of" not in str(exc):
+            raise
+        raise LedgerError("entry has already been reversed") from exc
 
 
 def account_balances(

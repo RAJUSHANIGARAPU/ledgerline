@@ -61,10 +61,21 @@ def _context(session, admin, key: str, **extra) -> dict:
             BankAccount.administration_id == admin.id).order_by(BankAccount.id)).all()
         ctx["opening"] = service.opening_entry(session, admin.id)
         ctx["today"] = date.today()
+    elif key == "opening-items":
+        ctx.update(_opening_items_context(session, admin))
     elif key == "first-invoice":
         ctx["customers"] = service.customer_count(session, admin.id)
     ctx.update(extra)
     return ctx
+
+
+def _opening_items_context(session, admin) -> dict:
+    from ledgerline.imports import opening
+
+    summary = opening.summary(session, admin)
+    return {"summary": summary, "today": date.today(),
+            "start_default": summary.start or opening.default_start_date(date.today()),
+            "contacts_exist": bool(service.contact_count(session, admin.id))}
 
 
 def _page(request, session, admin, key: str, status_code: int = 200, **extra):

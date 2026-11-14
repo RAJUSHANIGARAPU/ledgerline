@@ -1,0 +1,6 @@
+type;number;contact;contact_vat_number;invoice_date;due_date;total;open_amount
+sales;2026-0412;Bakkerij De Gouden Korst BV;;14-09-2026;14-10-2026;1.210,00;1.210,00
+sales;2026-0431;Studio Waterlelie;;22-09-2026;22-10-2026;847,00;400,00
+sales;2026-0440;Fietsenmaker Van der Berg;;30-09-2026;30-10-2026;121,00;121,00
+purchase;PZ-77120;Papierhandel Zonneveld;;02-09-2026;02-10-2026;363,00;363,00
+purchase;F2026-88;Duitse Software GmbH;;15-09-2026;15-10-2026;1.200,00;1.200,00

@@ -96,6 +96,84 @@ def test_capture_post_forbidden_for_readonly_and_needs_csrf(readonly_client, cli
     assert client.post("/capture", data={"csrf_token": "wrong"}, files=files).status_code == 403
 
 
+def test_capture_json_reply_for_the_offline_queue(client, session, admin):
+    files = [("files", ("q.pdf", pdf("queued"), "application/pdf"))]
+    data = {"csrf_token": client.csrf, "administration_id": str(admin.id)}
+    first = client.post("/capture", data=data, files=files, headers={"Accept": "application/json"})
+    assert first.status_code == 200
+    [row] = first.json()["results"]
+    assert row["duplicate"] is False and "error" not in row
+    again = client.post("/capture", data=data, files=files, headers={"Accept": "application/json"})
+    assert again.json()["results"][0] == {**row, "duplicate": True}
+    assert len(docs(session)) == 1
+    bad = client.post(
+        "/capture",
+        data=data,
+        files=[("files", ("x.gif", b"GIF89a....", "image/gif"))],
+        headers={"Accept": "application/json"},
+    )
+    assert "not supported" in bad.json()["results"][0]["error"]
+
+
+def test_capture_lands_in_the_administration_it_was_captured_for(client, session, admin):
+    from ledgerline.ledger.chart import create_administration
+
+    second = create_administration(session, name="Tweede Zaak", kvk_number="11112222")
+    session.commit()
+    response = client.post(
+        "/capture",
+        data={"csrf_token": client.csrf, "administration_id": str(second.id)},
+        files=[("files", ("late.pdf", pdf("late"), "application/pdf"))],
+        headers={"Accept": "application/json"},
+    )
+    assert response.status_code == 200 and response.json()["administration"] == "Tweede Zaak"
+    [doc] = docs(session)
+    assert doc.administration_id == second.id != admin.id
+
+
+def test_capture_refuses_an_administration_it_cannot_resolve(
+    client, session, other_admin, admin
+):
+    files = [("files", ("n.pdf", pdf("nope"), "application/pdf"))]
+    for bogus in (str(other_admin.id), "999999", "abc"):
+        response = client.post(
+            "/capture",
+            data={"csrf_token": client.csrf, "administration_id": bogus},
+            files=files,
+            headers={"Accept": "application/json"},
+        )
+        assert response.status_code == 409, bogus
+    assert docs(session) == []
+
+
+def test_capture_context_names_the_signed_in_user_and_needs_login(
+    client, readonly_client, owner, anon
+):
+    mine = client.get("/capture/context")
+    theirs = readonly_client.get("/capture/context")
+    assert mine.status_code == 200 and mine.headers["cache-control"] == "no-store"
+    assert mine.json()["userId"] == owner.id != theirs.json()["userId"]
+    assert mine.json()["csrf"] == client.csrf
+    assert anon.get("/capture/context", follow_redirects=False).status_code in (303, 401)
+
+
+def test_capture_page_carries_identity_and_logout_purges_the_queue(client, owner):
+    page = client.get("/capture").text
+    assert f'data-user-id="{owner.id}"' in page and "data-tenant-id=" in page
+    assert '<form method="post" action="/logout" data-purge-queue>' in page
+
+
+def test_capture_survives_an_out_of_range_administration_id(client, session):
+    response = client.post(
+        "/capture",
+        data={"csrf_token": client.csrf, "administration_id": "9" * 30},
+        files=[("files", ("big.pdf", pdf("big"), "application/pdf"))],
+        headers={"Accept": "application/json"},
+    )
+    assert response.status_code == 409
+    assert docs(session) == []
+
+
 def test_api_upload_multipart_then_duplicate(anon, token, session, admin):
     row, value = token
     first = anon.post(
@@ -310,3 +388,18 @@ def test_base_head_links(client):
     assert '<meta name="theme-color" content="#0f3d3e">' in html
     assert 'rel="apple-touch-icon"' in html and "icon-180.png" in html
     assert '<meta name="apple-mobile-web-app-capable" content="yes">' in html
+
+
+def test_uploader_can_use_the_offline_queue(uploader_client, session, admin):
+    context = uploader_client.get("/capture/context")
+    assert context.status_code == 200 and context.json()["csrf"]
+    response = uploader_client.post(
+        "/capture",
+        data={"csrf_token": uploader_client.csrf, "administration_id": str(admin.id)},
+        files=[("files", ("up.pdf", pdf("uploader queued"), "application/pdf"))],
+        headers={"Accept": "application/json"},
+    )
+    assert response.status_code == 200
+    [row] = response.json()["results"]
+    assert "error" not in row and row["duplicate"] is False
+    assert len(docs(session)) == 1

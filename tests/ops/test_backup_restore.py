@@ -143,10 +143,13 @@ def test_backup_writes_local_and_offsite_copies_and_a_marker(stack):
 
 
 def test_drill_passes_on_the_latest_snapshot_and_starts_the_app(stack):
-    result = drill(stack, skip_app=False)
+    # The disk threshold is lowered so the result does not depend on how full the Docker VM is.
+    result = drill(stack, skip_app=False, extra_env={"DRILL_MIN_FREE_DISK_PERCENT": "1"})
     assert result.returncode == 0, result.stdout + result.stderr
     assert "tables match" in result.stdout
-    assert '/healthz: {"status":"ok"}' in result.stdout
+    for check in ("healthz", "healthz-deep", "app-role", "rls"):
+        assert f"PASS {check}:" in result.stdout, result.stdout
+    assert "FAIL" not in result.stdout
     assert result.stdout.strip().endswith("RESULT: PASS")
 
 

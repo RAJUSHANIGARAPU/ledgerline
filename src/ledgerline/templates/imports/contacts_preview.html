@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Preview contacts import{% endblock %}
+{% block heading %}Preview: {{ filename }}{% endblock %}
+{% block actions %}<a class="btn btn-ghost" href="/contacts/import">Choose another file</a>{% endblock %}
+{% block content %}
+<div class="grid grid-3">
+  {{ ui.stat("To create", plan.count("create"), None, "good") }}
+  {{ ui.stat("Skipped duplicates", plan.count("skip")) }}
+  {{ ui.stat("Rows with errors", plan.count("error"), "not imported", "bad" if plan.count("error") else None) }}
+</div>
+{% for w in plan.warnings %}<div class="flash flash-info" role="status">{{ w }}</div>{% endfor %}
+<div class="card"><div class="table-wrap"><table class="table table-compact" data-testid="import-preview">
+  <thead><tr><th class="num">Row</th><th>Name</th><th>Kind</th><th>VAT number</th><th>KvK</th><th>Postcode</th><th>Result</th><th>Notes</th></tr></thead>
+  <tbody>
+  {% for r in plan.rows %}
+    <tr data-action="{{ r.action }}">
+      <td class="num">{{ r.row }}</td>
+      <td>{{ r.data.name or '' }}</td><td>{{ r.data.kind or '' }}</td>
+      <td class="muted">{{ r.data.vat_number or '' }}</td><td class="muted">{{ r.data.kvk_number or '' }}</td>
+      <td class="muted">{{ r.data.postcode or '' }}</td>
+      <td>{% if r.action == "create" %}<span class="badge badge-open">create</span>{% elif r.action == "skip" %}<span class="badge badge-ignored">skip</span>{% else %}<span class="badge badge-overdue">error</span>{% endif %}</td>
+      <td class="{{ 'amount-neg' if r.action == 'error' else 'muted' }}">{{ r.reason }}{% if r.warnings %}{% if r.reason %}; {% endif %}{{ r.warnings|join("; ") }}{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+{% if plan.count("create") %}
+<form method="post" action="/contacts/import/confirm" class="form-actions">
+  {{ ui.csrf() }}
+  <input type="hidden" name="filename" value="{{ filename }}">
+  <textarea name="payload" hidden>{{ payload }}</textarea>
+  <button class="btn btn-primary" type="submit" data-testid="import-confirm">Create {{ plan.count("create") }} contact{{ "" if plan.count("create") == 1 else "s" }}</button>
+</form>
+{% else %}
+<p class="muted">Nothing to create.</p>
+{% endif %}
+{% endblock %}

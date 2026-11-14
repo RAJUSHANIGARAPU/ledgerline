@@ -76,7 +76,7 @@
   {% elif step.key == "opening" %}
   <div class="card"><div class="card-header"><h2 class="card-title">Opening balances (optional)</h2></div>
     <div class="card-body stack">
-      <p class="muted">Starting mid-year? Enter what was in each bank account on your start date. Ledgerline posts one journal entry with the bank balance against owner's equity. Skip this if you start on 1 January with empty books, or if your accountant provides opening balances.</p>
+      <p class="muted">Starting mid-year? Enter what was in each bank account on your start date. Ledgerline posts one journal entry with the bank balance against owner's equity. Skip this if you start on 1 January with empty books, or if your accountant provides opening balances. Unpaid invoices from your old system go in the next step.</p>
       {% if errors.form %}<div class="flash flash-error" role="alert">{{ errors.form }}</div>{% endif %}
       {% if opening %}
       <div class="flash flash-info" role="status" data-testid="opening-done">Opening balances are posted in <a href="/ledger/{{ opening.id }}">{{ opening.number }}</a>. To enter them again, reverse that entry first.</div>
@@ -94,6 +94,64 @@
         <div class="form-actions"><button class="btn btn-primary" type="submit" data-confirm="Post the opening balances? A posted entry can only be reversed, not edited.">Post opening balances</button></div>
       </form>
       {% endif %}
+    </div></div>
+
+  {% elif step.key == "opening-items" %}
+  {% set sm = summary %}
+  <div class="card"><div class="card-header"><h2 class="card-title">Open invoices on the start date (optional)</h2></div>
+    <div class="card-body stack">
+      <p class="muted">Moving in from another system? Enter the sales and purchase invoices that were still unpaid on your start date. They become open items you can match against bank payments and see in the aging reports. They are <strong>not</strong> revenue, expense or VAT in this administration: those were reported in your old system. Keep the original invoice number. Skip this if you start with empty books.</p>
+      {% if errors.form or form_error %}<div class="flash flash-error" role="alert" data-testid="opening-item-error">{{ form_error or errors.form }}</div>{% endif %}
+      {% if import_error %}<div class="flash flash-error" role="alert" data-testid="opening-import-error">{{ import_error }}</div>{% endif %}
+      {% if sm.check %}
+      <div class="flash {{ 'flash-success' if sm.check.balanced else 'flash-error' }}" role="status" data-testid="balance-check">
+        Assets = Liabilities + Equity on {{ sm.check.date|nldate }}: {{ sm.check.assets|eur }} = {{ sm.check.liabilities|eur }} + {{ sm.check.equity|eur }} ({{ "balanced" if sm.check.balanced else "NOT balanced" }}).
+        {% if sm.receivable_cents or sm.payable_cents %}Carried over: receivables {{ sm.receivable_cents|eur }}, payables {{ sm.payable_cents|eur }}, booked against equity account 0580.{% endif %}
+      </div>
+      {% endif %}
+      {% if not contacts_exist %}<p>Add or <a href="/contacts/import">import your contacts</a> first; every open invoice needs its customer or supplier.</p>{% endif %}
+      {% set kind_names = {"sales": "Sales", "purchase": "Purchase"} %}
+      {% if sm.sales or sm.purchases %}
+      <div class="table-wrap"><table class="table table-compact" data-testid="opening-items">
+        <thead><tr><th>Type</th><th>Number</th><th>Contact</th><th>Date</th><th>Due</th><th class="num">Total</th><th class="num">Open now</th><th></th></tr></thead>
+        <tbody>
+        {% for inv in sm.sales %}<tr><td>Sales</td><td><a href="/sales/{{ inv.id }}">{{ inv.number }}</a></td><td>{{ inv.contact.name }}</td><td class="muted">{{ inv.issue_date|nldate }}</td><td class="muted">{{ inv.due_date|nldate }}</td><td class="num">{{ inv.total_incl_cents|eur }}</td><td class="num">{{ (inv.total_incl_cents - inv.paid_cents)|eur }}</td>
+          <td>{% if inv.status == "open" %}<form method="post" action="/sales/{{ inv.id }}/opening-remove">{{ ui.csrf() }}<button class="link-button" type="submit" data-confirm="Remove opening item {{ inv.number }}? The entry is reversed.">Remove</button></form>{% endif %}</td></tr>{% endfor %}
+        {% for inv in sm.purchases %}<tr><td>Purchase</td><td><a href="/purchases/{{ inv.id }}">{{ inv.supplier_reference }}</a></td><td>{{ inv.contact.name }}</td><td class="muted">{{ inv.invoice_date|nldate }}</td><td class="muted">{{ inv.due_date|nldate }}</td><td class="num">{{ inv.total_incl_cents|eur }}</td><td class="num">{{ (inv.total_incl_cents - inv.paid_cents)|eur }}</td>
+          <td>{% if inv.status == "open" %}<form method="post" action="/purchases/{{ inv.id }}/opening-remove">{{ ui.csrf() }}<button class="link-button" type="submit" data-confirm="Remove opening item {{ inv.supplier_reference }}? The entry is reversed.">Remove</button></form>{% endif %}</td></tr>{% endfor %}
+        </tbody>
+      </table></div>
+      {% endif %}
+
+      <h3 class="section-title">Add one item</h3>
+      <form method="post" action="/setup/opening-items/add" class="stack" data-testid="opening-item-form">
+        {{ ui.csrf() }}
+        <div class="form-grid">
+          {% if sm.start %}<input type="hidden" name="start_date" value="{{ sm.start.isoformat() }}"><p class="muted">Start date: {{ sm.start|nldate }}</p>
+          {% else %}{{ ui.field("start_date", "Start date", values.start_date if values else start_default.isoformat(), "date", true, "Usually the first day of a quarter. The invoices were open on the evening before.") }}{% endif %}
+          <label class="field"><span class="field-label">Type</span>
+            <select class="input" name="type"><option value="sales" {% if values and values.type == "sales" %}selected{% endif %}>Sales invoice (customer owes you)</option><option value="purchase" {% if values and values.type == "purchase" %}selected{% endif %}>Purchase invoice (you owe a supplier)</option></select></label>
+          {{ ui.field("number", "Invoice number (original)", values.number if values else "", "text", true, "The number from the old system or the supplier's reference.") }}
+          {{ ui.field("contact", "Contact name", values.contact if values else "", "text", true, "Exactly as in Contacts.") }}
+          {{ ui.field("invoice_date", "Invoice date", values.invoice_date if values else "", "date", true) }}
+          {{ ui.field("due_date", "Due date", values.due_date if values else "", "date", true) }}
+          {{ ui.field("total", "Total incl. VAT (EUR)", values.total if values else "", "text", true, "e.g. 1.210,00") }}
+          {{ ui.field("open_amount", "Still open (EUR)", values.open_amount if values else "", "text", true, "Less than the total if partly paid.") }}
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit" data-confirm="Post this opening item? A posted entry can only be reversed, not edited.">Add opening item</button></div>
+      </form>
+
+      <h3 class="section-title">Or import a CSV file</h3>
+      <form method="post" action="/setup/opening-items/preview" enctype="multipart/form-data" class="stack">
+        {{ ui.csrf() }}
+        <div class="form-grid">
+          {% if sm.start %}<input type="hidden" name="start_date" value="{{ sm.start.isoformat() }}">
+          {% else %}{{ ui.field("start_date", "Start date", values.start_date if values else start_default.isoformat(), "date", true) }}{% endif %}
+          <label class="field"><span class="field-label">CSV file</span><input class="input" type="file" name="file" accept=".csv,text/csv" required data-testid="opening-file"></label>
+        </div>
+        <p class="muted">Columns: type (sales or purchase), number, contact, contact_vat_number (optional), invoice_date, due_date, total, open_amount. Amounts like 1.234,56 are fine. <a href="/setup/opening-items/template.csv">Template (;)</a> · <a href="/setup/opening-items/template.csv?sep=comma">Template (,)</a></p>
+        <div class="form-actions"><button class="btn btn-secondary" type="submit">Preview import</button></div>
+      </form>
     </div></div>
 
   {% elif step.key == "first-invoice" %}

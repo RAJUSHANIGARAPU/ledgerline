@@ -11,7 +11,7 @@ Everything runs on one Linux server (Hetzner Cloud in the reference setup) from
 ```mermaid
 flowchart LR
     subgraph users["People and devices"]
-        browser["Browser<br/>(owner, bookkeeper, accountant)"]
+        browser["Browser<br/>(owner, bookkeeper, accountant, uploader)"]
         phone["iPhone shortcut<br/>(upload key)"]
         uptime["Uptime monitor"]
     end
@@ -61,7 +61,7 @@ flowchart LR
     backup -->|ping| hc
 ```
 
-Not connected on purpose: banks (statements are uploaded as CAMT.053/MT940 files), the
+Not connected on purpose: banks (statements are uploaded as CAMT.053/MT940/CSV files), the
 Belastingdienst (the VAT return is prepared, the owner files it in Mijn Belastingdienst Zakelijk)
 and Peppol (UBL files are generated, not sent).
 
@@ -149,7 +149,7 @@ A restore brings back tenants that were deleted after the backup was taken: re-r
 |---|---|
 | `ledgerline.ledger` | Double-entry posting, chart of accounts, period lock (rules also enforced by database triggers) |
 | `ledgerline.invoicing` | Sales and purchase invoices, PDF (WeasyPrint), UBL export |
-| `ledgerline.banking` | CAMT.053 / MT940 import, matching, SEPA payment files |
+| `ledgerline.banking` | CAMT.053 / MT940 / CSV import, matching, SEPA payment files |
 | `ledgerline.vat` | VAT codes, return per rubriek with sources (`vat/sources.py`), ICP |
 | `ledgerline.reports` | Dashboard, P&L, balance sheet, aged debtors and creditors |
 | `ledgerline.inbox` | Intake, extraction pipeline, email polling, worker |
@@ -157,5 +157,6 @@ A restore brings back tenants that were deleted after the backup was taken: re-r
 | `ledgerline.accounts` | Invitations, password reset, two-factor login |
 | `ledgerline.platform` | Contacts, settings, GDPR export and anonymisation, legal pages, tenant offboarding |
 | `ledgerline.onboarding` | Setup wizard, in-app user guide |
+| `ledgerline.imports` | CSV import of contacts and opening items (open invoices on the start date), CLI `import-contacts` and `import-opening-items` |
 | `ledgerline.ops` | Deep health check |
 | `ledgerline.db`, `web`, `auth` | Tenant context per transaction, request dependencies, sign-in |

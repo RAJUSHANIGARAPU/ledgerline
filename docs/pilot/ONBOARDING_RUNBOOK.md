@@ -30,9 +30,17 @@ docker compose exec app ledgerline create-administration \
 # legal forms: see the dropdown under Settings; the chart of accounts is created with it
 ```
 
+The migrations seed an empty tenant called "Default". `create-tenant` removes it, and prints that it did, when it has no logins, administrations, documents or other data; it never touches one that is in use or has been renamed. Run the command with the database owner role configured (`LEDGERLINE_MIGRATION_DATABASE_URL`); without it the seeded tenant is left in place. On an install with real tenants the leftover "Default" would clutter the tenant list and stop the single-tenant mail default (`LEDGERLINE_IMAP_DEFAULT_ADMINISTRATION_ID`) from working.
+
 Then the owner login. Two routes:
 
-- **Invite by email** (preferred, no password passes through you): <!-- verify after feat/account-security merges --> create the owner membership as the first owner user and send the invitation from Settings, Users (the exact labels are confirmed after the feature merges). The owner accepts and sets a password. Until the feature is merged use the second route.
+- **Invite by email** (preferred, no password passes through you): send the invitation from the server, so you never sign in inside the client's tenant:
+
+  ```sh
+  docker compose exec app ledgerline invite-owner --tenant <id> --email owner@client.example
+  ```
+
+  The owner gets the normal invitation mail (Dutch and English, a single-use link valid for 7 days) and chooses their own password. The command prints an error and exits 1 if the mail could not be sent (check the SMTP settings); run it again to issue a fresh link. It needs `LEDGERLINE_SMTP_HOST` and `LEDGERLINE_SMTP_FROM` on the `app` service. Once the owner is in, further invitations come from Settings, Users, where "Resend invitation" retries a failed mail.
 - **CLI, with a password you hand over**:
 
   ```sh
@@ -42,7 +50,7 @@ Then the owner login. Two routes:
 
   Send the password over a different channel than the login address and ask the owner to change it at once (Settings, Change password). Never reuse a password across clients.
 
-If the person already has a login for another tenant (an accountant serving several clients): `ledgerline add-membership --email accountant@firm.example --tenant <id> --role accountant`. Roles are `owner`, `bookkeeper` and `accountant` (read-only). After sign-in they pick the client on the "Choose a workspace" screen.
+If the person already has a login for another tenant (an accountant serving several clients): `ledgerline add-membership --email accountant@firm.example --tenant <id> --role accountant`. Roles are `owner`, `bookkeeper`, `accountant` (read-only) and `uploader` (phone capture only). After sign-in they pick the client on the "Choose a workspace" screen.
 
 <!-- verify after feat/account-security merges: ask the owner to enrol two-factor authentication at first login and store the recovery codes. -->
 
@@ -53,6 +61,31 @@ Check: sign in as the owner in a private window. You should land on the dashboar
 1. Sign in as the owner (or sit with them) and finish the [setup wizard](../USER_GUIDE.md#getting-started): business details (KvK, VAT number, address, IBAN, invoice prefix), VAT situation (regular or KOR), business bank account, optional opening balances.
 2. Check one issued sample invoice against the invoice requirements (see the user guide, "What the invoice must contain").
 3. Create the accountant user with role Accountant if the client's bookkeeper wants read access.
+
+## 3a. Moving a client in (they already have a business)
+
+Use this when the client starts on a date in the middle of their business life, ideally the first day of a quarter, and has contacts, unpaid invoices and a bank balance in an existing system. Samples: [contacts](../samples/contacts-import.csv), [Excel NL, comma and BOM](../samples/contacts-import-excel-nl.csv), [open invoices](../samples/opening-items.csv). Design and trade-offs: [ADR 0002](../adr/0002-opening-balances.md).
+
+Prepare with the client before the session:
+
+1. Agree the **start date** (the evening of the day before is the balance date). Everything before it stays in the old system and its filed VAT returns; everything from it is Ledgerline's.
+2. Get three exports from the old system as at the day before the start date: contacts, the open debtors list (unpaid sales invoices with the original number, date, due date, total incl. VAT and the amount still open) and the open creditors list, plus the bank balance per account.
+3. Save each as CSV from Excel ("CSV UTF-8" or Dutch "CSV (gescheiden door lijstscheidingsteken)"; separator ; or , both work). Use the template downloads on the import pages for the exact columns.
+
+Then, in this order, as owner or bookkeeper:
+
+1. **Contacts.** Contacts, Import CSV (or `ledgerline import-contacts --file contacts.csv`, which previews and only saves with `--apply`). Read the preview: rows with errors are fixed in the file and uploaded again (already imported rows are skipped as duplicates, so re-uploading is safe), duplicates are matched on VAT number, KvK number, or name plus postcode. Customers without address or city can be imported, but no invoice can be issued to them until both are filled in.
+2. **Bank accounts and opening balances.** Setup steps 3 and 4. Use the start date as the date.
+3. **Open invoices.** Setup step 5. Enter the start date once (it is then fixed for everything), upload the open debtors and creditors, read the preview, confirm. Items are imported all together or not at all. A partly paid invoice has an open amount lower than its total.
+4. **Check.** The step shows "Assets = Liabilities + Equity on <start date>" and the carried-over receivables and payables. Compare them with the old system's debtor and creditor totals on that date; they must agree to the cent. The difference between receivables and payables sits on equity account 0580 ("Opening balance, open items"); ask the accountant whether it stays there or is moved to the owner's equity.
+5. **Look at what the items do and do not do.** Reports, Aging shows them under their due dates; the VAT return, the ICP overview and the profit and loss for the first quarter show none of them (their revenue and VAT were reported in the old system). Check this once with the client on the first quarter's VAT page.
+6. **First bank file.** Import the bank statement from the start date. Payments of the old invoices are suggested by invoice number and amount like any other open invoice; match them.
+
+Things to tell the client:
+
+- Opening items cannot be edited or credited in Ledgerline. A mistake before anything is matched is fixed with Remove (it reverses the entry), then add it again with a corrected number. After a payment is matched, undo the match first.
+- Use an invoice prefix the old system did not use (Setup step 1), so a new number never equals an imported one.
+- A credit note for an old invoice is a manual correction or stays in the old system.
 
 ## 4. Inbox address and phone
 
@@ -84,9 +117,11 @@ The aim is to trust the figures before the first filing.
 3. **Revoke access:** deactivate the client's users in Settings, Users (Deactivate), revoke phone tokens under Phone devices, and create a new inbox address so the old one stops working.
 4. **Delete the data** on the server, as the owner role (the `migrate` service has it):
    ```
+   sudo install -d -o 10001 -g 10001 -m 750 offboarding
    docker compose run --rm -v "$PWD/offboarding:/export" migrate \
      ledgerline delete-tenant --tenant <id> --confirm "<exact tenant name>" --export-dir /export
    ```
+   The container runs as uid 10001. If `offboarding/` is missing, Docker creates it owned by root and the export fails with `PermissionError: ... /export/tenant-<id>-administration-<n>.zip`; nothing is deleted in that case, because the export runs first. Create it with the first command, once, before the delete. The ZIPs it writes belong to uid 10001: use `sudo` to copy or remove them.
    The command refuses unless `--confirm` is the tenant's exact name, writes one export ZIP per
    administration first, then deletes every row of that tenant (bookkeeping, attachments, inbox,
    tokens, memberships) and the logins that belonged to no other tenant, and checks that nothing

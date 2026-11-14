@@ -103,5 +103,37 @@ def delete_tenant(conn: Connection, tenant_id: int) -> DeletionReport:
     return report
 
 
+SEEDED_TENANT_NAME = "Default"  # the name the multi-tenancy migration gives the tenant it seeds
+
+
+def drop_empty_seeded_tenant(conn: Connection, keep_tenant_id: int) -> int | None:
+    """Delete the tenant the migrations seed, if it is still empty; returns its id or None.
+
+    Empty means: no memberships and no row in any tenant-scoped table (administrations, inbox
+    documents and everything else). Needs the owner connection, because row-level security would
+    otherwise hide the rows and make every tenant look empty.
+    """
+    if not conn.execute(text(
+            "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user")).scalar():
+        return None
+    candidates = list(conn.execute(
+        select(Tenant.id).where(Tenant.name == SEEDED_TENANT_NAME, Tenant.id != keep_tenant_id)
+        .order_by(Tenant.id)).scalars())
+    raw = conn.connection.driver_connection
+    tables = list(conn.execute(TENANT_TABLES).scalars())
+    for tenant_id in candidates:
+        if conn.execute(text("SELECT count(*) FROM memberships WHERE tenant_id = :t"),
+                        {"t": tenant_id}).scalar():
+            continue
+        counts = (raw.execute(
+            sql.SQL("SELECT count(*) FROM {} WHERE tenant_id = %s").format(sql.Identifier(t)),
+            (tenant_id,)).fetchone()[0] for t in tables)
+        if any(counts):
+            continue
+        conn.execute(text("DELETE FROM tenants WHERE id = :t"), {"t": tenant_id})
+        return tenant_id
+    return None
+
+
 def tenant_name(conn: Connection, tenant_id: int) -> str | None:
     return conn.execute(select(Tenant.name).where(Tenant.id == tenant_id)).scalar()

@@ -9,6 +9,18 @@
 {% for d in duplicates %}
 <div class="flash flash-info" role="status">{{ names.get(d.attachment_id, 'This file') }} is already in your inbox: <a href="/inbox/{{ d.id }}">open it</a>.</div>
 {% endfor %}
+{% for n in notices %}
+<div class="flash flash-info" role="status">
+  <form method="post" action="/inbox/forwarding-notices/{{ n.id }}/dismiss" class="stack">
+    {{ ui.csrf() }}
+    <span><strong>{% if n.kind == 'gmail' %}Gmail asks you to confirm forwarding to this inbox.{% else %}Unverified sender: a mail that claims to be Gmail's forwarding confirmation arrived.{% endif %}</strong> Open the link below while signed in to the Gmail account, then return to Gmail's forwarding settings and refresh. It is shown here until {{ n.expires_at.strftime('%d-%m-%Y') }} or until you dismiss it.</span>
+    <a href="{{ n.link }}" target="_blank" rel="noopener noreferrer">{{ n.link }}</a>
+    {% if n.kind != 'gmail' %}<span class="field-hint">The mail could not be checked as coming from Google. If you did not just add this address in Gmail, dismiss it.</span>{% endif %}
+    <span class="field-hint">Only follow it if you just added this address to Gmail yourself.</span>
+    <div class="form-actions"><button class="btn" type="submit">Dismiss</button></div>
+  </form>
+</div>
+{% endfor %}
 {% if inbox_address %}
 <div class="card"><div class="card-body stack">
   <span class="field-label">Email address for this administration</span>
@@ -31,11 +43,18 @@
 </div>
 <div class="tabs" role="tablist">
   {% for key, label, status in tabs %}
-    <a class="tab{% if tab == key %} is-active{% endif %}" href="/inbox?tab={{ key }}">{{ label }} <span class="pill">{{ counts.get(status, 0) }}</span></a>
+    <a class="tab{% if tab == key %} is-active{% endif %}" href="/inbox?tab={{ key }}">{{ label }} <span class="pill">{{ counts.get(key, 0) }}</span></a>
   {% endfor %}
 </div>
 <div id="inbox-list"{% if tab == 'new' and documents %} hx-get="/inbox?tab=new" hx-trigger="every 4s" hx-select="#inbox-list" hx-target="#inbox-list" hx-swap="outerHTML"{% endif %}>
 {% if documents %}
+{% if tab == 'other' and user_can_write %}
+<form method="post" action="/inbox/reject-non-invoices" class="card"><div class="card-body stack">
+  {{ ui.csrf() }}
+  <span class="field-hint">Payout statements, bank statements, payment reminders, contracts and your own sales invoices. They are kept out of the review list.</span>
+  <div class="form-actions"><button class="btn" type="submit">Reject all {{ documents|length }}</button></div>
+</div></form>
+{% endif %}
 <div class="card">
   <div class="table-wrap">
     <table class="table">
@@ -44,10 +63,10 @@
       {% for d in documents %}
         <tr class="is-clickable">
           <td title="{{ d.source }}">{{ source_icon.get(d.source, '•') }}</td>
-          <td><a href="/inbox/{{ d.id }}">{{ names.get(d.attachment_id, 'document') }}</a></td>
-          <td class="muted">{{ d.sender or d.subject or d.source }}</td>
+          <td class="cell-file"><a href="/inbox/{{ d.id }}">{{ names.get(d.attachment_id, 'document') }}</a></td>
+          <td class="muted cell-from" title="{{ d.sender or d.subject or d.source }}">{{ d.sender or d.subject or d.source }}</td>
           <td class="muted">{{ d.received_at|nldate }}</td>
-          <td class="muted">{{ labels.get(d.extraction_method, ('', ''))[0] if d.extraction_method else 'Waiting to be read' }}</td>
+          <td class="muted">{{ types.get((d.extraction or {}).get('document_type')) or (labels.get(d.extraction_method, ('', ''))[0] if d.extraction_method else 'Waiting to be read') }}</td>
           <td><span class="badge badge-{{ status_badge[d.status] }}">{{ d.status }}</span></td>
         </tr>
       {% endfor %}

@@ -1,0 +1,44 @@
+{
+  "supplier_name": "Groothandel Voorbeeld B.V.",
+  "supplier_vat_number": "NL123456782B01",
+  "supplier_kvk": "87654321",
+  "supplier_iban": "NL02ABNA0123456789",
+  "invoice_number": "FV-2026-1004",
+  "invoice_date": "2026-11-02",
+  "due_date": "2026-11-16",
+  "currency": "EUR",
+  "reverse_charge": false,
+  "credit_note": false,
+  "paid_at_delivery": false,
+  "vat_summary": [
+    {
+      "vat_rate_percent": 9,
+      "base_excl": "200.00",
+      "vat_amount": "18.00"
+    },
+    {
+      "vat_rate_percent": 21,
+      "base_excl": "100.00",
+      "vat_amount": "26.00"
+    }
+  ],
+  "lines": [
+    {
+      "description": "Groenten en fruit",
+      "amount_excl": "200.00",
+      "vat_rate_percent": 9,
+      "vat_amount": "18.00",
+      "is_deposit": false
+    },
+    {
+      "description": "Schoonmaakmiddel",
+      "amount_excl": "100.00",
+      "vat_rate_percent": 21,
+      "vat_amount": "21.00",
+      "is_deposit": false
+    }
+  ],
+  "total_excl": "300.00",
+  "total_vat": "39.00",
+  "total_incl": "349.00"
+}

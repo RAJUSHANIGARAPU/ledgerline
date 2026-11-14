@@ -523,4 +523,142 @@ def test_unreadable_document_gets_one_blank_line(session, admin):
     doc, _ = service.receive(session, admin.id, "s.pdf", pdf_without_text(), "upload")
     proposal = review.build_proposal(session, admin, doc)
     assert proposal.extracted is None and len(proposal.rows) == 1
-    assert proposal.rows[0]["vat_code"] == "I21"
+    assert proposal.rows[0]["vat_code"] == ""
+
+
+def test_unreadable_vat_rate_is_left_for_the_owner_never_filled_with_21(
+    client, session, admin, supplier
+):
+    doc = upload_ubl(client, session)
+    doc.extraction = ExtractedInvoice(
+        invoice_number="X-9", total_excl_cents=10000, lines=[ExtractedLine("Parts", 10000)]
+    ).to_json()
+    session.commit()
+    proposal = review.build_proposal(session, admin, doc)
+    assert proposal.rows[0]["vat_code"] == ""
+    assert any("choose the VAT code" in w for w in proposal.warnings)
+    assert not any("21%" in w for w in proposal.warnings)
+    page = client.get(f"/inbox/{doc.id}")
+    assert '<option value="" selected>Choose a VAT code</option>' in page.text
+    data = create_data(
+        client, doc, supplier.id, session, admin, line_vat_code=["", "I21"]
+    )
+    r = client.post(f"/inbox/{doc.id}/create", data=data, follow_redirects=False)
+    assert "line 1: choose a VAT code" in r.text
+    session.expire_all()
+    assert session.scalars(select(PurchaseInvoice)).first() is None
+
+
+def test_non_invoices_have_their_own_tab_and_can_be_rejected_in_one_click(client, session, admin):
+    invoice_doc = upload_ubl(client, session)
+    statement = upload_ubl(client, session, number="INV-2")
+    statement.extraction = ExtractedInvoice(
+        document_type="statement", warnings=["This looks like a payout or account statement."]
+    ).to_json()
+    session.commit()
+    assert review.status_counts(session, admin.id) == {
+        InboxStatus.REVIEW: 1, "other": 1}
+    review_tab = client.get("/inbox?tab=review").text
+    other_tab = client.get("/inbox?tab=other").text
+    assert f"/inbox/{invoice_doc.id}" in review_tab and f"/inbox/{statement.id}" not in review_tab
+    assert f"/inbox/{statement.id}" in other_tab and "Reject all 1" in other_tab
+    assert "Payout statement, not an invoice" in other_tab
+    r = client.post(
+        "/inbox/reject-non-invoices", data={"csrf_token": client.csrf}, follow_redirects=False
+    )
+    assert r.status_code == 303
+    session.expire_all()
+    assert session.get(InboxDocument, statement.id).status == InboxStatus.REJECTED
+    assert session.get(InboxDocument, invoice_doc.id).status == InboxStatus.REVIEW
+
+
+def zero_line_document(client, session, supplier):
+    doc = upload_ubl(client, session)
+    doc.extraction = ExtractedInvoice(
+        supplier_name="Bakker Software B.V.", invoice_number="INV-2026-17",
+        total_excl_cents=10000, total_vat_cents=2100, total_incl_cents=12100,
+        warnings=["No lines could be read from this document; enter them by hand."],
+    ).to_json()
+    session.commit()
+    return doc
+
+
+def test_a_document_with_a_total_but_no_lines_cannot_be_created_empty(
+        client, session, admin, supplier):
+    doc = zero_line_document(client, session, supplier)
+    page = client.get(f"/inbox/{doc.id}").text
+    assert "No lines could be read" in page
+    r = client.post(
+        f"/inbox/{doc.id}/create",
+        data=create_data(client, doc, supplier.id, session, admin, line_description=[""],
+                         line_account=[str(account(session, admin, "4300").id)],
+                         line_amount=[""], line_vat_code=[""], line_vat=[""]),
+        follow_redirects=False)
+    assert r.status_code == 422 and "no line has an amount" in r.text
+    assert session.scalars(select(PurchaseInvoice)).all() == []
+
+
+def test_zero_amount_lines_do_not_satisfy_a_nonzero_total(client, session, admin, supplier):
+    doc = zero_line_document(client, session, supplier)
+    r = client.post(
+        f"/inbox/{doc.id}/create",
+        data=create_data(client, doc, supplier.id, session, admin, line_description=["Item"],
+                         line_account=[str(account(session, admin, "4300").id)],
+                         line_amount=["0.00"], line_vat_code=["I21"], line_vat=[""]))
+    assert r.status_code == 422 and "no line has an amount" in r.text
+
+
+def test_a_hand_entered_line_unblocks_the_same_document(client, session, admin, supplier):
+    doc = zero_line_document(client, session, supplier)
+    r = client.post(
+        f"/inbox/{doc.id}/create",
+        data=create_data(client, doc, supplier.id, session, admin, line_description=["Goods"],
+                         line_account=[str(account(session, admin, "4300").id)],
+                         line_amount=["100.00"], line_vat_code=["I21"], line_vat=["21.00"]),
+        follow_redirects=False)
+    assert r.status_code == 303
+
+
+def untaxed_line_document(client, session):
+    doc = upload_ubl(client, session)
+    doc.extraction = ExtractedInvoice(
+        supplier_name="Bakker Software B.V.", invoice_number="INV-2026-17",
+        total_excl_cents=868, total_vat_cents=26, total_incl_cents=894,
+        lines=[ExtractedLine("Parking", 747, 0, 0, vat_unconfirmed=True),
+               ExtractedLine("Fees", 121, 21, 26)],
+    ).to_json()
+    session.commit()
+    return doc
+
+
+def test_untaxed_line_is_proposed_without_vat_and_needs_the_owners_confirmation(
+        client, session, admin, supplier):
+    doc = untaxed_line_document(client, session)
+    proposal = review.build_proposal(session, admin, doc)
+    assert [r["vat_code"] for r in proposal.rows] == ["I0", "I21"]
+    assert any("Line 1" in w and "Confirm" in w for w in proposal.warnings)
+    page = client.get(f"/inbox/{doc.id}").text
+    assert 'name="vat_flagged" value="0"' in page and 'name="vat_confirmed" value="0"' in page
+    assert 'name="vat_flagged" value="1"' not in page
+    data = create_data(client, doc, supplier.id, session, admin,
+                       line_description=["Parking", "Fees"], line_amount=["7.47", "1.21"],
+                       line_vat_code=["I0", "I21"], line_vat=["", "0.26"], vat_flagged=["0"])
+    refused = client.post(f"/inbox/{doc.id}/create", data=data, follow_redirects=False)
+    assert refused.status_code == 422 and "line 1: the document charges no VAT" in refused.text
+    assert 'name="vat_flagged" value="0"' in refused.text
+    assert session.scalars(select(PurchaseInvoice)).all() == []
+    data["vat_confirmed"] = ["0"]
+    ok = client.post(f"/inbox/{doc.id}/create", data=data, follow_redirects=False)
+    assert ok.status_code == 303
+    session.expire_all()
+    invoice = session.scalars(select(PurchaseInvoice)).one()
+    assert invoice.total_incl_cents == 894
+
+
+def test_bank_statement_lands_in_not_invoices_with_the_import_hint(client, session, admin):
+    doc = upload_ubl(client, session)
+    doc.extraction = ExtractedInvoice(
+        document_type="bank_statement", warnings=["Import the CSV or CAMT export."]).to_json()
+    session.commit()
+    assert "Bank statement: import the CSV or CAMT export in Bank" in client.get(
+        "/inbox?tab=other").text

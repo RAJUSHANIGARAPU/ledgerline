@@ -1,4 +1,4 @@
-"""Format-neutral statement structures shared by the CAMT.053 and MT940 parsers."""
+"""Format-neutral statement structures shared by the CAMT.053, MT940 and CSV parsers."""
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -26,3 +26,4 @@ class ParsedStatement:
     opening_cents: int | None
     closing_cents: int | None
     transactions: list[ParsedTx] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
