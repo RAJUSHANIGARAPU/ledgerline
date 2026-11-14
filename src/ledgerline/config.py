@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     # Document extraction from photos and scans: "none", "anthropic" or "openrouter" (opt-in,
     # sends documents to the API provider). Keys: ANTHROPIC_API_KEY or OPENROUTER_API_KEY.
     extraction_provider: str = "none"
-    extraction_model: str = "claude-opus-5-5"
+    extraction_model: str = "claude-haiku-5-5"
     extraction_monthly_limit: int = 200
 
     # Operations: files shared between app, worker and backup job (a compose volume).
