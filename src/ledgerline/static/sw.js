@@ -1,5 +1,5 @@
 // Caches static assets only; pages and API responses always go to the network.
-const CACHE = "ledgerline-static-v2";
+const CACHE = "ledgerline-static-v3";
 importScripts("/static/js/capture-queue.js");
 
 const OFFLINE_URL = "/static/offline.html";
@@ -52,5 +52,11 @@ self.addEventListener("fetch", (event) => {
 });
 
 self.addEventListener("sync", (event) => {
-  if (event.tag === "capture-queue") event.waitUntil(self.captureQueue.flush());
+  if (event.tag !== "capture-queue") return;
+  // Rejecting while items remain makes the browser schedule another sync.
+  event.waitUntil(
+    self.captureQueue.flush().then((result) => {
+      if (result.remaining) throw new Error("queued uploads remain");
+    })
+  );
 });

@@ -12,11 +12,21 @@ from ledgerline.db import get_sessionmaker
 from ledgerline.inbox import service as inbox
 from ledgerline.mobile import tokens
 from ledgerline.models import Administration, ApiToken
-from ledgerline.web import AdminDep, ManagerDep, OwnerDep, SessionDep, UserDep, flash, render
+from ledgerline.web import (
+    AdminDep,
+    ManagerDep,
+    OwnerDep,
+    SessionDep,
+    UserDep,
+    csrf_token,
+    flash,
+    render,
+)
 
 router = APIRouter()
 STATIC = Path(__file__).resolve().parent.parent / "static"
 MULTIPART_SLACK = 64 * 1024
+INT4_MAX = 2**31 - 1
 
 
 @router.get("/manifest.webmanifest", include_in_schema=False)
@@ -40,8 +50,19 @@ def capture_form(request: Request, user: UserDep, admin: AdminDep):
         "mobile/capture.html",
         {
             "admin": admin,
+            "user_id": user.id,
+            "tenant_id": request.state.tenant.id,
             "max_mb": get_settings().max_upload_bytes // (1024 * 1024),
         },
+    )
+
+
+@router.get("/capture/context", include_in_schema=False)
+def capture_context(request: Request, user: UserDep):
+    """Who is signed in and a CSRF token, for the offline queue (page and service worker)."""
+    return JSONResponse(
+        {"userId": user.id, "tenantId": request.state.tenant.id, "csrf": csrf_token(request)},
+        headers={"Cache-Control": "no-store"},
     )
 
 
@@ -76,6 +97,8 @@ def _capture_target(session, current, requested) -> Administration | None:
         return None
     if int(requested) == current.id:
         return current
+    if int(requested) > INT4_MAX:
+        return None
     return session.get(Administration, int(requested))
 
 

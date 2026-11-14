@@ -146,6 +146,34 @@ def test_capture_refuses_an_administration_it_cannot_resolve(
     assert docs(session) == []
 
 
+def test_capture_context_names_the_signed_in_user_and_needs_login(
+    client, readonly_client, owner, anon
+):
+    mine = client.get("/capture/context")
+    theirs = readonly_client.get("/capture/context")
+    assert mine.status_code == 200 and mine.headers["cache-control"] == "no-store"
+    assert mine.json()["userId"] == owner.id != theirs.json()["userId"]
+    assert mine.json()["csrf"] == client.csrf
+    assert anon.get("/capture/context", follow_redirects=False).status_code in (303, 401)
+
+
+def test_capture_page_carries_identity_and_logout_purges_the_queue(client, owner):
+    page = client.get("/capture").text
+    assert f'data-user-id="{owner.id}"' in page and "data-tenant-id=" in page
+    assert '<form method="post" action="/logout" data-purge-queue>' in page
+
+
+def test_capture_survives_an_out_of_range_administration_id(client, session):
+    response = client.post(
+        "/capture",
+        data={"csrf_token": client.csrf, "administration_id": "9" * 30},
+        files=[("files", ("big.pdf", pdf("big"), "application/pdf"))],
+        headers={"Accept": "application/json"},
+    )
+    assert response.status_code == 409
+    assert docs(session) == []
+
+
 def test_api_upload_multipart_then_duplicate(anon, token, session, admin):
     row, value = token
     first = anon.post(

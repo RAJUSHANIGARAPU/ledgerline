@@ -5,7 +5,7 @@
 {% block head %}<script src="{{ url_for('static', path='js/capture-queue.js') }}" defer></script>
 <script src="{{ url_for('static', path='js/capture.js') }}" defer></script>{% endblock %}
 {% block content %}
-<div class="stack" id="capture-queue" aria-live="polite" hidden></div>
+<div class="stack" id="capture-queue" aria-live="polite" data-user-id="{{ user_id }}" data-tenant-id="{{ tenant_id }}" hidden></div>
 <form class="card" method="post" action="/capture" enctype="multipart/form-data" id="capture-form" data-admin-id="{{ admin.id }}" data-admin-name="{{ admin.name }}">
   <div class="card-body stack">
     {{ ui.csrf() }}
