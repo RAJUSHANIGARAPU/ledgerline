@@ -39,7 +39,7 @@ If your home IP changes, update the firewall rule: `hcloud firewall describe led
 1. DNS: A record for your domain to `hcloud server ip ledgerline-pilot`.
 2. `ssh deploy@<ip>`; read and delete `FIRST-LOGIN.txt`.
 3. Edit `~/ledgerline/.env`: the four `LEDGERLINE_OPERATOR_*` values (legal name, KvK number, address, contact email; `/healthz/deep` returns 503 until they are set), the `RESTIC_*`, `AWS_*` and ping settings (marked "Fill in"). `docker compose up -d`.
-4. `curl -s https://<domain>/healthz/deep`: it stays 503 until the first off-site backup has run (about a minute after start).
+4. `curl -s https://<domain>/healthz/deep`: it stays 503 until the first off-site backup has run. The backup service runs one at start, and again at start when a repository was added after a local-only run, so it clears within a few minutes.
 5. Run `scripts/restore-drill.sh` and keep the passphrase and storage key outside the server. Then continue with docs/OPERATIONS.md (monitor, pings, monthly drill).
 
 ## Update

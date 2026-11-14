@@ -50,7 +50,7 @@ Then the owner login. Two routes:
 
   Send the password over a different channel than the login address and ask the owner to change it at once (Settings, Change password). Never reuse a password across clients.
 
-If the person already has a login for another tenant (an accountant serving several clients): `ledgerline add-membership --email accountant@firm.example --tenant <id> --role accountant`. Roles are `owner`, `bookkeeper` and `accountant` (read-only). After sign-in they pick the client on the "Choose a workspace" screen.
+If the person already has a login for another tenant (an accountant serving several clients): `ledgerline add-membership --email accountant@firm.example --tenant <id> --role accountant`. Roles are `owner`, `bookkeeper`, `accountant` (read-only) and `uploader` (phone capture only). After sign-in they pick the client on the "Choose a workspace" screen.
 
 <!-- verify after feat/account-security merges: ask the owner to enrol two-factor authentication at first login and store the recovery codes. -->
 

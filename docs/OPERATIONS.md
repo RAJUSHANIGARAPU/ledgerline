@@ -15,7 +15,7 @@ For the person who runs the server. Everything here is configuration, scripts an
 1. Read `deploy/hetzner/README.md`, then run `deploy/hetzner/provision.sh` yourself (it creates billable resources; `DRY_RUN=1` shows what it would do).
 2. Point the DNS A record at the server. Caddy gets the certificate by itself on the first request.
 3. `ssh deploy@<ip>`, read `~/FIRST-LOGIN.txt` once, delete it.
-4. Edit `~/ledgerline/.env`: `RESTIC_REPOSITORY`, `RESTIC_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, the two ping URLs. Then `docker compose up -d`.
+4. Edit `~/ledgerline/.env`: the four `LEDGERLINE_OPERATOR_*` values (`/healthz/deep` returns 503 until they are set), `RESTIC_REPOSITORY`, `RESTIC_PASSWORD`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`, the two ping URLs. Then `docker compose up -d`.
 5. Run the restore drill (below) before you put real data in. Until the first off-site backup succeeds, `/healthz/deep` returns 503 on purpose.
 
 ## Update and rollback
@@ -32,7 +32,7 @@ Limits you should know:
 - **Rollback does not work across a migration.** When the new version ran one, the previous code cannot start on the newer schema (the migration tool does not know the newer revision), so the automatic rollback comes up unhealthy and says so. The way back is to restore the pre-update dump (see Restore), then deploy the previous tag. Rollback works only for releases without a migration, or when the new version failed before migrating.
 - The first update after a fresh install has no earlier images to go back to; the script says so.
 
-Manual rollback to a known tag: `git checkout <tag> && docker compose up -d --build`.
+Manual rollback to a known tag: `git checkout <tag> && docker compose up -d --build`, only for a release without a migration; otherwise restore the pre-update dump first (see Restore).
 
 ## Backups
 

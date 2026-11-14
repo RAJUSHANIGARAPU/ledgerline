@@ -20,7 +20,7 @@ posting, the BTW (VAT) return and ICP overview, and the standard financial repor
 | Ledger | Journal with manual entries, reversals, chart of accounts, per-account ledger, period lock |
 | VAT | Return per month/quarter/year mapped to the rubrieken with drill-down to the bookings, ICP overview, optional settlement entry |
 | Reports | Dashboard, profit & loss, balance sheet, trial balance, aged receivables/payables, CSV export |
-| Platform | Setup wizard, in-app user guide, tenants with several administrations each, owner / bookkeeper / read-only accountant roles, database-enforced tenant isolation, contacts, GDPR export and anonymisation, legal page templates |
+| Platform | Setup wizard, in-app user guide, tenants with several administrations each, owner / bookkeeper / read-only accountant / capture-only uploader roles, database-enforced tenant isolation, contacts, GDPR export and anonymisation, legal page templates |
 
 **Deliberately not included:** live bank feeds (PSD2 needs a licensed provider), sending
 invoices over Peppol (needs a certified access point), filing returns through Digipoort (needs a
