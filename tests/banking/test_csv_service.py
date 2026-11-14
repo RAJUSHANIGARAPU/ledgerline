@@ -333,3 +333,59 @@ def test_another_tenant_cannot_see_the_mapping_or_manual_lines(owner_engine, ses
     with tenant_db(other_tenant.id) as other:
         assert other.scalar(select(func.count()).select_from(BankTransaction)) == 0
         assert other.execute(text("SELECT csv_mapping FROM bank_accounts")).all() == []
+
+
+def test_left_out_lines_are_returned_and_can_be_imported_anyway(session, bank, admin):
+    service.import_statement(session, bank, "camt.xml", fixture_bytes("camt053_02.xml"))
+    data = generic_csv(
+        [["02-06-2026", "121,00", "KLANT B.V.", "genuine second payment"],
+         ["04-06-2026", "-9,99", "Nieuw", "extra"]],
+        GENERIC_HEADER,
+    )
+    result = service.import_statement(session, bank, "x.csv", data, mapping=MAPPING)
+    assert result.created == 1 and len(result.left_out) == 1
+    line = result.left_out[0]
+    assert (line["amount_cents"], line["booking_date"]) == (12_100, "2026-06-02")
+    before = count(session)
+    assert service.import_left_out_lines(session, bank, result.statement.id, [line]) == 1
+    assert count(session) == before + 1
+    # importing the same line twice does nothing, and the override is audited
+    assert service.import_left_out_lines(session, bank, result.statement.id, [line]) == 0
+    assert session.scalar(select(func.count()).select_from(AuditEvent).where(
+        AuditEvent.action == "bank_transaction.import_despite_duplicate")) == 1
+
+
+def test_left_out_import_rejects_a_foreign_statement_and_bad_data(session, admin, bank, rabo):
+    result = service.import_statement(session, rabo, "camt.xml", camt_for(RABO_IBAN))
+    with pytest.raises(BankingError):
+        service.import_left_out_lines(session, bank, result.statement.id, [])
+    with pytest.raises(BankingError):
+        service.import_left_out_lines(session, rabo, result.statement.id, [{"x": 1}])
+
+
+def test_import_page_lists_skipped_lines_and_owner_imports_selected(client, session, admin):
+    import json
+    import re
+
+    account = service.create_bank_account(session, admin, RABO_IBAN, "Rabo zakelijk")
+    service.import_statement(session, account, "camt.xml", camt_for(RABO_IBAN))
+    session.commit()
+    response = client.post(
+        f"/bank/accounts/{account.id}/import",
+        data={"csrf_token": client.csrf},
+        files={"file": ("mutaties.csv", rabo_standard(), "text/csv")},
+    )
+    assert response.status_code == 200
+    assert "Lines left out" in response.text and "Import selected lines" in response.text
+    from html import unescape
+    raw = [unescape(v) for v in re.findall(r'name="line" value="([^"]+)"', response.text)]
+    assert len(raw) == 2
+    statement_id = int(re.search(r'name="statement_id" value="(\d+)"', response.text).group(1))
+    done = client.post(
+        f"/bank/accounts/{account.id}/import/left-out",
+        data={"csrf_token": client.csrf, "statement_id": str(statement_id), "line": raw[:1]},
+        follow_redirects=False,
+    )
+    assert done.status_code == 303
+    assert json.loads(raw[0])["dedupe_key"] in set(session.scalars(
+        select(BankTransaction.dedupe_key)))

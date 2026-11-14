@@ -3,6 +3,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
+from ledgerline.models import Base, TenantScoped
 from tests.tenancy.conftest import app_connection, scoped_tables
 
 TRIGGER_GUARDED = {"journal_entries", "journal_lines", "audit_events"}
@@ -23,7 +24,10 @@ def test_every_tenant_table_has_enabled_forced_policy(owner_engine):
             "SELECT tablename, policyname, qual, with_check FROM pg_policies "
             "WHERE schemaname = 'public'"))}
     assert set(tables) == with_columns - {"memberships"}
-    assert len(tables) == 19
+    # The expected list comes from the models, not a hard-coded count: a new tenant-scoped model
+    # without a migration (or a migration without a model) fails here.
+    assert set(tables) == {m.__tablename__ for m in Base.__subclasses__()
+                           if issubclass(m, TenantScoped)}
     for table in tables:
         assert flags[table] == (True, True), table
         policy = policies[table]

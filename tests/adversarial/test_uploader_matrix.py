@@ -22,7 +22,7 @@ PUBLIC = {
     "/manifest.webmanifest", "/sw.js", "/api/v1/inbox",
 }
 ACCOUNT_LEVEL = {"/tenants", "/account", "/account/security"}
-CAPTURE = {"/capture"}
+CAPTURE = {"/capture", "/capture/context"}
 ALLOWED = PUBLIC | ACCOUNT_LEVEL | CAPTURE
 
 

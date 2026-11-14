@@ -388,3 +388,18 @@ def test_base_head_links(client):
     assert '<meta name="theme-color" content="#0f3d3e">' in html
     assert 'rel="apple-touch-icon"' in html and "icon-180.png" in html
     assert '<meta name="apple-mobile-web-app-capable" content="yes">' in html
+
+
+def test_uploader_can_use_the_offline_queue(uploader_client, session, admin):
+    context = uploader_client.get("/capture/context")
+    assert context.status_code == 200 and context.json()["csrf"]
+    response = uploader_client.post(
+        "/capture",
+        data={"csrf_token": uploader_client.csrf, "administration_id": str(admin.id)},
+        files=[("files", ("up.pdf", pdf("uploader queued"), "application/pdf"))],
+        headers={"Accept": "application/json"},
+    )
+    assert response.status_code == 200
+    [row] = response.json()["results"]
+    assert "error" not in row and row["duplicate"] is False
+    assert len(docs(session)) == 1
