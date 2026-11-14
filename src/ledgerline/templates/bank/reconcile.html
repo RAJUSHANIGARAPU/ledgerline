@@ -10,7 +10,7 @@
 {% endif %}
 {% endblock %}
 {% block content %}
-<div class="page-grid">
+<div class="stack">
   <div class="row">
     <div class="tabs">
       {% for s in ["unmatched", "matched", "ignored"] %}
@@ -57,7 +57,7 @@
               <tbody>
               {% for s in row.suggestions %}
                 <tr>
-                  <td><input class="checkbox" type="checkbox" name="allocation" value="{{ s.candidate.kind }}:{{ s.candidate.invoice_id }}:{{ s.amount_cents if s.amount_cents <= tx.amount_cents|abs else tx.amount_cents|abs }}"{% if loop.first %} checked{% endif %}></td>
+                  <td><input class="checkbox" type="checkbox" name="allocation" value="{{ s.candidate.kind }}:{{ s.candidate.invoice_id }}:{{ s.amount_cents if s.amount_cents <= tx.amount_cents|abs else tx.amount_cents|abs }}"{% if s.recommended %} checked{% endif %}></td>
                   <td>{{ s.candidate.number }}</td>
                   <td>{{ s.candidate.contact_name }}</td>
                   <td class="num">{{ s.candidate.remaining_cents|eur }}</td>
@@ -67,6 +67,9 @@
               </tbody>
             </table>
           </div>
+          {% if not row.suggestions[0].recommended %}
+          <p class="muted">More than one invoice could fit, or the dates do not agree. Check before matching.</p>
+          {% endif %}
           <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit">Match selected</button></div>
         </form>
         {% else %}
@@ -105,6 +108,15 @@
           <div class="form-actions"><button class="btn btn-primary btn-sm" type="submit">Book against the clearing account</button></div>
         </form>
         {% endfor %}
+        {% if row.booking_hint %}
+        <form method="post" action="/bank/transactions/{{ tx.id }}/book" class="stack">
+          {{ ui.csrf() }}
+          <input type="hidden" name="account_id" value="{{ row.booking_hint.account_id }}">
+          <input type="hidden" name="vat_code" value="{{ row.booking_hint.vat_code or '' }}">
+          <p>Suggested: book to {{ row.booking_hint.label }} ({{ row.booking_hint.reason }}).</p>
+          <div class="form-actions"><button class="btn btn-secondary btn-sm" type="submit">Book as suggested</button></div>
+        </form>
+        {% endif %}
         <details>
           <summary>Book to an account</summary>
           <form method="post" action="/bank/transactions/{{ tx.id }}/book" class="stack">

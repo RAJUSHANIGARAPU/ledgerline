@@ -246,3 +246,21 @@ def test_column_suggestions_use_common_header_words():
     found = csv_import.suggest_mapping(["Datum", "Naam / Omschrijving", "Bedrag", "Mededelingen"])
     assert found == {"date": "Datum", "amount": "Bedrag", "counterparty": "Naam / Omschrijving",
                      "description": ["Mededelingen"]}
+
+
+def test_suggestions_cover_ing_style_headers_with_units_and_direction_column():
+    found = csv_import.suggest_mapping([
+        "Datum", "Naam / Omschrijving", "Rekening", "Tegenrekening", "Code", "Af Bij",
+        "Bedrag (EUR)", "Mutatiesoort", "Mededelingen", "Saldo na mutatie", "Tag",
+    ])
+    assert found == {
+        "date": "Datum", "amount": "Bedrag (EUR)", "direction": "Af Bij",
+        "counterparty": "Naam / Omschrijving", "iban": "Tegenrekening",
+        "description": ["Mededelingen"],
+    }
+
+
+def test_suggestions_pick_split_debit_credit_columns_when_there_is_no_amount():
+    found = csv_import.suggest_mapping(["Date", "Debit", "Credit", "Description"])
+    assert found["debit"] == "Debit" and found["credit"] == "Credit"
+    assert "amount" not in found and "direction" not in found

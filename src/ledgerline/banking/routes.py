@@ -1,6 +1,5 @@
 import base64
 import binascii
-import json
 from datetime import date
 from typing import Annotated
 
@@ -9,7 +8,7 @@ from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import func, select
 
 from ledgerline import audit
-from ledgerline.banking import csv_import, matching, service
+from ledgerline.banking import booking_hints, csv_import, matching, service
 from ledgerline.config import get_settings
 from ledgerline.ledger.service import LedgerError
 from ledgerline.models import (
@@ -126,7 +125,7 @@ def _after_import(request: Request, account: BankAccount, result: service.Import
         return render(
             request, "bank/import_left_out.html",
             {"account": account, "statement": result.statement,
-             "lines": [{**ln, "json": json.dumps(ln)} for ln in result.left_out]},
+             "lines": result.left_out},
         )
     return _redirect(f"/bank/reconcile?account_id={account.id}")
 
@@ -143,14 +142,11 @@ def import_left_out(
 ):
     account = _account_or_404(session, admin, account_id)
     try:
-        chosen = [json.loads(raw) for raw in line or []]
-        if not all(isinstance(c, dict) for c in chosen):
-            raise service.BankingError("invalid line data")
-        created = service.import_left_out_lines(session, account, statement_id, chosen, user.id)
+        created = service.import_left_out_lines(session, account, statement_id, line or [], user.id)
         session.commit()
-    except (json.JSONDecodeError, *ERRORS) as exc:
+    except ERRORS as exc:
         session.rollback()
-        flash(request, str(exc) if isinstance(exc, ERRORS) else "invalid line data", "error")
+        flash(request, str(exc), "error")
         return _redirect()
     flash(request, f"Imported {created} line(s) that looked like duplicates.")
     return _redirect(f"/bank/reconcile?account_id={account.id}")
@@ -322,6 +318,8 @@ def reconcile(
                 "others": [s for s in ranked if s.score == 0],
                 "payout_hints": matching.platform_payout_hints(session, tx)
                 if status == TxStatus.UNMATCHED else [],
+                "booking_hint": booking_hints.booking_hint(session, tx)
+                if status == TxStatus.UNMATCHED else None,
             }
         )
     chart = session.scalars(

@@ -602,6 +602,9 @@ def parse_text(
     elif excl is not None:
         rate = _infer_rate(excl, vat_total) if vat_total is not None else None
         extracted_lines.append(ExtractedLine(description, excl, rate, vat_total))
+    if deposit_used:
+        extracted_lines.append(
+            ExtractedLine("Emballage (deposit)", deposit_used, 0, 0, is_deposit=True))
     if not extracted_lines and (incl or excl):
         warnings.append("No lines could be read from this document; enter them by hand.")
     return ExtractedInvoice(

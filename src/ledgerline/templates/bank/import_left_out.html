@@ -17,7 +17,7 @@
             <tbody>
             {% for l in lines %}
               <tr>
-                <td><input class="checkbox" type="checkbox" name="line" value="{{ l.json }}" aria-label="Import line {{ loop.index }} anyway"></td>
+                <td><input class="checkbox" type="checkbox" name="line" value="{{ l.dedupe_key }}" aria-label="Import line {{ loop.index }} anyway"></td>
                 <td>{{ l.booking_date }}</td>
                 <td>{{ l.counterparty_name or '' }}{% if l.counterparty_iban %} <span class="muted">{{ l.counterparty_iban }}</span>{% endif %}</td>
                 <td>{{ l.description or '' }}</td>

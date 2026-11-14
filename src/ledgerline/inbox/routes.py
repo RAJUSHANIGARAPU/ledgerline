@@ -22,6 +22,7 @@ from ledgerline.inbox import email_intake, forwarding, platform_booking, review,
 from ledgerline.inbox.extract import pipeline
 from ledgerline.invoicing import forms
 from ledgerline.invoicing.calc import InvoiceError
+from ledgerline.invoicing.service import purchase_line_accounts
 from ledgerline.models import (
     WRITE_ROLES,
     Account,
@@ -137,11 +138,7 @@ def inbox_upload(request: Request, session: SessionDep, owner: OwnerDep, admin: 
 
 
 def _accounts(session: Session, admin_id: int) -> list[Account]:
-    return list(session.scalars(
-        select(Account).where(Account.administration_id == admin_id,
-                              Account.type == AccountType.EXPENSE, Account.is_active.is_(True))
-        .order_by(Account.code)
-    ))
+    return purchase_line_accounts(session, admin_id)
 
 
 def _detail_ctx(session: Session, admin, document: InboxDocument, proposal=None, values=None,

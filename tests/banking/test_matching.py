@@ -67,3 +67,51 @@ def test_name_similarity_bounds():
     assert name_similarity("Klant BV", "klant b.v.") > 0.8
     assert name_similarity("Klant BV", "Zzz") < 0.4
     assert name_similarity(None, "x") == 0.0
+
+
+def dated(kind, invoice_id, number, remaining, due, issued, iban="NL02ABNA0123456789"):
+    return Candidate(kind, invoice_id, number, 1, "Energie NV", iban, remaining, due, issued)
+
+
+def test_invoice_dated_after_the_payment_is_demoted_and_not_recommended():
+    from ledgerline.banking.matching import Suggestion, _recommend
+
+    june = dated(PURCHASE, 2, "J-1", 209_400, date(2026, 6, 20), date(2026, 6, 5))
+    ranked = score_candidates(
+        -209_400, "x", "NL02 ABNA 0123 4567 89", "Energie NV", [june], date(2026, 4, 1)
+    )
+    assert ranked[0].before_invoice
+    assert "after this payment" in ranked[0].reason
+    _recommend(ranked)
+    assert not ranked[0].recommended
+    assert isinstance(ranked[0], Suggestion)
+
+
+def test_closer_due_date_wins_between_same_amount_invoices():
+    march = dated(PURCHASE, 1, "M-1", 209_400, date(2026, 4, 1), date(2026, 3, 19))
+    june = dated(PURCHASE, 2, "J-1", 209_400, date(2026, 6, 20), date(2026, 6, 5))
+    ranked = score_candidates(
+        -209_400, "x", "NL02 ABNA 0123 4567 89", "Energie NV", [june, march], date(2026, 4, 1)
+    )
+    assert [s.candidate.invoice_id for s in ranked] == [1, 2]
+    assert "paid around the due date" in ranked[0].reason
+    assert ranked[0].score - ranked[1].score >= 10
+
+
+def test_two_equally_plausible_invoices_are_proposed_not_preselected():
+    from ledgerline.banking.matching import _recommend
+
+    a = dated(PURCHASE, 1, "A-1", 5_000, date(2026, 6, 30), date(2026, 6, 1))
+    b = dated(PURCHASE, 2, "B-1", 5_000, date(2026, 6, 30), date(2026, 6, 1))
+    ranked = score_candidates(-5_000, "x", None, "Energie NV", [a, b], date(2026, 6, 30))
+    _recommend(ranked)
+    assert not any(s.recommended for s in ranked)
+    one = score_candidates(-5_000, "x", None, "Energie NV", [a], date(2026, 6, 30))
+    _recommend(one)
+    assert one[0].recommended
+
+
+def test_without_a_booking_date_the_score_is_unchanged():
+    c = dated(PURCHASE, 1, "A-1", 5_000, date(2026, 6, 30), date(2026, 6, 1))
+    [s] = score_candidates(-5_000, "x", None, "Energie NV", [c])
+    assert s.score == 50 + 15 and not s.before_invoice

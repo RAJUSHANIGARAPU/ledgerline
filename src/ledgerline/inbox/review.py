@@ -153,10 +153,21 @@ def vat_code_for(line: ExtractedLine, reverse_charge: bool, country: str) -> str
     return {21: "I21", 9: "I9", 0: "I0"}.get(rate)
 
 
+DEPOSIT_ACCOUNT = "1350"
+
+
+def _deposit_account(session: Session, admin_id: int, fallback: Account | None) -> Account | None:
+    found = session.scalar(select(Account).where(
+        Account.administration_id == admin_id, Account.code == DEPOSIT_ACCOUNT,
+        Account.is_active.is_(True)))
+    return found or fallback
+
+
 def _rows(extracted: ExtractedInvoice, account: Account | None, country: str,
-          warnings: list[str]) -> list[dict[str, str]]:
+          warnings: list[str], deposit: Account | None = None) -> list[dict[str, str]]:
     rows = []
     for number, line in enumerate(extracted.lines, 1):
+        row_account = (deposit or account) if line.is_deposit else account
         code = vat_code_for(line, extracted.reverse_charge, country)
         if code is None:
             code = ""
@@ -164,7 +175,8 @@ def _rows(extracted: ExtractedInvoice, account: Account | None, country: str,
         reverse = code in ("IRV21", "IEU21")
         stated = None if reverse or code == "I0" else line.vat_cents
         rows.append({
-            "description": line.description, "account": str(account.id) if account else "",
+            "description": line.description,
+            "account": str(row_account.id) if row_account else "",
             "amount": forms.money_text(line.amount_excl_cents), "vat_code": code,
             "vat": forms.money_text(stated) if stated is not None else "",
             "vat_auto": "0" if stated is not None else "1",
@@ -186,7 +198,8 @@ def build_proposal(session: Session, admin: Administration, document: InboxDocum
         extracted, contact, how, extracted.invoice_number or "",
         extracted.invoice_date.isoformat() if extracted.invoice_date else "",
         extracted.due_date.isoformat() if extracted.due_date else "",
-        _rows(extracted, account, country, warnings), warnings,
+        _rows(extracted, account, country, warnings,
+              _deposit_account(session, admin.id, account)), warnings,
     )
     if not proposal.rows:
         proposal.rows = [forms.blank_purchase_row(account.id if account else "")]

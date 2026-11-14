@@ -42,6 +42,9 @@ from ledgerline.money import vat_in_gross
 from ledgerline.vat import codes as vat_codes
 from ledgerline.vat.codes import Direction
 
+# A bank file larger than this is refused; one quarter of even a busy account is far below it.
+MAX_STATEMENT_LINES = 20_000
+
 
 class BankingError(ValueError):
     """A rule was broken; the message is safe to show to the user."""
@@ -217,6 +220,9 @@ def _cross_format_duplicates(
             | BankTransaction.value_date.between(low, high),
         )
     ))
+    by_amount: dict[int, list[int]] = defaultdict(list)
+    for n, stored in enumerate(pool):
+        by_amount[stored[2]].append(n)
     taken: set[int] = set()
     duplicates: set[int] = set()
     for strict in (True, False):
@@ -225,8 +231,9 @@ def _cross_format_duplicates(
                 continue
             tx = parsed.transactions[i]
             mine = {tx.booking_date, tx.value_date} - {None}
-            for n, (booked, valued, amount, iban) in enumerate(pool):
-                if n in taken or amount != tx.amount_cents or not mine & {booked, valued}:
+            for n in by_amount.get(tx.amount_cents, ()):
+                booked, valued, _amount, iban = pool[n]
+                if n in taken or not mine & {booked, valued}:
                     continue
                 if strict and not (iban and iban == tx.counterparty_iban):
                     continue
@@ -259,6 +266,11 @@ def import_statement(
     ):
         raise BankingError("this file has already been imported")
     parsed, used_mapping = _parse(bank_account, content, mapping)
+    if len(parsed.transactions) > MAX_STATEMENT_LINES:
+        raise BankingError(
+            f"the file has {len(parsed.transactions)} lines; the limit is "
+            f"{MAX_STATEMENT_LINES}. Split it by period and import the parts one by one."
+        )
 
     statement = BankStatement(
         bank_account_id=bank_account.id,
@@ -335,47 +347,55 @@ def import_statement(
                  "skipped": skipped, "cross_format_duplicates": len(cross)},
     )
     left_out = [_left_out_line(parsed.transactions[i], keys[i]) for i in sorted(cross)]
+    statement.left_out = left_out or None
+    session.flush()
     return ImportResult(statement, created, skipped, warnings, len(cross), left_out)
+
+
+def _clip(value: str | None, size: int) -> str | None:
+    return value[:size] if value else None
 
 
 def _left_out_line(tx: ParsedTx, key: str) -> dict:
     return {
         "booking_date": tx.booking_date.isoformat(),
         "value_date": tx.value_date.isoformat() if tx.value_date else None,
-        "amount_cents": tx.amount_cents, "counterparty_name": tx.counterparty_name,
-        "counterparty_iban": tx.counterparty_iban, "description": tx.description,
-        "end_to_end_id": tx.end_to_end_id, "bank_reference": tx.bank_reference,
-        "dedupe_key": key,
+        "amount_cents": tx.amount_cents, "counterparty_name": _clip(tx.counterparty_name, 200),
+        "counterparty_iban": _clip(tx.counterparty_iban, 34), "description": tx.description,
+        "end_to_end_id": _clip(tx.end_to_end_id, 100),
+        "bank_reference": _clip(tx.bank_reference, 100), "dedupe_key": key,
     }
 
 
 def import_left_out_lines(
-    session: Session, bank_account: BankAccount, statement_id: int, lines: list[dict],
+    session: Session, bank_account: BankAccount, statement_id: int, keys: list[str],
     user_id: int | None = None,
 ) -> int:
     """Import lines the cross-format check left out, because the owner says they are genuine.
 
-    Each line is audited as an override. A line whose key is already stored is ignored.
+    The owner only names lines by key; their content is the one the server read from the file
+    and kept on the statement. Each line is audited as an override. A line whose key is already
+    stored is ignored.
     """
     statement = session.get(BankStatement, statement_id)
     if statement is None or statement.bank_account_id != bank_account.id:
         raise BankingError("unknown statement")
+    kept = {ln["dedupe_key"]: ln for ln in statement.left_out or []}
+    if not keys or len(keys) > len(kept) or any(k not in kept for k in keys):
+        raise BankingError("invalid line data")
     created = 0
-    for line in lines:
-        try:
-            booking = date.fromisoformat(line["booking_date"])
-            value = date.fromisoformat(line["value_date"]) if line.get("value_date") else None
-            amount, key = int(line["amount_cents"]), str(line["dedupe_key"])
-        except (KeyError, TypeError, ValueError) as exc:
-            raise BankingError("invalid line data") from exc
-        if len(key) != 64 or session.scalar(select(BankTransaction.id).where(
+    for key in dict.fromkeys(keys):
+        line = kept[key]
+        if session.scalar(select(BankTransaction.id).where(
                 BankTransaction.bank_account_id == bank_account.id,
                 BankTransaction.dedupe_key == key)):
             continue
-        name = line.get("counterparty_name")
+        booking = date.fromisoformat(line["booking_date"])
+        value = date.fromisoformat(line["value_date"]) if line.get("value_date") else None
         tx = BankTransaction(
             bank_account_id=bank_account.id, statement_id=statement.id, booking_date=booking,
-            value_date=value, amount_cents=amount, counterparty_name=name[:200] if name else None,
+            value_date=value, amount_cents=line["amount_cents"],
+            counterparty_name=line.get("counterparty_name"),
             counterparty_iban=line.get("counterparty_iban"), description=line.get("description"),
             end_to_end_id=line.get("end_to_end_id"), bank_reference=line.get("bank_reference"),
             dedupe_key=key, status=TxStatus.UNMATCHED)
@@ -384,7 +404,8 @@ def import_left_out_lines(
         audit.record(
             session, "bank_transaction.import_despite_duplicate", user_id=user_id,
             administration_id=bank_account.administration_id, entity_type="bank_transaction",
-            entity_id=tx.id, details={"statement_id": statement.id, "amount_cents": amount,
+            entity_id=tx.id, details={"statement_id": statement.id,
+                                      "amount_cents": line["amount_cents"],
                                       "booking_date": booking.isoformat()})
         created += 1
     return created
