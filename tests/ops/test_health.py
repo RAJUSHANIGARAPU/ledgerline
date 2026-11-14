@@ -19,9 +19,13 @@ def marker(path, age_hours=1.0, offsite=1):
 
 
 @pytest.fixture
-def healthy(ops_dir):
+def healthy(ops_dir, monkeypatch):
     beat(ops_dir / "worker.heartbeat", 3)
     marker(ops_dir / "last_backup_ok")
+    # A fixed half-empty disk, so the result does not depend on the machine running the tests.
+    monkeypatch.setattr(
+        health.shutil, "disk_usage", lambda _p: SimpleNamespace(total=1000, used=500, free=500)
+    )
     return ops_dir
 
 
@@ -116,7 +120,10 @@ def test_database_down_is_503_without_leaking_the_error(deep_client, healthy, mo
     assert body["checks"]["worker"]["ok"] is True
 
 
-def test_every_failure_is_reported_at_once(deep_client, ops_dir):
+def test_every_failure_is_reported_at_once(deep_client, ops_dir, monkeypatch):
+    monkeypatch.setattr(
+        health.shutil, "disk_usage", lambda _p: SimpleNamespace(total=1000, used=500, free=500)
+    )
     response, body = get(deep_client)
     assert response.status_code == 503
     failing = {name for name, check in body["checks"].items() if not check["ok"]}

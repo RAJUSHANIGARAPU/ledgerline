@@ -16,7 +16,7 @@
       <tbody>
       {% for inv, shown in rows %}
         <tr>
-          <td><a href="/sales/{{ inv.id }}">{{ inv.number or 'Draft' }}</a>{% if inv.credit_note_of_id %} <span class="pill">credit</span>{% endif %}</td>
+          <td><a href="/sales/{{ inv.id }}">{{ inv.number or 'Draft' }}</a>{% if inv.credit_note_of_id %} <span class="pill">credit</span>{% endif %}{% if inv.is_opening %} <span class="pill">opening</span>{% endif %}</td>
           <td>{{ inv.contact.name }}</td>
           <td>{{ inv.issue_date|nldate }}</td>
           <td>{{ inv.due_date|nldate }}</td>

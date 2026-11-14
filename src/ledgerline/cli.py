@@ -187,6 +187,115 @@ def create_administration(args: argparse.Namespace) -> int:
     return 0
 
 
+def _import_context(session, args):
+    """The administration and acting user for an import, or None after printing why not."""
+    from ledgerline.models import Administration
+
+    admins = list(session.scalars(select(Administration).order_by(Administration.id)))
+    if args.administration is not None:
+        admins = [a for a in admins if a.id == args.administration]
+    if len(admins) != 1:
+        print("error: pass --administration (this tenant has "
+              f"{len(admins)} matching administrations)", file=sys.stderr)
+        return None
+    user = None
+    if args.user:
+        user = session.scalar(select(User).where(func.lower(User.email) == args.user.lower()))
+        if user is None:
+            print(f"error: no user {args.user}", file=sys.stderr)
+            return None
+    return admins[0], user
+
+
+def _print_rows(rows, columns) -> None:
+    for r in rows:
+        notes = r.reason or ""
+        if r.warnings:
+            notes = "; ".join(filter(None, [notes, *r.warnings]))
+        print(f"row {r.row:>4}  {r.action:<6}  {columns(r)}  {notes}".rstrip())
+
+
+def import_contacts(args: argparse.Namespace) -> int:
+    from ledgerline.imports import contacts as contact_import
+    from ledgerline.imports.csvio import CsvError
+
+    content = Path(args.file).read_bytes()
+    with get_sessionmaker()() as lookup:
+        tenant_id = _resolve_tenant(lookup, args.tenant)
+    if tenant_id is None:
+        return 1
+    with tenant_session(tenant_id) as session:
+        context = _import_context(session, args)
+        if context is None:
+            return 1
+        admin, user = context
+        try:
+            plan = contact_import.plan_contacts(session, admin, content)
+        except CsvError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        for warning in plan.warnings:
+            print(f"note: {warning}")
+        _print_rows(plan.rows, lambda r: (r.data.get("name") or "")[:40].ljust(40))
+        print(f"{plan.count('create')} to create, {plan.count('skip')} duplicates skipped, "
+              f"{plan.count('error')} with errors.")
+        if not args.apply:
+            print("Dry run: nothing was saved. Run again with --apply to create the contacts.")
+            return 0
+        created = contact_import.apply_plan(session, admin, plan, user.id if user else None,
+                                            Path(args.file).name)
+        session.commit()
+        print(f"Created {created} contacts.")
+    return 0
+
+
+def import_opening_items(args: argparse.Namespace) -> int:
+    from ledgerline.imports import opening
+    from ledgerline.imports.csvio import CsvError
+
+    content = Path(args.file).read_bytes()
+    with get_sessionmaker()() as lookup:
+        tenant_id = _resolve_tenant(lookup, args.tenant)
+    if tenant_id is None:
+        return 1
+    with tenant_session(tenant_id) as session:
+        context = _import_context(session, args)
+        if context is None:
+            return 1
+        admin, user = context
+        try:
+            start = opening.resolve_start_date(session, admin, args.start_date or "")
+            rows, warnings, _ = opening.plan_csv(session, admin, content, start)
+        except (opening.OpeningError, CsvError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        for warning in warnings:
+            print(f"note: {warning}")
+        _print_rows(rows, lambda r: f"{r.kind or '?':<8} {r.number[:20]:<20} "
+                                    f"{r.contact_name[:28]:<28} open {r.open_cents / 100:>10.2f}")
+        creates = sum(1 for r in rows if r.action == "create")
+        errors = sum(1 for r in rows if r.action == "error")
+        skipped = sum(1 for r in rows if r.action == "skip")
+        print(f"Start date {start}: {creates} to create, {skipped} already imported, "
+              f"{errors} with errors.")
+        if errors:
+            print("error: fix the rows with errors first; nothing was saved.", file=sys.stderr)
+            return 1
+        if not args.apply:
+            print("Dry run: nothing was saved. Run again with --apply to post the items.")
+            return 0
+        try:
+            created = opening.apply_items(session, admin, rows, start, user.id if user else None,
+                                          Path(args.file).name)
+            session.commit()
+        except opening.OpeningError as exc:
+            session.rollback()
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
+        print(f"Posted {created} opening items dated {start}.")
+    return 0
+
+
 ROLE_SETUP = """
 DO $$ BEGIN
     IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ledgerline_app') THEN
@@ -386,6 +495,27 @@ def build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--allow-rls-bypass", action="store_true",
                          help="run even if the database role bypasses row-level security")
         cmd.set_defaults(func=handler)
+
+    imp = sub.add_parser("import-contacts",
+                         help="import customers and suppliers from a CSV file (dry run by default)")
+    imp.add_argument("--file", required=True)
+    imp.add_argument("--tenant", type=int, help="tenant id (optional with a single tenant)")
+    imp.add_argument("--administration", type=int, help="administration id (optional if only one)")
+    imp.add_argument("--user", help="email of the user to record in the audit trail")
+    imp.add_argument("--apply", action="store_true", help="save instead of only previewing")
+    imp.set_defaults(func=import_contacts)
+
+    items = sub.add_parser("import-opening-items",
+                           help="import unpaid invoices open on the start date from a CSV file "
+                                "(dry run by default)")
+    items.add_argument("--file", required=True)
+    items.add_argument("--start-date", help="yyyy-mm-dd; optional once opening figures exist")
+    items.add_argument("--tenant", type=int, help="tenant id (optional with a single tenant)")
+    items.add_argument("--administration", type=int,
+                       help="administration id (optional if only one)")
+    items.add_argument("--user", help="email of the user to record in the audit trail")
+    items.add_argument("--apply", action="store_true", help="save instead of only previewing")
+    items.set_defaults(func=import_opening_items)
 
     work = sub.add_parser("worker", help="read incoming documents and poll the invoice mailbox")
     work.set_defaults(func=worker)

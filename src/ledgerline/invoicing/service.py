@@ -343,6 +343,9 @@ def create_credit_note(
 ) -> SalesInvoice:
     if invoice.administration_id != admin.id:
         raise InvoiceError("invoice belongs to another administration")
+    if invoice.is_opening:
+        raise InvoiceError("an opening item was reported in the previous system; "
+                           "it cannot be credited here")
     if invoice.credit_note_of_id:
         raise InvoiceError("a credit note cannot be credited")
     if invoice.status not in (InvoiceStatus.OPEN, InvoiceStatus.PAID):

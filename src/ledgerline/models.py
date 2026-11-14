@@ -376,6 +376,8 @@ class SalesInvoice(TenantScoped, Base):
     paid_cents: Mapped[int] = mapped_column(BigInteger, default=0)
     credit_note_of_id: Mapped[int | None] = mapped_column(ForeignKey("sales_invoices.id"))
     journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"))
+    # Carried over from the previous system: open on the start date, never reported again.
+    is_opening: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = _now()
     lines: Mapped[list["SalesInvoiceLine"]] = relationship(
@@ -415,6 +417,7 @@ class PurchaseInvoice(TenantScoped, Base):
     paid_cents: Mapped[int] = mapped_column(BigInteger, default=0)
     attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachments.id"))
     journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"))
+    is_opening: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
     created_at: Mapped[datetime] = _now()
     lines: Mapped[list["PurchaseInvoiceLine"]] = relationship(
         back_populates="invoice", order_by="PurchaseInvoiceLine.position", lazy="selectin",

@@ -17,6 +17,7 @@ from ledgerline.models import (
     ContactKind,
     InboxDocument,
     JournalEntry,
+    PurchaseInvoice,
     SalesInvoice,
 )
 
@@ -43,6 +44,7 @@ STEP_TITLES = [
     ("vat", "VAT situation", True),
     ("bank", "Bank account", True),
     ("opening", "Opening balances", False),
+    ("opening-items", "Open invoices", False),
     ("first-invoice", "First customer and invoice", False),
     ("inbox", "Inbox and phone", False),
     ("review", "Accountant review and exports", False),
@@ -75,8 +77,12 @@ def steps(session: Session, admin: Administration) -> list[Step]:
         "bank": _exists(session, select(BankAccount.id).where(
             BankAccount.administration_id == aid)),
         "opening": opening_entry(session, aid) is not None,
+        "opening-items": _exists(session, select(SalesInvoice.id).where(
+            SalesInvoice.administration_id == aid, SalesInvoice.is_opening.is_(True))) or _exists(
+            session, select(PurchaseInvoice.id).where(
+                PurchaseInvoice.administration_id == aid, PurchaseInvoice.is_opening.is_(True))),
         "first-invoice": _exists(session, select(SalesInvoice.id).where(
-            SalesInvoice.administration_id == aid)),
+            SalesInvoice.administration_id == aid, SalesInvoice.is_opening.is_(False))),
         "inbox": _exists(session, select(InboxDocument.id).where(
             InboxDocument.administration_id == aid)) or _exists(
             session, select(ApiToken.id).where(ApiToken.administration_id == aid,
@@ -121,6 +127,11 @@ def post_opening_balances(session: Session, admin: Administration, entry_date: d
         raise OnboardingError(
             f"Opening balances were already posted in {existing.number}. "
             "Reverse that entry first to enter them again.")
+    item_date = session.scalar(select(func.min(JournalEntry.entry_date)).where(
+        JournalEntry.administration_id == admin.id, JournalEntry.source_type == "opening_item"))
+    if item_date is not None and item_date != entry_date:
+        raise OnboardingError(
+            f"Open invoices are already dated {item_date.isoformat()}; use the same start date.")
     banks = {b.id: b for b in session.scalars(
         select(BankAccount).where(BankAccount.administration_id == admin.id))}
     lines: list[LineSpec] = []
@@ -156,3 +167,8 @@ def customer_count(session: Session, admin_id: int) -> int:
     return session.scalar(select(func.count()).select_from(Contact).where(
         Contact.administration_id == admin_id,
         Contact.kind.in_([ContactKind.CUSTOMER, ContactKind.BOTH]))) or 0
+
+
+def contact_count(session: Session, admin_id: int) -> int:
+    return session.scalar(select(func.count()).select_from(Contact).where(
+        Contact.administration_id == admin_id)) or 0
