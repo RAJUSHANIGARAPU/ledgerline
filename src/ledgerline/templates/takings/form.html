@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}{{ 'Correct takings' if row else 'Record takings' }}{% endblock %}
+{% block heading %}{{ 'Correct takings of ' ~ row.takings_date|nldate if row else 'Record daily takings' }}{% endblock %}
+{% block content %}
+{% for message in errors %}<div class="flash flash-error" role="alert">{{ message }}</div>{% endfor %}
+<div class="card"><form method="post" action="{{ '/takings/' ~ row.id ~ '/edit' if row else '/takings/new' }}" class="card-body stack">
+  {{ ui.csrf() }}
+  {% if row %}
+  <p>Saving reverses the recorded day with a reversing journal entry and posts the corrected amounts. The date cannot change.</p>
+  <p><strong>{{ row.takings_date|nldate }}</strong></p>
+  {% else %}
+  {{ ui.field("date", "Date", values.date, "date", true) }}
+  {% endif %}
+  <h2 class="card-title">Sales including VAT, per rate</h2>
+  {{ ui.field("gross_high", "21% rate", values.gross_high, "text", false, "Amount from the Z-report, VAT included.", 'inputmode="decimal"') }}
+  {{ ui.field("gross_low", "9% rate", values.gross_low, "text", false, None, 'inputmode="decimal"') }}
+  {{ ui.field("gross_zero", "0% rate", values.gross_zero, "text", false, None, 'inputmode="decimal"') }}
+  <h2 class="card-title">How it was received</h2>
+  {{ ui.field("cash", "Cash", values.cash, "text", false, None, 'inputmode="decimal"') }}
+  {{ ui.field("card", "Card / pin", values.card, "text", false, "Booked on Card payments to receive until the payout reaches the bank.", 'inputmode="decimal"') }}
+  {{ ui.field("other", "Other (vouchers etc.)", values.other, "text", false, None, 'inputmode="decimal"') }}
+  {{ ui.field("note", "Note", values.note, "text", false, "For example the Z-report number.", 'maxlength="200"') }}
+  <p class="fine-print">The sales per rate must add up to the amounts received.</p>
+  <div class="form-actions">
+    <button class="btn btn-primary" type="submit">{{ 'Reverse and repost' if row else 'Record takings' }}</button>
+    <a class="btn btn-secondary" href="/takings">Cancel</a>
+  </div>
+</form></div>
+{% endblock %}

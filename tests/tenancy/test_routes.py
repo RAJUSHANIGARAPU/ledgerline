@@ -14,6 +14,7 @@ from ledgerline.models import (
     BankAccount,
     BankTransaction,
     Contact,
+    DailyTakings,
     InboxDocument,
     JournalEntry,
     Membership,
@@ -64,6 +65,8 @@ def entity(path: str, param: str):
         return InboxDocument
     if param == "token_id":
         return ApiToken
+    if param == "takings_id":
+        return DailyTakings
     if param == "user_id":
         return "user"
     raise AssertionError(f"path parameter {param} of {path} has no tenant isolation test")
@@ -138,7 +141,8 @@ def test_route_table_is_covered():
     for path, _ in ID_ROUTES:
         assert path not in {n[0] for n in NOT_ENTITIES}
         fill(path, {m: 1 for m in (Account, ApiToken, BankAccount, BankTransaction, Contact,
-                                    InboxDocument, JournalEntry, PurchaseInvoice, SalesInvoice,
+                                    DailyTakings, InboxDocument, JournalEntry, PurchaseInvoice,
+                                    SalesInvoice,
                                     "user")})
 
 
@@ -157,7 +161,8 @@ MANAGER_ONLY = {"/settings/users", "/settings/require-2fa", "/settings/devices",
 @pytest.mark.parametrize("path", [p for p in POST_ROUTES if p not in POSTS_OPEN_TO_EVERYONE])
 def test_accountant_cannot_write(readonly_client, path):
     url = path.format_map({k: 1 for k in ("entry_id", "invoice_id", "account_id", "tx_id",
-                                           "contact_id", "document_id", "token_id", "user_id")})
+                                           "contact_id", "document_id", "token_id", "user_id",
+                                           "takings_id")})
     response = call(readonly_client, "POST", url, path)
     assert response.status_code == 403, (path, response.status_code)
 

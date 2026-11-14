@@ -25,6 +25,7 @@ Opening balances: if you start mid-year, enter the balance of each bank account 
 ## Daily and weekly routine
 
 - Once a week: process the [Inbox](/inbox) (supplier invoices that arrived by email, upload or phone).
+- If you sell over a counter: enter the till's daily takings on [Daily takings](/takings).
 - Download your bank file and import it on the [Bank](/bank) page.
 - Match payments to invoices on the reconcile screen; book everything else to an account.
 - Look at the [dashboard](/): unmatched bank transactions, overdue and draft invoices.
@@ -84,6 +85,19 @@ number already exist, the inbox warns you and offers to link the document to tha
 Or enter it by hand: [New purchase invoice](/purchases/new). Fill in the supplier, the supplier's invoice number, dates and lines, attach the PDF, PNG or JPEG, save the draft, then Book invoice.
 
 Always check the amounts and the VAT code before booking. Reverse-charge codes (for example IEU21 for EU purchases) post both the VAT you owe and the VAT you deduct. Keep the original documents: records must be kept 7 years (10 for real estate). Ledgerline stores the attachment in its database, so it is part of every backup.
+
+## Daily takings (till sales)
+
+For businesses that sell over a counter. Until the till's own data is connected, you enter the figures from its daily report (Z-report) by hand. Open [Daily takings](/takings).
+
+- Record a day: the date, the sales including VAT per rate (21%, 9%, 0%) and how the money came in (cash, card/pin, other such as vouchers). The sales per rate must add up to the amounts received; otherwise the day is refused and the difference is shown.
+- Ledgerline posts one journal entry per day: revenue per rate, the VAT inside the gross amounts (gross x rate / (100 + rate), rounded half-up to the cent per rate per day), and the amounts received. The VAT lands in the VAT return like an invoice at the same rate.
+- Cash goes to Cash. Card payments go to Card payments to receive and other receipts to Vouchers and other receipts to settle. When the card payout reaches your bank, import the statement and on the reconcile screen use "Book to an account" with Card payments to receive; the balance of that account then shows what the acquirer still owes you.
+- Bulk entry: Import CSV. Download the template (one row per day; columns date, gross_21, gross_9, gross_0, cash, card, other, note), fill in a quarter and upload it. The whole file is checked first: every problem is listed with its line number and nothing is posted unless all rows are valid.
+- Each date can be recorded once. To change a day use Correct (reverses the day with a reversing entry and posts the new amounts) or Reverse. A day in a locked period cannot be recorded, corrected or reversed.
+- Negative days (more refunds than sales) are not accepted; book those with a journal entry.
+- Weekly and monthly totals: [Totals](/takings/totals) sums the recorded days per week (Monday to Sunday) or month, per rate and per receipt method, so you can compare them with the till's own period report.
+- The 0% column uses the code for sales at 0% or not taxed in NL. Ledgerline does not decide for you which of your sales are exempt or at 0%; check that with your accountant or the Belastingdienst.
 
 ## Bank
 
