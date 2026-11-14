@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -64,7 +65,8 @@ class Settings(BaseSettings):
     # /healthz/deep thresholds.
     health_worker_max_age_seconds: int = 120
     health_backup_max_age_hours: int = 26
-    health_min_free_disk_percent: int = 10
+    # Free space on the ops volume, in percent of its size (1-99); below it the disk check fails.
+    health_min_free_disk_percent: int = Field(default=10, ge=1, le=99)
     # Fail the deep check when the last backup did not reach the off-site repository.
     health_require_offsite_backup: bool = False
     health_rate_limit_per_minute: int = 30

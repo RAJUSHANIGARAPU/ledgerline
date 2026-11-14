@@ -153,3 +153,27 @@ def test_rate_limiter_window_slides():
 
 def test_plain_healthz_is_unchanged(deep_client):
     assert deep_client.get("/healthz").json() == {"status": "ok"}
+
+
+def settings_with(**env):
+    from ledgerline.config import Settings
+
+    return Settings(_env_file=None, secret_key="test", **env)
+
+
+def test_disk_threshold_defaults_to_ten_percent():
+    assert settings_with().health_min_free_disk_percent == 10
+
+
+def test_disk_threshold_is_read_from_the_environment(monkeypatch):
+    monkeypatch.setenv("LEDGERLINE_HEALTH_MIN_FREE_DISK_PERCENT", "5")
+    assert settings_with().health_min_free_disk_percent == 5
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "100", "250", "ten", "", "7.5"])
+def test_disk_threshold_rejects_nonsense(monkeypatch, value):
+    from pydantic import ValidationError
+
+    monkeypatch.setenv("LEDGERLINE_HEALTH_MIN_FREE_DISK_PERCENT", value)
+    with pytest.raises(ValidationError):
+        settings_with()

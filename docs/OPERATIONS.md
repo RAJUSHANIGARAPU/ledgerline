@@ -25,10 +25,11 @@ cd ~/ledgerline
 deploy/hetzner/update.sh v1.2.0     # a tag; without an argument it fast-forwards the current branch
 ```
 
-The script refuses to run with local changes, takes a backup (the local tier and the off-site copy), remembers the image ids of the running services, checks out the target, runs `docker compose up -d --build` and waits for `/healthz`. If the new version is not healthy within `HEALTH_TIMEOUT` (120 s) it checks out the previous commit, points the image names back at the previous builds and starts them without rebuilding, and exits non-zero.
+The script refuses to run with local changes, takes a backup (the local tier and the off-site copy), remembers the image ids of the running services, checks out the target, runs `docker compose up -d --build` and waits for `/healthz`. If the new version is not healthy within `HEALTH_TIMEOUT` (120 s) it checks out the previous commit, points the image names back at the previous builds (kept under a `:rollback` tag) and starts them without rebuilding, and exits non-zero.
 
 Limits you should know:
-- The migration has already run when the health check fails. The previous code then runs on the newer schema. Keep migrations additive (new columns and tables first, removal in a later release) so the previous version still works against them. If a migration damaged data, restore the pre-update backup instead (see Restore).
+- The pre-update backup is taken before the target is checked out and before any migration runs (`SKIP_BACKUP=1` skips it; do not set it for a real update). It is the only way back across a migration.
+- **Rollback does not work across a migration.** When the new version ran one, the previous code cannot start on the newer schema (the migration tool does not know the newer revision), so the automatic rollback comes up unhealthy and says so. The way back is to restore the pre-update dump (see Restore), then deploy the previous tag. Rollback works only for releases without a migration, or when the new version failed before migrating.
 - The first update after a fresh install has no earlier images to go back to; the script says so.
 
 Manual rollback to a known tag: `git checkout <tag> && docker compose up -d --build`.
@@ -70,17 +71,19 @@ Bookkeeping records must be kept 7 years (docs/COMPLIANCE_NL.md). The repository
 
 ## Restore
 
-From the local tier (same server, mistake in the data): `scripts/restore.sh backups/ledgerline-<time>.dump`.
+From the local tier (same server, mistake in the data): `scripts/restore.sh --project <compose project> backups/ledgerline-<time>.dump` (the project must match the directory you run it from, see `docs/BACKUP_RESTORE.md`).
 
 From the off-site repository onto a new server: bootstrap the server (`deploy/hetzner/`), put the repository settings in `.env`, then
 
 ```sh
 docker compose run --rm --no-deps --entrypoint sh backup -c \
   'restic restore latest --tag ledgerline --host ledgerline --target /backups/restore'
-scripts/restore.sh backups/restore/work/current/ledgerline.dump
+scripts/restore.sh --project <compose project> backups/restore/work/current/ledgerline.dump
 ```
 
 The first command writes the dump and its manifest under `./backups/restore/`; the second restores it as for the local tier. Start the stack (`docker compose up -d`) so the migrations and the app role are set up, and delete `./backups/restore` afterwards.
+
+**Offboarding export directory.** `delete-tenant --export-dir` runs inside a container as uid 10001, so the host directory mounted at `/export` must exist and belong to that uid before the command: `sudo install -d -o 10001 -g 10001 -m 750 offboarding`. Without it the export stops with a `PermissionError` and nothing is deleted. Full command: `docs/pilot/ONBOARDING_RUNBOOK.md`, Offboarding.
 
 **After every restore, re-apply offboarding.** A backup taken before a client left still holds that
 client's tenant. Run `ledgerline delete-tenant` again (in the `migrate` service, see
@@ -94,7 +97,7 @@ scripts/restore-drill.sh                 # latest snapshot
 scripts/restore-drill.sh --snapshot abc123
 ```
 
-On any machine with Docker (a laptop is fine). With the repository settings in the environment or in `.env`, it fetches the snapshot with the restic image, starts a throw-away compose project with random passwords, restores the dump, compares the row count of every table with the manifest, runs the migrations, starts the app and requests `/healthz`. It ends with `RESULT: PASS` or `RESULT: FAIL - <reason>` and removes the project. A local repository (absolute path in `RESTIC_REPOSITORY`) is mounted instead of reached over the network. `--keep` leaves the project running for a manual look; `DRILL_SKIP_APP=1` stops after the row counts.
+On any machine with Docker (a laptop is fine). With the repository settings in the environment or in `.env`, it fetches the snapshot with the restic image, starts a throw-away compose project with random passwords, restores the dump, compares the row count of every table with the manifest, runs the migrations, starts the app and the worker, then prints one PASS/FAIL/SKIP line each for `/healthz`, `/healthz/deep` (the drill writes the backup marker itself), the app role (not superuser, no BYPASSRLS), row-level security (enabled and forced on every table that has a tenant policy, listed from the catalog) and tenant isolation (as the app role, one tenant sees none of another tenant's rows; SKIP when the snapshot holds fewer than two tenants with data). It ends with `RESULT: PASS` or `RESULT: FAIL - <reason>` and removes the project. On a machine whose Docker disk is fuller than production, `DRILL_MIN_FREE_DISK_PERCENT=5` lowers the deep-check disk threshold for the drill only. A local repository (absolute path in `RESTIC_REPOSITORY`) is mounted instead of reached over the network. `--keep` leaves the project running for a manual look; `DRILL_SKIP_APP=1` stops after the row counts.
 
 Counts are compared before the migrations run, so a migration cannot hide a restore problem. Log the date, snapshot and result in your own records each month. A failed drill is an incident: the backups are not usable until it passes.
 
@@ -132,7 +135,7 @@ HTTP 503 with `"status":"fail"` when any check fails; the failing check has `"ok
 | database | `SELECT 1` as the app role fails |
 | worker | the worker heartbeat file in the ops volume is older than 120 s or missing |
 | backup | no successful backup in the last 26 h, or (`LEDGERLINE_HEALTH_REQUIRE_OFFSITE_BACKUP=true`, set by the bootstrap) the last one was not copied off-site |
-| disk | free space of the volume under 10 % |
+| disk | free space of the volume under `LEDGERLINE_HEALTH_MIN_FREE_DISK_PERCENT` (whole number 1-99, default 10; any other value stops the app from starting). It measures the disk under Docker's data root, so on a shared or small disk lower it deliberately rather than ignoring the alert |
 
 The heartbeat and the backup marker are files in a shared Docker volume (`ops`), so no table or migration is involved.
 
