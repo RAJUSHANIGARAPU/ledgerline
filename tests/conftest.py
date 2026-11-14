@@ -198,6 +198,16 @@ def readonly_client(session, admin, owner):
     return _login(accountant.email)
 
 
+@pytest.fixture
+def uploader(session, admin, owner):
+    return _user(session, "uploader@example.com", Role.UPLOADER)
+
+
+@pytest.fixture
+def uploader_client(uploader):
+    return _login(uploader.email)
+
+
 @pytest.fixture(autouse=True)
 def _fresh_token_limits():
     from ledgerline.accounts import ratelimit

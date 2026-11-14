@@ -132,7 +132,13 @@ If email is not set up on the server, invitations are refused with a message and
 
 ## Accountant access
 
-Settings, Users: invite a user with role accountant. That user can read everything and change nothing. The bookkeeper role can write the books but cannot manage users or phone tokens; only the owner can. Send reports as CSV, or the full administration ZIP from [Privacy and data](/settings/privacy) (owner only).
+Settings, Users: invite a user with role accountant. That user can read everything and change nothing. The bookkeeper role can write the books but cannot manage users or phone tokens; only the owner can. Roles are owner, bookkeeper, accountant and uploader. Send reports as CSV, or the full administration ZIP from [Privacy and data](/settings/privacy) (owner only).
+
+## Staff who only upload receipts
+
+Settings, Users: invite a user with role uploader (phone capture only). Kitchen or floor staff can sign in on their phone, open [Capture](/capture), photograph a supplier invoice and send it. The two-factor and password rules are the same as for everyone else. An uploader sees a confirmation and nothing more: no inbox, ledger, reports, contacts, bank data, settings or users, not even the documents they sent. The bookkeeper reviews what arrives in the inbox, and the audit log records which user uploaded each document.
+
+Uploaders cannot create phone tokens for the iOS shortcut; only the owner can, under Settings, Devices. Deactivate an uploader from Settings, Users when they leave: access ends on their next request.
 
 ## Privacy requests
 

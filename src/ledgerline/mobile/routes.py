@@ -14,10 +14,10 @@ from ledgerline.mobile import tokens
 from ledgerline.models import Administration, ApiToken
 from ledgerline.web import (
     AdminDep,
+    CaptureAdminDep,
+    CaptureDep,
     ManagerDep,
-    OwnerDep,
     SessionDep,
-    UserDep,
     csrf_token,
     flash,
     render,
@@ -44,7 +44,7 @@ def service_worker():
 
 
 @router.get("/capture")
-def capture_form(request: Request, user: UserDep, admin: AdminDep):
+def capture_form(request: Request, user: CaptureDep, admin: CaptureAdminDep):
     return render(
         request,
         "mobile/capture.html",
@@ -58,7 +58,7 @@ def capture_form(request: Request, user: UserDep, admin: AdminDep):
 
 
 @router.get("/capture/context", include_in_schema=False)
-def capture_context(request: Request, user: UserDep):
+def capture_context(request: Request, user: CaptureDep):
     """Who is signed in and a CSRF token, for the offline queue (page and service worker)."""
     return JSONResponse(
         {"userId": user.id, "tenantId": request.state.tenant.id, "csrf": csrf_token(request)},
@@ -67,7 +67,9 @@ def capture_context(request: Request, user: UserDep):
 
 
 @router.post("/capture")
-async def capture_submit(request: Request, user: OwnerDep, admin: AdminDep, session: SessionDep):
+async def capture_submit(
+    request: Request, user: CaptureDep, admin: CaptureAdminDep, session: SessionDep
+):
     form = await request.form()
     note = str(form.get("note") or "")
     chosen = [f for f in form.getlist("files") if hasattr(f, "read") and f.filename]

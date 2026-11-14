@@ -32,9 +32,11 @@ class Role(StrEnum):
     OWNER = "owner"
     BOOKKEEPER = "bookkeeper"  # writes the books, no user or device management
     ACCOUNTANT = "accountant"  # read-only
+    UPLOADER = "uploader"  # capture only: uploads documents, sees nothing else
 
 
 WRITE_ROLES = (Role.OWNER, Role.BOOKKEEPER)
+CAPTURE_ROLES = (*WRITE_ROLES, Role.UPLOADER)
 
 
 class AccountType(StrEnum):
@@ -121,8 +123,9 @@ class Membership(Base):
     __tablename__ = "memberships"
     __table_args__ = (
         UniqueConstraint("user_id", "tenant_id", name="uq_memberships_user_tenant"),
-        CheckConstraint("role IN ('owner', 'bookkeeper', 'accountant')",
-                        name="ck_memberships_role"),
+        CheckConstraint(
+            "role IN ('owner', 'bookkeeper', 'accountant', 'uploader')",
+            name="ck_memberships_role"),
         CheckConstraint("status IN ('active', 'pending')", name="ck_memberships_status"),
     )
     id: Mapped[int] = mapped_column(primary_key=True)
