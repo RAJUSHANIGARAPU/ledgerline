@@ -1,3 +1,4 @@
+import json
 from datetime import date
 
 import pytest
@@ -347,10 +348,11 @@ def test_left_out_lines_are_returned_and_can_be_imported_anyway(session, bank, a
     line = result.left_out[0]
     assert (line["amount_cents"], line["booking_date"]) == (12_100, "2026-06-02")
     before = count(session)
-    assert service.import_left_out_lines(session, bank, result.statement.id, [line]) == 1
+    key = line["dedupe_key"]
+    assert service.import_left_out_lines(session, bank, result.statement.id, [key]) == 1
     assert count(session) == before + 1
     # importing the same line twice does nothing, and the override is audited
-    assert service.import_left_out_lines(session, bank, result.statement.id, [line]) == 0
+    assert service.import_left_out_lines(session, bank, result.statement.id, [key]) == 0
     assert session.scalar(select(func.count()).select_from(AuditEvent).where(
         AuditEvent.action == "bank_transaction.import_despite_duplicate")) == 1
 
@@ -360,11 +362,10 @@ def test_left_out_import_rejects_a_foreign_statement_and_bad_data(session, admin
     with pytest.raises(BankingError):
         service.import_left_out_lines(session, bank, result.statement.id, [])
     with pytest.raises(BankingError):
-        service.import_left_out_lines(session, rabo, result.statement.id, [{"x": 1}])
+        service.import_left_out_lines(session, rabo, result.statement.id, ["0" * 64])
 
 
 def test_import_page_lists_skipped_lines_and_owner_imports_selected(client, session, admin):
-    import json
     import re
 
     account = service.create_bank_account(session, admin, RABO_IBAN, "Rabo zakelijk")
@@ -387,5 +388,56 @@ def test_import_page_lists_skipped_lines_and_owner_imports_selected(client, sess
         follow_redirects=False,
     )
     assert done.status_code == 303
-    assert json.loads(raw[0])["dedupe_key"] in set(session.scalars(
-        select(BankTransaction.dedupe_key)))
+    assert raw[0] in set(session.scalars(select(BankTransaction.dedupe_key)))
+
+
+def test_override_cannot_forge_a_line_the_server_did_not_read(session, bank, admin):
+    service.import_statement(session, bank, "camt.xml", fixture_bytes("camt053_02.xml"))
+    data = generic_csv([["02-06-2026", "121,00", "KLANT B.V.", "second payment"]], GENERIC_HEADER)
+    result = service.import_statement(session, bank, "x.csv", data, mapping=MAPPING)
+    before = count(session)
+    forged = {"booking_date": "2026-06-02", "amount_cents": 99_999_999, "dedupe_key": "a" * 64}
+    for bad in ([json.dumps(forged)], ["a" * 64], ["x" * 5000], []):
+        with pytest.raises(BankingError, match="invalid line data"):
+            service.import_left_out_lines(session, bank, result.statement.id, bad)
+    assert count(session) == before
+
+
+def test_left_out_values_are_clipped_to_the_column_sizes(session, bank, admin):
+    from datetime import date as day
+
+    from ledgerline.banking.parsed import ParsedTx
+
+    tx = ParsedTx(booking_date=day(2026, 6, 2), amount_cents=1, counterparty_name="n" * 500,
+                  counterparty_iban="N" * 80, description="d", end_to_end_id="e" * 300,
+                  bank_reference="r" * 300)
+    line = service._left_out_line(tx, "k" * 64)
+    assert len(line["counterparty_name"]) == 200 and len(line["counterparty_iban"]) == 34
+    assert len(line["end_to_end_id"]) == 100 and len(line["bank_reference"]) == 100
+
+
+def test_a_file_over_the_line_cap_is_refused(session, bank, admin, monkeypatch):
+    monkeypatch.setattr(service, "MAX_STATEMENT_LINES", 1)
+    data = generic_csv(
+        [["02-06-2026", "1,00", "A", "a"], ["03-06-2026", "2,00", "B", "b"]], GENERIC_HEADER)
+    with pytest.raises(BankingError, match="limit is 1"):
+        service.import_statement(session, bank, "big.csv", data, mapping=MAPPING)
+    assert count(session) == 0
+
+
+def test_left_out_route_answers_forged_or_oversized_input_without_a_server_error(
+    client, session, admin
+):
+    account = service.create_bank_account(session, admin, RABO_IBAN, "Rabo zakelijk")
+    result = service.import_statement(session, account, "camt.xml", camt_for(RABO_IBAN))
+    session.commit()
+    before = count(session)
+    for bad in (json.dumps({"booking_date": "2026-01-01", "amount_cents": 10**30}), "z" * 9000):
+        done = client.post(
+            f"/bank/accounts/{account.id}/import/left-out",
+            data={"csrf_token": client.csrf, "statement_id": str(result.statement.id),
+                  "line": [bad]},
+            follow_redirects=False,
+        )
+        assert done.status_code == 303
+    assert count(session) == before

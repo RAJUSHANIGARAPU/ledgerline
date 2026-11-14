@@ -254,7 +254,12 @@ class JournalEntry(TenantScoped, Base):
     """Immutable once inserted; corrections are reversing entries."""
 
     __tablename__ = "journal_entries"
-    __table_args__ = (UniqueConstraint("administration_id", "number"),)
+    __table_args__ = (
+        UniqueConstraint("administration_id", "number"),
+        # An entry can be reversed once; the database settles two requests racing to do it.
+        Index("uq_journal_entries_reversal_of", "reversal_of_id", unique=True,
+              postgresql_where=text("reversal_of_id IS NOT NULL")),
+    )
     id: Mapped[int] = mapped_column(primary_key=True)
     administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
     number: Mapped[str] = mapped_column(String(20))
@@ -465,6 +470,8 @@ class BankStatement(TenantScoped, Base):
     opening_balance_cents: Mapped[int | None] = mapped_column(BigInteger)
     closing_balance_cents: Mapped[int | None] = mapped_column(BigInteger)
     imported_at: Mapped[datetime] = _now()
+    # Lines of this file left out as duplicates, kept so the owner can import them by key.
+    left_out: Mapped[list | None] = mapped_column(JSONB)
 
 
 class BankTransaction(TenantScoped, Base):

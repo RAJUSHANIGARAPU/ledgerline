@@ -1,6 +1,5 @@
 import base64
 import binascii
-import json
 from datetime import date
 from typing import Annotated
 
@@ -126,7 +125,7 @@ def _after_import(request: Request, account: BankAccount, result: service.Import
         return render(
             request, "bank/import_left_out.html",
             {"account": account, "statement": result.statement,
-             "lines": [{**ln, "json": json.dumps(ln)} for ln in result.left_out]},
+             "lines": result.left_out},
         )
     return _redirect(f"/bank/reconcile?account_id={account.id}")
 
@@ -143,14 +142,11 @@ def import_left_out(
 ):
     account = _account_or_404(session, admin, account_id)
     try:
-        chosen = [json.loads(raw) for raw in line or []]
-        if not all(isinstance(c, dict) for c in chosen):
-            raise service.BankingError("invalid line data")
-        created = service.import_left_out_lines(session, account, statement_id, chosen, user.id)
+        created = service.import_left_out_lines(session, account, statement_id, line or [], user.id)
         session.commit()
-    except (json.JSONDecodeError, *ERRORS) as exc:
+    except ERRORS as exc:
         session.rollback()
-        flash(request, str(exc) if isinstance(exc, ERRORS) else "invalid line data", "error")
+        flash(request, str(exc), "error")
         return _redirect()
     flash(request, f"Imported {created} line(s) that looked like duplicates.")
     return _redirect(f"/bank/reconcile?account_id={account.id}")
