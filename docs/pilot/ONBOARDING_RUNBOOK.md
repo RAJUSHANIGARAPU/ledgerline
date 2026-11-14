@@ -109,9 +109,11 @@ The aim is to trust the figures before the first filing.
 3. **Revoke access:** deactivate the client's users in Settings, Users (Deactivate), revoke phone tokens under Phone devices, and create a new inbox address so the old one stops working.
 4. **Delete the data** on the server, as the owner role (the `migrate` service has it):
    ```
+   sudo install -d -o 10001 -g 10001 -m 750 offboarding
    docker compose run --rm -v "$PWD/offboarding:/export" migrate \
      ledgerline delete-tenant --tenant <id> --confirm "<exact tenant name>" --export-dir /export
    ```
+   The container runs as uid 10001. If `offboarding/` is missing, Docker creates it owned by root and the export fails with `PermissionError: ... /export/tenant-<id>-administration-<n>.zip`; nothing is deleted in that case, because the export runs first. Create it with the first command, once, before the delete. The ZIPs it writes belong to uid 10001: use `sudo` to copy or remove them.
    The command refuses unless `--confirm` is the tenant's exact name, writes one export ZIP per
    administration first, then deletes every row of that tenant (bookkeeping, attachments, inbox,
    tokens, memberships) and the logins that belonged to no other tenant, and checks that nothing

@@ -160,13 +160,12 @@ def test_unhealthy_update_rolls_back_to_previous_commit_and_images(tmp_path):
     assert result.returncode == 1
     assert "ROLLING BACK" in result.stdout and "rollback healthy" in result.stdout
     assert f"git checkout --quiet {'a' * 40}" in log
-    assert "docker tag sha256:oldimage ledgerline-app" in log
-    assert log.index("docker compose up -d --build") < log.index(
-        "docker tag sha256:oldimage ledgerline-app"
-    )
-    assert log.index("docker tag sha256:oldimage ledgerline-app") < log.index(
-        "docker compose up -d --no-build"
-    )
+    keep = "docker tag sha256:oldimage ledgerline-app:rollback"
+    restore = "docker tag ledgerline-app:rollback ledgerline-app"
+    assert keep in log and restore in log
+    assert log.index(keep) < log.index("docker compose up -d --build")
+    assert log.index("docker compose up -d --build") < log.index(restore)
+    assert log.index(restore) < log.index("docker compose up -d --no-build")
     assert (root / ".update-previous-images").read_text().splitlines() == [
         "ledgerline-app sha256:oldimage"
     ] * 4
@@ -288,3 +287,102 @@ def test_env_template_renders_without_leftover_placeholders(tmp_path):
         assert any(f"{{{{{key}}}}}" in line for line in sed_args), key
         rendered = rendered.replace("{{" + key + "}}", "x")
     assert "{{" not in rendered
+
+
+RESTORE_SH = ROOT / "scripts" / "restore.sh"
+
+
+@pytest.fixture
+def fake_docker(tmp_path):
+    """A `docker` on PATH that reports compose project 'ledgerline' and logs every other call."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "docker.log"
+    shim = bin_dir / "docker"
+    shim.write_text(
+        textwrap.dedent(
+            f"""\
+            #!/bin/sh
+            if [ "$1 $2" = "compose config" ]; then
+              echo "name: ${{FAKE_PROJECT:-ledgerline}}"
+              echo "services: {{}}"
+              exit 0
+            fi
+            echo "$*" >> {log}
+            cat > /dev/null
+            """
+        )
+    )
+    shim.chmod(shim.stat().st_mode | stat.S_IEXEC)
+    dump = tmp_path / "x.dump"
+    dump.write_bytes(b"dump")
+    return bin_dir, log, dump
+
+
+def run_restore(fake_docker, *args, stdin="", **env):
+    bin_dir, _, _ = fake_docker
+    full_env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", **env}
+    return subprocess.run(
+        ["sh", str(RESTORE_SH), *args], input=stdin, capture_output=True, text=True, env=full_env
+    )
+
+
+def docker_calls(fake_docker) -> list[str]:
+    _, log, _ = fake_docker
+    return log.read_text().splitlines() if log.exists() else []
+
+
+def test_restore_refuses_without_a_project(fake_docker):
+    _, _, dump = fake_docker
+    result = run_restore(fake_docker, "--yes", str(dump))
+    assert result.returncode == 1
+    assert "no target project" in result.stderr
+    assert docker_calls(fake_docker) == []
+
+
+def test_restore_refuses_a_project_that_is_not_the_directorys(fake_docker):
+    _, _, dump = fake_docker
+    result = run_restore(fake_docker, "--project", "lldrill", "--yes", str(dump))
+    assert result.returncode == 1
+    assert "'lldrill'" in result.stderr and "'ledgerline'" in result.stderr
+    assert docker_calls(fake_docker) == []
+
+
+def test_restore_refuses_the_environment_project_when_it_does_not_match(fake_docker):
+    _, _, dump = fake_docker
+    result = run_restore(
+        fake_docker,
+        "--yes",
+        str(dump),
+        FAKE_PROJECT="other",
+        LEDGERLINE_RESTORE_PROJECT="ledgerline",
+    )
+    assert result.returncode == 1
+    assert docker_calls(fake_docker) == []
+
+
+def test_restore_aborts_when_the_typed_name_is_wrong(fake_docker):
+    _, _, dump = fake_docker
+    result = run_restore(fake_docker, "--project", "ledgerline", str(dump), stdin="restore\n")
+    assert result.returncode == 1
+    assert "aborted" in result.stdout
+    assert docker_calls(fake_docker) == []
+
+
+def test_restore_runs_against_the_named_project_after_confirmation(fake_docker):
+    _, _, dump = fake_docker
+    result = run_restore(fake_docker, "--project", "ledgerline", str(dump), stdin="ledgerline\n")
+    assert result.returncode == 0, result.stderr
+    assert docker_calls(fake_docker) == [
+        "compose -p ledgerline stop app",
+        "compose -p ledgerline exec -T db pg_restore -U ledgerline -d ledgerline"
+        " --clean --if-exists --no-owner",
+        "compose -p ledgerline start app",
+    ]
+
+
+def test_restore_yes_skips_only_the_confirmation(fake_docker):
+    _, _, dump = fake_docker
+    result = run_restore(fake_docker, "--yes", str(dump), LEDGERLINE_RESTORE_PROJECT="ledgerline")
+    assert result.returncode == 0, result.stderr
+    assert len(docker_calls(fake_docker)) == 3
