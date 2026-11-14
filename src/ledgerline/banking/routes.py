@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse, Response
 from sqlalchemy import func, select
 
 from ledgerline import audit
-from ledgerline.banking import csv_import, matching, service
+from ledgerline.banking import booking_hints, csv_import, matching, service
 from ledgerline.config import get_settings
 from ledgerline.ledger.service import LedgerError
 from ledgerline.models import (
@@ -322,6 +322,8 @@ def reconcile(
                 "others": [s for s in ranked if s.score == 0],
                 "payout_hints": matching.platform_payout_hints(session, tx)
                 if status == TxStatus.UNMATCHED else [],
+                "booking_hint": booking_hints.booking_hint(session, tx)
+                if status == TxStatus.UNMATCHED else None,
             }
         )
     chart = session.scalars(

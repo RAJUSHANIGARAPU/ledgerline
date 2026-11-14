@@ -22,7 +22,15 @@ SCORE_AMOUNT = 50
 SCORE_NUMBER = 40
 SCORE_IBAN = 25
 SCORE_NAME = 15
+SCORE_DATE_NEAR = 10
+SCORE_DATE_CLOSE = 5
+PENALTY_BEFORE_INVOICE = 40
 NAME_THRESHOLD = 0.6
+RECOMMEND_MARGIN = 10
+DATE_NEAR_DAYS = 4
+DATE_CLOSE_DAYS = 14
+# Banks book a few days after the date printed on an invoice, never before it.
+INVOICE_DATE_SLACK_DAYS = 4
 
 
 @dataclass(frozen=True)
@@ -35,6 +43,7 @@ class Candidate:
     contact_iban: str | None
     remaining_cents: int
     due_date: date | None
+    invoice_date: date | None = None
 
 
 @dataclass
@@ -44,6 +53,11 @@ class Suggestion:
     reasons: list[str] = field(default_factory=list)
     exact_amount: bool = False
     number_hit: bool = False
+    # The payment predates the invoice: a same-amount hit is a coincidence until the owner says so.
+    before_invoice: bool = False
+    gap: int = 10**6
+    # Safe to pre-select: nothing else fits as well and the dates are plausible.
+    recommended: bool = False
 
     @property
     def reason(self) -> str:
@@ -79,12 +93,18 @@ def name_similarity(a: str | None, b: str | None) -> float:
     return SequenceMatcher(None, left, right).ratio()
 
 
+def _date_gap(booking_date: date, cand: Candidate) -> int | None:
+    reference = cand.due_date or cand.invoice_date
+    return abs((booking_date - reference).days) if reference else None
+
+
 def score_candidates(
     amount_cents: int,
     description: str | None,
     counterparty_iban: str | None,
     counterparty_name: str | None,
     candidates: list[Candidate],
+    booking_date: date | None = None,
 ) -> list[Suggestion]:
     kind = SALES if amount_cents > 0 else PURCHASE
     paid = abs(amount_cents)
@@ -112,11 +132,27 @@ def score_candidates(
             sug.reasons.append(f"name similar ({round(similarity * 100)}%)")
         if sug.score and not sug.exact_amount and paid < cand.remaining_cents:
             sug.reasons.append("partial payment")
+        if booking_date is not None and sug.score:
+            _score_dates(sug, booking_date)
         suggestions.append(sug)
-    suggestions.sort(
-        key=lambda s: (-s.score, s.candidate.due_date or date.max, s.candidate.invoice_id)
-    )
+    suggestions.sort(key=lambda s: (-s.score, s.gap, s.candidate.invoice_id))
     return suggestions
+
+
+def _score_dates(sug: Suggestion, booking_date: date) -> None:
+    cand = sug.candidate
+    gap = _date_gap(booking_date, cand)
+    sug.gap = gap if gap is not None else 10**6
+    if cand.invoice_date and (cand.invoice_date - booking_date).days > INVOICE_DATE_SLACK_DAYS:
+        sug.before_invoice = True
+        sug.score -= PENALTY_BEFORE_INVOICE
+        sug.reasons.append(f"invoice dated {cand.invoice_date.isoformat()}, after this payment")
+    elif gap is not None and gap <= DATE_NEAR_DAYS:
+        sug.score += SCORE_DATE_NEAR
+        sug.reasons.append("paid around the due date")
+    elif gap is not None and gap <= DATE_CLOSE_DAYS:
+        sug.score += SCORE_DATE_CLOSE
+        sug.reasons.append("paid within two weeks of the due date")
 
 
 def load_candidates(session: Session, administration_id: int) -> list[Candidate]:
@@ -131,6 +167,7 @@ def load_candidates(session: Session, administration_id: int) -> list[Candidate]
             Candidate(
                 SALES, inv.id, inv.number or f"#{inv.id}", inv.contact_id, inv.contact.name,
                 inv.contact.iban, inv.total_incl_cents - inv.paid_cents, inv.due_date,
+                inv.issue_date,
             )
         )
     for inv in session.scalars(
@@ -143,6 +180,7 @@ def load_candidates(session: Session, administration_id: int) -> list[Candidate]
             Candidate(
                 PURCHASE, inv.id, inv.supplier_reference, inv.contact_id, inv.contact.name,
                 inv.contact.iban, inv.total_incl_cents - inv.paid_cents, inv.due_date,
+                inv.invoice_date,
             )
         )
     return result
@@ -159,9 +197,20 @@ def suggest(
         admin_id = session.get(BankAccount, tx.bank_account_id).administration_id
         candidates = load_candidates(session, admin_id)
     ranked = score_candidates(
-        tx.amount_cents, tx.description, tx.counterparty_iban, tx.counterparty_name, candidates
+        tx.amount_cents, tx.description, tx.counterparty_iban, tx.counterparty_name, candidates,
+        tx.booking_date,
     )
+    _recommend(ranked)
     return ranked if include_all else [s for s in ranked if s.score > 0]
+
+
+def _recommend(ranked: list[Suggestion]) -> None:
+    """Pre-select the top suggestion only when it clearly beats the runner-up."""
+    live = [s for s in ranked if s.score > 0]
+    if not live or live[0].before_invoice:
+        return
+    if len(live) == 1 or live[0].score - live[1].score >= RECOMMEND_MARGIN:
+        live[0].recommended = True
 
 
 PAYOUT_WINDOW_DAYS = 21
