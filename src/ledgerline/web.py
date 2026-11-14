@@ -11,7 +11,15 @@ from sqlalchemy.orm import Session
 from ledgerline.accounts import totp
 from ledgerline.config import get_settings
 from ledgerline.db import get_session, set_tenant
-from ledgerline.models import WRITE_ROLES, Administration, Membership, Role, Tenant, User
+from ledgerline.models import (
+    CAPTURE_ROLES,
+    WRITE_ROLES,
+    Administration,
+    Membership,
+    Role,
+    Tenant,
+    User,
+)
 from ledgerline.money import format_eur
 
 TEMPLATE_DIR = Path(__file__).parent / "templates"
@@ -70,9 +78,14 @@ def login_user(request: Request, session: SessionDep) -> User:
 LoginDep = Annotated[User, Depends(login_user)]
 
 
-def current_user(request: Request, session: SessionDep, user: LoginDep) -> User:
-    """The user acting for the selected tenant. The membership is re-checked on every request
-    and is the only source of the role; the database context is set from it, not from the cookie."""
+class CaptureOnly(Exception):
+    """A capture-only user asked for a page outside the capture flow."""
+
+
+def member_user(request: Request, session: SessionDep, user: LoginDep) -> User:
+    """The user acting for the selected tenant, whatever the role. The membership is re-checked
+    on every request and is the only source of the role; the database context is set from it,
+    not from the cookie. Routes use UserDep or CaptureDep, not this."""
     tenant_id = request.session.get("tenant_id")
     membership = session.scalar(
         select(Membership).where(
@@ -96,7 +109,29 @@ def current_user(request: Request, session: SessionDep, user: LoginDep) -> User:
     return user
 
 
+MemberDep = Annotated[User, Depends(member_user)]
+
+
+def current_user(request: Request, user: MemberDep) -> User:
+    """Every role except uploader. An uploader may only reach what depends on CaptureDep."""
+    if user.role == Role.UPLOADER:
+        if request.method == "GET" and not request.headers.get("hx-request"):
+            raise CaptureOnly
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "capture-only account")
+    return user
+
+
 UserDep = Annotated[User, Depends(current_user)]
+
+
+def require_capturer(user: MemberDep, _: None = Depends(verify_csrf)) -> User:
+    """Phone capture: the write roles and uploader. Accountants read, they do not upload."""
+    if user.role not in CAPTURE_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "read-only account")
+    return user
+
+
+CaptureDep = Annotated[User, Depends(require_capturer)]
 
 
 def require_writer(user: UserDep, _: None = Depends(verify_csrf)) -> User:
@@ -119,7 +154,7 @@ def require_manager(user: UserDep, _: None = Depends(verify_csrf)) -> User:
 ManagerDep = Annotated[User, Depends(require_manager)]
 
 
-def current_administration(request: Request, session: SessionDep, user: UserDep) -> Administration:
+def _resolve_administration(request: Request, session: Session) -> Administration:
     admin_id = request.session.get("administration_id")
     admin = session.get(Administration, admin_id) if admin_id else None
     if admin is None:
@@ -130,7 +165,18 @@ def current_administration(request: Request, session: SessionDep, user: UserDep)
     return admin
 
 
+def current_administration(request: Request, session: SessionDep, user: UserDep) -> Administration:
+    return _resolve_administration(request, session)
+
+
+def capture_administration(
+    request: Request, session: SessionDep, user: CaptureDep
+) -> Administration:
+    return _resolve_administration(request, session)
+
+
 AdminDep = Annotated[Administration, Depends(current_administration)]
+CaptureAdminDep = Annotated[Administration, Depends(capture_administration)]
 
 
 def flash(request: Request, message: str, kind: str = "success") -> None:
@@ -146,7 +192,9 @@ def render(request: Request, template: str, context: dict | None = None, status_
     ctx.setdefault("source_url", get_settings().source_url)
     ctx.setdefault("flashes", request.session.pop("flash", []))
     ctx.setdefault("current_tenant", getattr(request.state, "tenant", None))
-    ctx.setdefault("can_write", getattr(request.state, "role", None) in WRITE_ROLES)
+    role = getattr(request.state, "role", None)
+    ctx.setdefault("can_write", role in WRITE_ROLES)
+    ctx.setdefault("is_uploader", role == Role.UPLOADER)
     ctx.setdefault("can_switch_tenant", getattr(request.state, "tenant_count", 0) > 1)
     ctx.setdefault("active_nav", template.split("/")[0])
     return templates.TemplateResponse(request, template, ctx, status_code=status_code)

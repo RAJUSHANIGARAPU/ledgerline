@@ -12,7 +12,15 @@ from ledgerline.db import get_sessionmaker
 from ledgerline.inbox import service as inbox
 from ledgerline.mobile import tokens
 from ledgerline.models import ApiToken
-from ledgerline.web import AdminDep, ManagerDep, OwnerDep, SessionDep, UserDep, flash, render
+from ledgerline.web import (
+    AdminDep,
+    CaptureAdminDep,
+    CaptureDep,
+    ManagerDep,
+    SessionDep,
+    flash,
+    render,
+)
 
 router = APIRouter()
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -34,7 +42,7 @@ def service_worker():
 
 
 @router.get("/capture")
-def capture_form(request: Request, user: UserDep, admin: AdminDep):
+def capture_form(request: Request, user: CaptureDep, admin: CaptureAdminDep):
     return render(
         request,
         "mobile/capture.html",
@@ -46,7 +54,9 @@ def capture_form(request: Request, user: UserDep, admin: AdminDep):
 
 
 @router.post("/capture")
-async def capture_submit(request: Request, user: OwnerDep, admin: AdminDep, session: SessionDep):
+async def capture_submit(
+    request: Request, user: CaptureDep, admin: CaptureAdminDep, session: SessionDep
+):
     form = await request.form()
     note = str(form.get("note") or "")
     chosen = [f for f in form.getlist("files") if hasattr(f, "read") and f.filename]

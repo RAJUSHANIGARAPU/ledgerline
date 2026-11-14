@@ -90,7 +90,7 @@
     <h3 class="section-title">Invite a user</h3>
     <div class="form-grid">
       {{ ui.field('email', 'Email', '', 'email', True) }}
-      <label class="field"><span class="field-label">Role</span><select class="input" name="role"><option value="accountant">Accountant (read-only)</option><option value="bookkeeper">Bookkeeper (writes, no user management)</option><option value="owner">Owner</option></select></label>
+      <label class="field"><span class="field-label">Role</span><select class="input" name="role"><option value="accountant">Accountant (read-only)</option><option value="bookkeeper">Bookkeeper (writes, no user management)</option><option value="uploader">Uploader (phone capture only)</option><option value="owner">Owner</option></select></label>
     </div>
     <p class="field-hint">They get an email with a link to choose a password, or, if they already have a login, a note to accept the invitation under Account.</p>
     <div class="form-actions"><button class="btn btn-primary" type="submit">Send invitation</button></div>

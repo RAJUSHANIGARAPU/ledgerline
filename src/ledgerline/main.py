@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from ledgerline.config import get_settings
-from ledgerline.web import LoginRequired, TenantRequired, TwoFactorRequired
+from ledgerline.web import CaptureOnly, LoginRequired, TenantRequired, TwoFactorRequired
 
 # Each module exposes `router`. Order sets nothing but readability.
 MODULES = [
@@ -61,6 +61,10 @@ def create_app() -> FastAPI:
         if request.headers.get("hx-request"):
             return RedirectResponse("/login", 303, headers={"HX-Redirect": "/login"})
         return RedirectResponse("/login", 303)
+
+    @app.exception_handler(CaptureOnly)
+    async def to_capture(request: Request, _exc: CaptureOnly):
+        return RedirectResponse("/capture", 303)
 
     @app.exception_handler(TenantRequired)
     async def to_tenants(request: Request, _exc: TenantRequired):
