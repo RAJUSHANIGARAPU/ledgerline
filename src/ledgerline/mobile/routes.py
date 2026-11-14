@@ -17,6 +17,7 @@ from ledgerline.web import (
     CaptureAdminDep,
     CaptureDep,
     ManagerDep,
+    MemberDep,
     SessionDep,
     csrf_token,
     flash,
@@ -58,7 +59,7 @@ def capture_form(request: Request, user: CaptureDep, admin: CaptureAdminDep):
 
 
 @router.get("/capture/context", include_in_schema=False)
-def capture_context(request: Request, user: CaptureDep):
+def capture_context(request: Request, user: MemberDep):
     """Who is signed in and a CSRF token, for the offline queue (page and service worker)."""
     return JSONResponse(
         {"userId": user.id, "tenantId": request.state.tenant.id, "csrf": csrf_token(request)},
