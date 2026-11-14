@@ -258,6 +258,12 @@ def create_purchase(
     invoice_date = forms.parse_date(data.invoice_date, "invoice date")
     due_date = forms.parse_optional_date(data.due_date, "due date")
     lines = forms.purchase_inputs(data.rows)
+    stated = (document.extraction or {}).get("total_incl_cents") or (
+        document.extraction or {}).get("total_excl_cents")
+    if stated and not any(line.amount_excl_cents for line in lines):
+        raise InvoiceError(
+            f"the document shows a total of {forms.money_text(stated)} but no line has an "
+            "amount; enter the lines before creating the invoice")
     unset = [str(n) for n, row in enumerate(data.rows, 1)
              if not row["vat_code"] and any(row[k].strip() for k in ("description", "amount"))]
     if unset:

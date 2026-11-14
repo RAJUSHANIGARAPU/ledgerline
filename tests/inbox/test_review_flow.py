@@ -570,3 +570,50 @@ def test_non_invoices_have_their_own_tab_and_can_be_rejected_in_one_click(client
     session.expire_all()
     assert session.get(InboxDocument, statement.id).status == InboxStatus.REJECTED
     assert session.get(InboxDocument, invoice_doc.id).status == InboxStatus.REVIEW
+
+
+def zero_line_document(client, session, supplier):
+    doc = upload_ubl(client, session)
+    doc.extraction = ExtractedInvoice(
+        supplier_name="Bakker Software B.V.", invoice_number="INV-2026-17",
+        total_excl_cents=10000, total_vat_cents=2100, total_incl_cents=12100,
+        warnings=["No lines could be read from this document; enter them by hand."],
+    ).to_json()
+    session.commit()
+    return doc
+
+
+def test_a_document_with_a_total_but_no_lines_cannot_be_created_empty(
+        client, session, admin, supplier):
+    doc = zero_line_document(client, session, supplier)
+    page = client.get(f"/inbox/{doc.id}").text
+    assert "No lines could be read" in page
+    r = client.post(
+        f"/inbox/{doc.id}/create",
+        data=create_data(client, doc, supplier.id, session, admin, line_description=[""],
+                         line_account=[str(account(session, admin, "4300").id)],
+                         line_amount=[""], line_vat_code=[""], line_vat=[""]),
+        follow_redirects=False)
+    assert r.status_code == 422 and "no line has an amount" in r.text
+    assert session.scalars(select(PurchaseInvoice)).all() == []
+
+
+def test_zero_amount_lines_do_not_satisfy_a_nonzero_total(client, session, admin, supplier):
+    doc = zero_line_document(client, session, supplier)
+    r = client.post(
+        f"/inbox/{doc.id}/create",
+        data=create_data(client, doc, supplier.id, session, admin, line_description=["Item"],
+                         line_account=[str(account(session, admin, "4300").id)],
+                         line_amount=["0.00"], line_vat_code=["I21"], line_vat=[""]))
+    assert r.status_code == 422 and "no line has an amount" in r.text
+
+
+def test_a_hand_entered_line_unblocks_the_same_document(client, session, admin, supplier):
+    doc = zero_line_document(client, session, supplier)
+    r = client.post(
+        f"/inbox/{doc.id}/create",
+        data=create_data(client, doc, supplier.id, session, admin, line_description=["Goods"],
+                         line_account=[str(account(session, admin, "4300").id)],
+                         line_amount=["100.00"], line_vat_code=["I21"], line_vat=["21.00"]),
+        follow_redirects=False)
+    assert r.status_code == 303
