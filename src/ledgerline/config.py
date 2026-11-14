@@ -36,8 +36,8 @@ class Settings(BaseSettings):
     # Only accept mail from these senders (comma-separated addresses or @domains); empty = any.
     imap_allowed_senders: str = ""
 
-    # Document extraction from photos and scans: "none" or "anthropic" (opt-in, sends documents
-    # to the API provider). The API key is read from ANTHROPIC_API_KEY by the SDK.
+    # Document extraction from photos and scans: "none", "anthropic" or "openrouter" (opt-in,
+    # sends documents to the API provider). Keys: ANTHROPIC_API_KEY or OPENROUTER_API_KEY.
     extraction_provider: str = "none"
     extraction_model: str = "claude-opus-5-5"
     extraction_monthly_limit: int = 200

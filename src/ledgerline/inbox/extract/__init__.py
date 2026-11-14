@@ -15,6 +15,16 @@ class ExtractedLine:
     amount_excl_cents: int
     vat_rate_percent: int | None = None  # 21, 9, 0 or None when unknown
     vat_cents: int | None = None
+    is_deposit: bool = False  # statiegeld / emballage / borg
+
+
+@dataclass
+class VatSummary:
+    """One row of the VAT summary printed at the foot of most wholesale invoices."""
+
+    rate_percent: int
+    base_cents: int
+    vat_cents: int | None = None
 
 
 @dataclass
@@ -33,7 +43,12 @@ class ExtractedInvoice:
     reverse_charge: bool = False
     # invoice | statement | reminder | contract | own_sales; only "invoice" is a purchase
     document_type: str = "invoice"
+    credit_note: bool = False
+    paid_at_delivery: bool = False  # printed as paid: pin, cash, "reeds voldaan"
     lines: list[ExtractedLine] = field(default_factory=list)
+    vat_summary: list[VatSummary] = field(default_factory=list)
+    # Identifier fields that failed a check; they are shown but never used for matching.
+    flagged_fields: list[str] = field(default_factory=list)
     # Problems the reviewer should look at, e.g. "totals do not add up".
     warnings: list[str] = field(default_factory=list)
     # Set when the document is a delivery-platform payout statement, not a supplier invoice.
@@ -53,6 +68,7 @@ class ExtractedInvoice:
             if data.get(key):
                 data[key] = date.fromisoformat(data[key])
         data["lines"] = [ExtractedLine(**line) for line in data.get("lines", [])]
+        data["vat_summary"] = [VatSummary(**row) for row in data.get("vat_summary", [])]
         return cls(**data)
 
 

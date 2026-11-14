@@ -18,7 +18,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ledgerline.config import get_settings
-from ledgerline.inbox.extract import ExtractedInvoice, ExtractedLine, ExtractionError
+from ledgerline.inbox.extract import (
+    ExtractedInvoice,
+    ExtractedLine,
+    ExtractionError,
+    VatSummary,
+    checks,
+)
 from ledgerline.models import InboxDocument
 from ledgerline.money import MoneyError, format_eur, percent_of, to_cents
 
@@ -34,7 +40,6 @@ MAX_IMAGE_SIDE = 2000
 MAX_IMAGE_PIXELS = 60_000_000
 MAX_PDF_BYTES = 24 * 1024 * 1024
 SCAN_WARNING = "Read from a photo or scan — check every figure before booking"
-EARLIEST_DATE = date(2000, 1, 1)
 _AMOUNT = re.compile(r"^-?\d+(\.\d{1,2})?$")
 
 TRANSIENT_MESSAGE = "temporarily unavailable, will retry"
@@ -65,6 +70,21 @@ SCHEMA: dict = {
         "total_vat": _nullable("string"),
         "total_incl": _nullable("string"),
         "reverse_charge": {"type": "boolean"},
+        "credit_note": {"type": "boolean"},
+        "paid_at_delivery": {"type": "boolean"},
+        "vat_summary": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "vat_rate_percent": {"type": "integer"},
+                    "base_excl": {"type": "string"},
+                    "vat_amount": _nullable("string"),
+                },
+                "required": ["vat_rate_percent", "base_excl", "vat_amount"],
+            },
+        },
         "lines": {
             "type": "array",
             "items": {
@@ -75,8 +95,15 @@ SCHEMA: dict = {
                     "amount_excl": _nullable("string"),
                     "vat_rate_percent": _nullable("integer"),
                     "vat_amount": _nullable("string"),
+                    "is_deposit": {"type": "boolean"},
                 },
-                "required": ["description", "amount_excl", "vat_rate_percent", "vat_amount"],
+                "required": [
+                    "description",
+                    "amount_excl",
+                    "vat_rate_percent",
+                    "vat_amount",
+                    "is_deposit",
+                ],
             },
         },
     },
@@ -93,6 +120,9 @@ SCHEMA: dict = {
         "total_vat",
         "total_incl",
         "reverse_charge",
+        "credit_note",
+        "paid_at_delivery",
+        "vat_summary",
         "lines",
     ],
 }
@@ -110,8 +140,15 @@ SYSTEM_PROMPT = (
     "No currency symbol, no thousands separator. Credit notes use negative amounts.\n"
     "- Dates are ISO format YYYY-MM-DD.\n"
     "- Give the VAT rate as a whole number per line (21, 9 or 0) when printed, and the VAT "
-    "amount per line when printed; if VAT is shown only per rate, put the rate on the lines "
-    "it applies to and leave the line amount null.\n"
+    "amount per line when printed. Only list a line when it has a printed amount.\n"
+    "- Copy the VAT summary (the totals per VAT rate, usually at the foot) into vat_summary: "
+    "rate, net base and VAT amount per rate as printed. Empty list if none is printed.\n"
+    "- Set is_deposit to true on lines for statiegeld, emballage or borg (deposits and "
+    "returned deposits); otherwise false.\n"
+    "- Set credit_note to true for a credit note (\"creditnota\", \"credit invoice\"); its "
+    "amounts are negative.\n"
+    "- Set paid_at_delivery to true only when the document says it was already paid (pin, "
+    "cash, \"contant betaald\", \"reeds voldaan\", \"betaald\").\n"
     "- Set reverse_charge to true only when the document says the VAT is reverse charged "
     '("btw verlegd", "reverse charge", "VAT reverse charge").\n'
     "- Supplier VAT number, KvK number and IBAN exactly as printed, without spaces added."
@@ -204,6 +241,8 @@ def parse_result(data: dict, today: date | None = None) -> ExtractedInvoice:
         total_vat_cents=_amount(data.get("total_vat"), "total VAT", warnings),
         total_incl_cents=_amount(data.get("total_incl"), "total incl. VAT", warnings),
         reverse_charge=bool(data.get("reverse_charge")),
+        credit_note=bool(data.get("credit_note")),
+        paid_at_delivery=bool(data.get("paid_at_delivery")),
     )
     for index, raw in enumerate(data.get("lines") or [], start=1):
         amount = _amount(raw.get("amount_excl"), f"amount of line {index}", warnings)
@@ -217,23 +256,42 @@ def parse_result(data: dict, today: date | None = None) -> ExtractedInvoice:
                 amount_excl_cents=amount,
                 vat_rate_percent=int(rate) if rate is not None else None,
                 vat_cents=_amount(raw.get("vat_amount"), f"VAT of line {index}", warnings),
+                is_deposit=bool(raw.get("is_deposit")),
             )
         )
+    _read_summary(invoice, data.get("vat_summary") or [], warnings)
     invoice.warnings = warnings + validate(invoice, today)
     return invoice
 
 
+def _read_summary(invoice: ExtractedInvoice, rows: list, warnings: list[str]) -> None:
+    for index, raw in enumerate(rows, start=1):
+        base = _amount(raw.get("base_excl"), f"VAT summary base {index}", warnings)
+        rate = raw.get("vat_rate_percent")
+        if base is None or rate is None:
+            continue
+        vat = _amount(raw.get("vat_amount"), f"VAT summary amount {index}", warnings)
+        invoice.vat_summary.append(VatSummary(int(rate), base, vat))
+    if invoice.lines or not invoice.vat_summary:
+        return
+    for row in invoice.vat_summary:
+        invoice.lines.append(
+            ExtractedLine(
+                description=f"Invoice total at {row.rate_percent}% VAT",
+                amount_excl_cents=row.base_cents,
+                vat_rate_percent=row.rate_percent,
+                vat_cents=row.vat_cents,
+            )
+        )
+    warnings.append("No lines were printed; one line per VAT rate was created from the summary")
+
+
 def validate(invoice: ExtractedInvoice, today: date) -> list[str]:
-    found: list[str] = []
+    found: list[str] = checks.check_identifiers(invoice)
     if invoice.currency != "EUR":
         found.append(f"Currency is {invoice.currency}, not EUR; amounts are not converted")
-    for label, value in (("Invoice date", invoice.invoice_date), ("Due date", invoice.due_date)):
-        if value is None:
-            continue
-        if value < EARLIEST_DATE:
-            found.append(f"{label} {value.isoformat()} is before 2000")
-        elif label == "Invoice date" and value > today:
-            found.append(f"Invoice date {value.isoformat()} is in the future")
+    found.extend(checks.check_dates(invoice, today))
+    found.extend(checks.check_kind(invoice))
     excl, vat, incl = invoice.total_excl_cents, invoice.total_vat_cents, invoice.total_incl_cents
     if None not in (excl, vat, incl) and abs(excl + vat - incl) > 1:
         found.append(
@@ -252,6 +310,7 @@ def validate(invoice: ExtractedInvoice, today: date) -> list[str]:
             found.append("Marked as reverse charge but a VAT amount is printed")
         return found
     found.extend(_vat_per_rate(invoice))
+    found.extend(checks.check_vat_summary(invoice))
     return found
 
 
@@ -312,14 +371,19 @@ class AnthropicExtractor:
             "source": {"type": "base64", "media_type": content_type, "data": _b64(content)},
         }
 
+    def _fallback_args(self) -> dict:
+        """Server-side refusal fallback is not offered for Haiku models."""
+        if "haiku" in self.model:
+            return {"betas": []}
+        return {"betas": BETAS, "fallbacks": "default"}
+
     def extract(self, content_type: str, content: bytes) -> ExtractedInvoice:
         file_block = self._file_block(content_type, content)
         try:
             response = self.client.beta.messages.create(
                 model=self.model,
                 max_tokens=MAX_TOKENS,
-                betas=BETAS,
-                fallbacks="default",
+                **self._fallback_args(),
                 output_config={
                     "effort": "low",
                     "format": {"type": "json_schema", "schema": SCHEMA},
