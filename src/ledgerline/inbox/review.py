@@ -41,6 +41,7 @@ METHODS = {
     "vision": ("Read from photo — check every figure", "bad"),
     "none": ("Could not be read — enter it by hand", "bad"),
 }
+IDENTIFIERS = ("supplier_vat_number", "supplier_kvk", "supplier_iban")
 _LEGAL_SUFFIX = re.compile(r"(bv|nv|vof|cv|bvba|gmbh|ltd|inc)$")
 
 
@@ -80,12 +81,20 @@ def match_supplier(
     session: Session, admin_id: int, extracted: ExtractedInvoice
 ) -> tuple[Contact | None, str | None]:
     suppliers = _suppliers(session, admin_id)
-    vat = normalise_vat(extracted.supplier_vat_number or "")
+    usable = {
+        f: getattr(extracted, f) or "" for f in IDENTIFIERS if f not in extracted.flagged_fields
+    }
+    vat = normalise_vat(usable.get("supplier_vat_number", ""))
     if vat:
         for contact in suppliers:
             if contact.vat_number and normalise_vat(contact.vat_number) == vat:
                 return contact, "VAT number"
-    iban = (extracted.supplier_iban or "").replace(" ", "").upper()
+    kvk = re.sub(r"\s", "", usable.get("supplier_kvk", ""))
+    if kvk:
+        for contact in suppliers:
+            if contact.kvk_number and re.sub(r"\s", "", contact.kvk_number) == kvk:
+                return contact, "KvK number"
+    iban = usable.get("supplier_iban", "").replace(" ", "").upper()
     if iban:
         for contact in suppliers:
             if contact.iban and contact.iban.replace(" ", "").upper() == iban:

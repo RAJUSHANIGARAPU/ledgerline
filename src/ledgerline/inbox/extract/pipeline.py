@@ -15,10 +15,14 @@ SIBLING_NOTE = "Same invoice as the PDF from this email; its data was read from 
 
 
 def _vision_extractor(session: Session, administration_id: int) -> Extractor | None:
-    if get_settings().extraction_provider != "anthropic":
-        return None
+    provider = get_settings().extraction_provider
     try:
-        from ledgerline.inbox.extract.vision import get_extractor
+        if provider == "anthropic":
+            from ledgerline.inbox.extract.vision import get_extractor
+        elif provider == "openrouter":
+            from ledgerline.inbox.extract.openrouter import get_extractor
+        else:
+            return None
     except ImportError:
         log.warning("vision extraction is enabled but not available")
         return None
