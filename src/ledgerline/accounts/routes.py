@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, func, select
 
 from ledgerline import audit, mail
-from ledgerline.accounts import events, passwords, ratelimit, tokens, totp
+from ledgerline.accounts import events, invitations, passwords, ratelimit, tokens, totp
 from ledgerline.auth import complete_login, hasher
 from ledgerline.config import get_settings
 from ledgerline.db import set_tenant
@@ -27,7 +27,9 @@ router = APIRouter()
 
 PASSWORD_STEP_SECONDS = 300
 TOTP_ATTEMPTS_PER_LOGIN = 5
-INVITE_NOTICE = "If {address} can be invited, an email with the next steps is on its way."
+INVITE_NOTICE = "If {address} can be invited, the invitation email was sent."
+INVITE_FAILED = ("The invitation email to {address} could not be sent. Check the email "
+                 "settings, then press Resend invitation in the Users list.")
 RESET_NOTICE = "If an account exists for that address, we sent a link to reset the password."
 
 
@@ -66,9 +68,20 @@ def _deliver(to: str, content: mail.Content, link: str) -> None:
     mail.send(to, content, link)
 
 
+def _finish_invitation(request: Request, session, user: User, invitation, role: str):
+    """Send now, audit the real outcome and tell the owner what happened."""
+    ok = invitations.deliver(session, invitation, role=role, actor_id=user.id, source="app")
+    session.commit()
+    if ok:
+        flash(request, INVITE_NOTICE.format(address=invitation.address))
+    else:
+        flash(request, INVITE_FAILED.format(address=invitation.address), "error")
+    return RedirectResponse("/settings", 303)
+
+
 @router.post("/settings/users")
 def invite_user(
-    request: Request, background: BackgroundTasks, session: SessionDep, user: ManagerDep,
+    request: Request, session: SessionDep, user: ManagerDep,
     email: Annotated[str, Form()] = "", role: Annotated[str, Form()] = "accountant",
 ):
     address, err = v.check_email(email)
@@ -83,34 +96,30 @@ def invite_user(
         flash(request, err, "error")
         return RedirectResponse("/settings", 303)
 
-    address = address.lower()
     tenant: Tenant = request.state.tenant
-    target = _user_by_email(session, address)
-    if target is None:
-        target = User(email=address, password_hash=passwords.UNUSABLE, is_active=False)
-        session.add(target)
-        session.flush()
-    membership = session.scalar(select(Membership).where(
-        Membership.user_id == target.id, Membership.tenant_id == tenant.id))
-    if membership is None:
-        membership = Membership(user_id=target.id, tenant_id=tenant.id, role=role,
-                                status="pending")
-        session.add(membership)
-        session.flush()
-    if membership.status == "pending":
-        if target.is_active:
-            content = mail.invite_existing_user(tenant.name, f"{_base_url()}/login")
-            link = f"{_base_url()}/login"
-        else:
-            token = tokens.issue(session, target.id, "invite", membership.id)
-            link = f"{_base_url()}/invite/{token}"
-            content = mail.invite_new_user(tenant.name, link, tokens.INVITE_TTL.days)
-        background.add_task(_deliver, address, content, link)
-    audit.record(session, "invite.sent", user_id=user.id, entity_type="membership",
-                 entity_id=membership.id, details={"role": membership.role})
-    session.commit()
-    flash(request, INVITE_NOTICE.format(address=address))
-    return RedirectResponse("/settings", 303)
+    invitation = invitations.prepare(session, tenant, address, role)
+    if invitation is None:
+        session.commit()
+        flash(request, INVITE_NOTICE.format(address=address.lower()))
+        return RedirectResponse("/settings", 303)
+    return _finish_invitation(request, session, user, invitation, role)
+
+
+@router.post("/settings/users/{user_id}/resend")
+def resend_invitation(request: Request, user_id: int, session: SessionDep, user: ManagerDep):
+    tenant: Tenant = request.state.tenant
+    if not mail.can_deliver():
+        flash(request, "Email is not set up on this server, so invitations cannot be sent.",
+              "error")
+        return RedirectResponse("/settings", 303)
+    if not ratelimit.invite_by_user.hit(str(user.id)):
+        flash(request, "Too many invitations. Try again later.", "error")
+        return RedirectResponse("/settings", 303)
+    invitation = invitations.prepare_resend(session, tenant, user_id)
+    if invitation is None:
+        raise HTTPException(404, "no pending invitation")
+    role = session.scalar(select(Membership.role).where(Membership.id == invitation.membership_id))
+    return _finish_invitation(request, session, user, invitation, role)
 
 
 @router.get("/invite/{token}")

@@ -1,3 +1,4 @@
+import logging
 from importlib import import_module
 from pathlib import Path
 
@@ -7,7 +8,16 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from ledgerline.config import get_settings
-from ledgerline.web import CaptureOnly, LoginRequired, TenantRequired, TwoFactorRequired
+from ledgerline.web import (
+    CaptureOnly,
+    LoginRequired,
+    NoAdministration,
+    TenantRequired,
+    TwoFactorRequired,
+    render,
+)
+
+log = logging.getLogger("ledgerline")
 
 # Each module exposes `router`. Order matters only where a fixed path must beat a `{id}` route
 # (imports before platform).
@@ -52,6 +62,11 @@ def create_app() -> FastAPI:
         https_only=settings.cookie_secure,
     )
 
+    missing = settings.operator_identity.missing()
+    if settings.environment == "production" and missing:
+        log.error("operator identity not set (%s); the legal pages show placeholders and "
+                  "/healthz/deep fails", ", ".join(missing))
+
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
         response = await call_next(request)
@@ -74,6 +89,12 @@ def create_app() -> FastAPI:
         if request.headers.get("hx-request"):
             return RedirectResponse("/tenants", 303, headers={"HX-Redirect": "/tenants"})
         return RedirectResponse("/tenants", 303)
+
+    @app.exception_handler(NoAdministration)
+    async def no_administration(request: Request, _exc: NoAdministration):
+        if request.headers.get("hx-request"):
+            return RedirectResponse("/", 303, headers={"HX-Redirect": "/"})
+        return render(request, "auth/no_administration.html", status_code=409)
 
     @app.exception_handler(TwoFactorRequired)
     async def to_two_factor_setup(request: Request, _exc: TwoFactorRequired):

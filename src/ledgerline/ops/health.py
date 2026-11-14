@@ -65,6 +65,14 @@ def check_disk(settings: Settings) -> Check:
     return free >= settings.health_min_free_disk_percent, {"free_percent": free}
 
 
+def check_operator_identity(settings: Settings) -> Check:
+    """Production must not serve legal pages with placeholders. Names only, never values."""
+    if settings.environment != "production":
+        return True, {}
+    missing = settings.operator_identity.missing()
+    return (not missing), ({"missing": missing} if missing else {})
+
+
 def run_checks(
     settings: Settings,
     now: Callable[[], float] = time.time,
@@ -75,6 +83,7 @@ def run_checks(
         "worker": check_worker(settings, moment),
         "backup": check_backup(settings, moment),
         "disk": check_disk(settings),
+        "legal": check_operator_identity(settings),
     }
     return {
         "status": "ok" if all(ok for ok, _ in checks.values()) else "fail",

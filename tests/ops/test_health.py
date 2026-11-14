@@ -38,7 +38,7 @@ def test_all_checks_pass(deep_client, healthy):
     response, body = get(deep_client)
     assert response.status_code == 200
     assert body["status"] == "ok"
-    assert set(body["checks"]) == {"database", "worker", "backup", "disk"}
+    assert set(body["checks"]) == {"database", "worker", "backup", "disk", "legal"}
     assert all(check["ok"] for check in body["checks"].values())
     assert body["checks"]["worker"]["age_seconds"] in range(2, 10)
     assert body["checks"]["backup"]["offsite"] is True

@@ -80,9 +80,11 @@
   <div class="table-wrap"><table class="table">
     <thead><tr><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
     <tbody>{% for u, member_role, member_status in users %}
-      <tr><td>{{ u.email }}</td><td>{{ member_role }}</td><td>{{ 'invited' if member_status == 'pending' else ('active' if u.is_active else 'deactivated') }}</td>
-        <td>{% if (u.is_active or member_status == 'pending') and u.id != request.session.get('user_id') %}
-          <form method="post" action="/settings/users/{{ u.id }}/deactivate">{{ ui.csrf() }}<button class="btn btn-sm btn-danger" type="submit">{{ 'Cancel invitation' if member_status == 'pending' else 'Deactivate' }}</button></form>{% endif %}</td></tr>
+      <tr><td>{{ u.email }}</td><td>{{ member_role }}</td><td>{% if member_status == 'pending' %}{{ 'invited, email not delivered' if u.id in failed_invites else 'invited' }}{% else %}{{ 'active' if u.is_active else 'deactivated' }}{% endif %}</td>
+        <td><div class="row">{% if member_status == 'pending' %}
+          <form method="post" action="/settings/users/{{ u.id }}/resend">{{ ui.csrf() }}<button class="btn btn-sm {{ 'btn-primary' if u.id in failed_invites else 'btn-secondary' }}" type="submit">Resend invitation</button></form>{% endif %}
+        {% if (u.is_active or member_status == 'pending') and u.id != request.session.get('user_id') %}
+          <form method="post" action="/settings/users/{{ u.id }}/deactivate">{{ ui.csrf() }}<button class="btn btn-sm btn-danger" type="submit">{{ 'Cancel invitation' if member_status == 'pending' else 'Deactivate' }}</button></form>{% endif %}</div></td></tr>
     {% endfor %}</tbody>
   </table></div>
   <form class="card-body stack" method="post" action="/settings/users">

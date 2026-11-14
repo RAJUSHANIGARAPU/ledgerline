@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request
 
+from ledgerline.config import get_settings
 from ledgerline.web import render
 
 router = APIRouter(prefix="/legal")
@@ -11,10 +12,26 @@ PAGES = {
     "disclaimer": "Disclaimer",
 }
 
+_PLACEHOLDERS = {
+    "legal_name": "[OPERATOR NAME]",
+    "kvk_number": "[KVK NUMBER]",
+    "address": "[ADDRESS]",
+    "contact_email": "[PRIVACY CONTACT EMAIL]",
+}
+
+
+def operator_context() -> dict:
+    """The operator's identity for the legal pages; an unset field shows its old placeholder, so
+    a half-configured installation is visibly incomplete (and production health fails)."""
+    identity = get_settings().operator_identity
+    return {name: getattr(identity, name) or placeholder
+            for name, placeholder in _PLACEHOLDERS.items()}
+
 
 def _page(request: Request, slug: str):
     return render(request, "legal/page.html",
-                  {"title": PAGES[slug], "partial": f"legal/_{slug}.html", "pages": PAGES})
+                  {"title": PAGES[slug], "partial": f"legal/_{slug}.html", "pages": PAGES,
+                   "operator": operator_context()})
 
 
 @router.get("/privacy")

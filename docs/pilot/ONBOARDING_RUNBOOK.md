@@ -34,7 +34,13 @@ The migrations seed an empty tenant called "Default". `create-tenant` removes it
 
 Then the owner login. Two routes:
 
-- **Invite by email** (preferred, no password passes through you): <!-- verify after feat/account-security merges --> create the owner membership as the first owner user and send the invitation from Settings, Users (the exact labels are confirmed after the feature merges). The owner accepts and sets a password. Until the feature is merged use the second route.
+- **Invite by email** (preferred, no password passes through you): send the invitation from the server, so you never sign in inside the client's tenant:
+
+  ```sh
+  docker compose exec app ledgerline invite-owner --tenant <id> --email owner@client.example
+  ```
+
+  The owner gets the normal invitation mail (Dutch and English, a single-use link valid for 7 days) and chooses their own password. The command prints an error and exits 1 if the mail could not be sent (check the SMTP settings); run it again to issue a fresh link. It needs `LEDGERLINE_SMTP_HOST` and `LEDGERLINE_SMTP_FROM` on the `app` service. Once the owner is in, further invitations come from Settings, Users, where "Resend invitation" retries a failed mail.
 - **CLI, with a password you hand over**:
 
   ```sh

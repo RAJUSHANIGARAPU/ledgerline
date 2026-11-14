@@ -128,13 +128,15 @@ img { max-width: 100%; }
 .grid-3 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
 .grid-4 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); }
 .page-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
-@media (max-width: 1100px) { .page-grid { grid-template-columns: 1fr; } }
+@media (max-width: 1100px) { .page-grid { grid-template-columns: minmax(0, 1fr); } }
+/* Grid items never grow past their track, so a wide table scrolls inside its own wrapper. */
+.stack > *, .grid > *, .page-grid > *, .content > * { min-width: 0; }
 
 /* Surfaces */
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
 .card-header { display: flex; align-items: center; gap: 0.75rem; padding: 0.9rem 1.1rem; border-bottom: 1px solid var(--border); }
 .card-title { font-size: 0.95rem; font-weight: 650; margin: 0; }
-.card-body { padding: 1.1rem; }
+.card-body { padding: 1.1rem; overflow-wrap: anywhere; }
 .card > .table-wrap { border: 0; border-radius: 0 0 var(--radius) var(--radius); }
 .section-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin: 0.5rem 0; }
 

@@ -1,7 +1,7 @@
 <div class="flash flash-info" role="note">TEMPLATE. This text is a starting point and must be reviewed, completed and adapted by the operator of this installation before it is relied on. It is not legal advice.</div>
 
 <h2 class="section-title">1. Who is responsible</h2>
-<p>The controller for personal data processed in this installation of Ledgerline is <strong>[CONTROLLER NAME]</strong>, [ADDRESS], KvK [KVK NUMBER]. Contact for privacy questions: <strong>[PRIVACY CONTACT EMAIL]</strong>.</p>
+<p>The controller for personal data processed in this installation of Ledgerline is <strong>{{ operator.legal_name }}</strong>, {{ operator.address }}, KvK {{ operator.kvk_number }}. Contact for privacy questions: <strong>{{ operator.contact_email }}</strong>.</p>
 
 <h2 class="section-title">2. What data is processed and why</h2>
 <ul>
@@ -19,7 +19,7 @@
 
 <h2 class="section-title">4a. Pilot feedback</h2>
 <p>[NEEDS REVIEW BY A LAWYER] While this installation runs as a pilot, the operator uses the feedback you send through the Feedback link to improve the service. The text is stored exactly as you wrote it, together with your account, the administration and the time.</p>
-<p><strong>Legal basis:</strong> [NEEDS REVIEW] legitimate interest of the operator in improving the service (Art. 6(1)(f) GDPR); you can object. <strong>Retention:</strong> feedback is deleted with the administration when the pilot ends and the administration is offboarded. Copies in backups disappear when the backup expires (see section 5). <strong>Who can see it:</strong> the operator, and the owner of the administration, who finds the feedback of all users of that administration in the administration export. It is not shared with anyone else and not used for advertising. <strong>Access, export and deletion:</strong> ask the operator at <strong>[PRIVACY CONTACT EMAIL]</strong>; this is handled by hand.</p>
+<p><strong>Legal basis:</strong> [NEEDS REVIEW] legitimate interest of the operator in improving the service (Art. 6(1)(f) GDPR); you can object. <strong>Retention:</strong> feedback is deleted with the administration when the pilot ends and the administration is offboarded. Copies in backups disappear when the backup expires (see section 5). <strong>Who can see it:</strong> the operator, and the owner of the administration, who finds the feedback of all users of that administration in the administration export. It is not shared with anyone else and not used for advertising. <strong>Access, export and deletion:</strong> ask the operator at <strong>{{ operator.contact_email }}</strong>; this is handled by hand.</p>
 
 <h2 class="section-title">5. Recipients and hosting</h2>
 <p>Data is stored in a PostgreSQL database on infrastructure chosen by the operator: [HOSTING PROVIDER]. A data processing agreement with the hosting provider is needed where the provider can access the data. Encrypted backups are kept on the operator's server and at [BACKUP STORAGE PROVIDER]: local copies for [30] days, off-site copies as daily, weekly, monthly and yearly snapshots, the oldest of which can be about [8] years old. A single administration cannot be removed from a backup; after a restore the operator deletes offboarded administrations again. The application loads no external scripts, fonts or trackers. It makes no calls to third-party services, except the optional document extraction described in section 8 when the operator has switched it on.</p>
