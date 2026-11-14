@@ -7,8 +7,8 @@
   'manual' and has no statement file behind it (statement_id is therefore nullable, tied to the
   source by a check constraint).
 
-Revision ID: 0007_bank_csv
-Revises: 0006
+Revision ID: 0011
+Revises: 0010
 Create Date: 2026-11-14
 
 Another branch may also add a revision on top of 0006. Whoever merges second re-chains this one:
@@ -18,8 +18,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0007_bank_csv"
-down_revision = "0006"
+revision = "0011"
+down_revision = "0010"
 branch_labels = None
 depends_on = None
 
