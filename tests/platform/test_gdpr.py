@@ -134,3 +134,25 @@ def test_every_tenant_table_is_in_the_export_or_excluded_on_purpose(session, adm
     assert tenant_tables - exported - set(EXPORT_EXCLUDED) == set(), (
         "tenant tables missing from the administration export")
     assert set(EXPORT_EXCLUDED) <= tenant_tables and not set(EXPORT_EXCLUDED) & exported
+
+
+def test_export_lists_members_and_phone_devices_without_any_secret(session, admin, owner):
+    from datetime import UTC, datetime
+
+    from ledgerline.models import ApiToken
+    from ledgerline.platform.gdpr import build_export_zip
+
+    session.add(ApiToken(user_id=owner.id, administration_id=admin.id, name="Phone",
+                         token_prefix="llpfx", token_sha256="f" * 64,
+                         revoked_at=datetime.now(UTC)))
+    session.commit()
+    with zipfile.ZipFile(build_export_zip(session, admin)) as zf:
+        members = json.loads(zf.read("data/memberships.json"))
+        devices = json.loads(zf.read("data/api_tokens.json"))
+        everything = " ".join(zf.read(n).decode(errors="ignore") for n in zf.namelist()
+                              if n.startswith("data/"))
+    assert [(m["email"], m["role"]) for m in members] == [(owner.email, "owner")]
+    assert devices[0]["name"] == "Phone" and devices[0]["revoked_at"]
+    assert set(members[0]) == {"id", "email", "role", "status", "user_active", "created_at"}
+    assert owner.password_hash not in everything and "f" * 64 not in everything
+    assert "token_sha256" not in everything and "password_hash" not in everything
