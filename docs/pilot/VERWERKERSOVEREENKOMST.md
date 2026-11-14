@@ -8,9 +8,9 @@ This agreement is between the operator of the Ledgerline installation (the *proc
 
 The points the client should look at first:
 
-- **Hosting:** Hetzner, in the EU ([HETZNER LOCATION, e.g. Falkenstein or Helsinki]). No other sub-processor unless document extraction is switched on (then Anthropic, see article 6).
+- **Hosting and sub-processors:** Hetzner, in the EU ([HETZNER LOCATION, e.g. Falkenstein or Helsinki]); the off-site backup storage; the SMTP provider that sends the application's email. Anthropic only if document extraction is switched on (see article 6).
 - **Breach:** the operator tells the client without undue delay and aims to do so within 24 hours of becoming aware, so the client can meet its own 72-hour deadline towards the Autoriteit Persoonsgegevens.
-- **End of the agreement:** the client gets a full export and the operator deletes the data afterwards, except what the law forces the operator to keep. The client stays responsible for its own 7-year fiscal retention duty (it should keep its own export).
+- **End of the agreement:** the client gets a full export (one ZIP per administration) and the operator deletes the data from the live system afterwards, except what the law forces the operator to keep. Copies stay in backups until they expire: local dumps for a set number of days, off-site snapshots for up to about 8 years (article 12). The client stays responsible for its own 7-year fiscal retention duty (it should keep its own export).
 - **Liability:** see the pilot agreement.
 - Dutch is the binding text; this summary helps reading.
 
@@ -75,10 +75,11 @@ Samen: de **Partijen**. Datum ingang: [DATUM].
 | Subverwerker | Doel | Locatie | Gegevens | Voorwaarde |
 |---|---|---|---|---|
 | Hetzner Online GmbH | hosting van server en back-ups | EU, [HETZNER LOCATIE] | alle gegevens in de dienst | verwerkersovereenkomst met Hetzner, [CONTROLEER DE HUIDIGE VOORWAARDEN OP DE SITE VAN HETZNER] |
-| Anthropic | alleen als documentextractie is ingeschakeld: lezen van foto's en scans van facturen | mogelijk buiten de EU | het ingelezen document (pdf of afbeelding) | zie 6.3 |
-| [E-MAIL- OF BACK-UPDIENST, indien van toepassing] | [DOEL] | [LOCATIE] | [GEGEVENS] | [VOORWAARDE] |
+| [BACK-UPDOEL: aanbieder van de S3-compatibele opslag voor de back-ups buiten de server] | versleutelde back-ups (restic) | [LOCATIE] | een versleutelde kopie van de hele database, ook van andere klanten | [VERWERKERSOVEREENKOMST; de aanbieder kan de inhoud niet lezen zonder het wachtwoord van de Verwerker] |
+| [SMTP-AANBIEDER] | versturen van e-mail van de applicatie (uitnodigingen, wachtwoordherstel) | [LOCATIE] | e-mailadres van de ontvanger en de inhoud van het bericht | [VERWERKERSOVEREENKOMST] |
+| Anthropic | alleen als documentextractie is ingeschakeld: lezen van foto's en scans van facturen, en van pdf's waarvan de tekst niet kon worden verwerkt | mogelijk buiten de EU | het ingelezen document (pdf of afbeelding) | zie 6.3 |
 
-6.2 De dienst is standaard geleverd met documentextractie **uitgeschakeld** (`LEDGERLINE_EXTRACTION_PROVIDER=none`, zie `docs/EXTRACTION.md`). Zonder deze extractie verlaten geen documenten de server van de Verwerker. De Verwerker schakelt extractie alleen in na schriftelijke toestemming van de Verwerkingsverantwoordelijke.
+6.2 De dienst is standaard geleverd met documentextractie **uitgeschakeld** (`LEDGERLINE_EXTRACTION_PROVIDER=none`, zie `docs/EXTRACTION.md`). Zonder deze extractie verlaten geen documenten de server van de Verwerker. De Verwerker schakelt extractie alleen in na schriftelijke toestemming van de Verwerkingsverantwoordelijke. Anthropic is de enige aanbieder die voor de pilot wordt gebruikt; een andere aanbieder (bijvoorbeeld een tussenpartij met een eigen onderliggende aanbieder) komt er alleen bij na een aanpassing van deze tabel volgens 6.4.
 
 6.3 Anthropic wordt alleen subverwerker zodra extractie is ingeschakeld. Voordat dat gebeurt controleert de Verwerker bij de aanbieder de actuele voorwaarden: de verwerkersovereenkomst, de bewaartermijn van verzonden gegevens, of die voor training worden gebruikt, en op welke grondslag gegevens buiten de EU worden verwerkt (bijvoorbeeld een adequaatheidsbesluit of standaardcontractbepalingen). Deze controle is **nog niet uitgevoerd** [DATUM EN RESULTAAT INVULLEN VOORDAT EXTRACTIE WORDT INGESCHAKELD]. Kan dat niet worden onderbouwd, dan blijft extractie uit.
 
@@ -106,7 +107,7 @@ Samen: de **Partijen**. Datum ingang: [DATUM].
 
 8.2 De Verwerker voert daarnaast uit: HTTPS-only, versleutelde schijf of volume op de server [BEVESTIGEN: ja/nee, schijfversleuteling is geen onderdeel van de software], dagelijkse back-up met kopie buiten de server [BEVESTIGEN: locatie en versleuteling], kwartaalcontrole van het herstel (zie `docs/BACKUP_RESTORE.md`), regelmatig bijwerken van software en images, geen publieke databasepoort, sterke willekeurige geheimen die niet in de code staan.
 
-8.3 Bekende beperkingen die de Verwerkingsverantwoordelijke accepteert, zoals vermeld onder "What it does not do" in `docs/SECURITY.md`: [CONTROLEER BIJ ONDERTEKENING OF TWEEFACTORAUTHENTICATIE EN WACHTWOORDHERSTEL INMIDDELS ZIJN TOEGEVOEGD EN PAS DIT AAN], geen versleuteling van gegevens in rust door de software zelf, geen virusscan van uploads, geen ratelimiting buiten de inlogbeperking en de upload-API.
+8.3 Bekende beperkingen die de Verwerkingsverantwoordelijke accepteert, zoals vermeld onder "What it does not do" in `docs/SECURITY.md`: geen versleuteling van gegevens in rust door de software zelf (de Verwerker gebruikt een versleutelde schijf of volume, zie 8.2), geen virusscan van uploads, en ratelimiting in het geheugen per proces (die begint opnieuw na een herstart). Tweefactorauthenticatie en wachtwoordherstel zijn aanwezig (zie `docs/SECURITY.md`). [CONTROLEER `docs/SECURITY.md` OPNIEUW BIJ ONDERTEKENING.]
 
 8.4 De Verwerker houdt de maatregelen actueel. Wijzigingen mogen het beveiligingsniveau niet verlagen.
 
@@ -134,11 +135,11 @@ Samen: de **Partijen**. Datum ingang: [DATUM].
 
 ### Artikel 12. Einde: teruggave of verwijdering (art. 28 lid 3 sub g)
 
-12.1 Na afloop van de dienst levert de Verwerker, naar keuze van de Verwerkingsverantwoordelijke, alle persoonsgegevens terug en verwijdert hij daarna de kopieën, of verwijdert hij ze. De Verwerkingsverantwoordelijke maakt zijn keuze binnen [30] dagen na afloop schriftelijk bekend; zonder keuze wordt teruggegeven en daarna verwijderd.
+12.1 Na afloop van de dienst levert de Verwerker, naar keuze van de Verwerkingsverantwoordelijke, alle persoonsgegevens terug en verwijdert hij daarna de kopieën, of verwijdert hij ze. De Verwerkingsverantwoordelijke maakt zijn keuze uiterlijk [14] dagen voor de einddatum van de pilotovereenkomst schriftelijk bekend, en kan dat nog tot [30] dagen na de einddatum doen; zonder keuze wordt teruggegeven en daarna verwijderd (zie ook artikel 11 van de pilotovereenkomst).
 
-12.2 Teruggave gebeurt als export van de administratie (ZIP uit Instellingen, Privacy en data, aangevuld met een databasedump van die klant [BEVESTIGEN: de applicatie kan nog geen dump per tenant maken]) in een gangbaar formaat via een beveiligde route.
+12.2 Teruggave gebeurt als export van de administratie: een ZIP per administratie (gegevens als JSON en alle bijlagen), uit Instellingen, Privacy en data of bij beëindiging via de beheeropdracht `delete-tenant`, via een beveiligde route. Een databasedump per klant wordt niet geleverd.
 
-12.3 De Verwerker verwijdert de gegevens van de actieve omgeving binnen [30] dagen na bevestiging dat de export is ontvangen, en uit back-ups binnen de bewaartermijn van de back-ups ([30] dagen, zie `BACKUP_KEEP_DAYS` in `docs/BACKUP_RESTORE.md`). Hij bevestigt de verwijdering schriftelijk. [OPEN PUNT: de applicatie kan een tenant nog niet verwijderen; de huidige handmatige procedure staat in `docs/pilot/ONBOARDING_RUNBOOK.md`.]
+12.3 De Verwerker verwijdert de gegevens uit de actieve omgeving binnen [30] dagen nadat de Verwerkingsverantwoordelijke de ontvangst van de export heeft bevestigd (beheeropdracht `delete-tenant`, zie `docs/pilot/ONBOARDING_RUNBOOK.md`). Kopieën in back-ups blijven bestaan tot de bewaartermijn van de back-up eindigt: lokale dumps `BACKUP_KEEP_DAYS` dagen (standaard 30); versleutelde back-ups buiten de server als 14 dagelijkse, 8 wekelijkse, 24 maandelijkse en 8 jaarlijkse momentopnamen (restic, `ops/backup/backup.sh`), zodat de gegevens daar tot ongeveer 8 jaar kunnen blijven staan. Elke back-up bevat alle klanten; één klant is niet uit een momentopname te verwijderen. De Verwerker gebruikt back-ups alleen voor herstel na een storing. Na een herstel verwijdert hij de gegevens van de Verwerkingsverantwoordelijke opnieuw, aan de hand van zijn logboek van beëindigde klanten (`docs/OPERATIONS.md`). Hij bevestigt de verwijdering schriftelijk en vermeldt daarin de back-ups waarin de gegevens nog staan.
 
 12.4 Bewaarplicht: de Verwerkingsverantwoordelijke blijft zelf verantwoordelijk voor de fiscale bewaarplicht (in het algemeen 7 jaar) en bewaart daarvoor zijn eigen export. De Verwerker bewaart de administratie niet langer dan hierboven, tenzij de wet hem daartoe verplicht.
 

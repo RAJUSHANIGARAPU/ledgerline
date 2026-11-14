@@ -69,11 +69,22 @@ Bank transactions keep the counterparty name and IBAN as imported from the bank 
 
 Deletion of the personal data after the retention date is manual: the app shows the date but does not run a purge.
 
+### Backups and deleted administrations
+
+Every backup holds all administrations. Local dumps are kept `BACKUP_KEEP_DAYS` days (default 30). Off-site restic snapshots are kept 14 daily, 8 weekly, 24 monthly and 8 yearly (`ops/backup/backup.sh`). `delete-tenant` removes an administration from the live database only; its data stays in backups until the snapshots age out, up to about 8 years for the yearly ones, and one administration cannot be removed from a snapshot. After a restore the operator runs `delete-tenant` again for every administration in the offboarding log. State this in the pilot agreement and the processing agreement.
+
+## Delivery platforms and daily takings
+
+- **Platform sales are treated as VAT-inclusive.** Uber Eats and Thuisbezorgd statements do not split sales by VAT rate; the owner enters the split and the entered sales amounts include VAT (`docs/PLATFORM_STATEMENTS.md`). [adviser to confirm]
+- **Uber Eats fee VAT rate is inferred.** The statement does not print the rate on the service fee. Ledgerline works it out from the amounts, shows it as a warning, and the user confirms it against the Uber invoice before booking. [adviser to confirm]
+- **Takings VAT is rounded once per rate per day.** For each day and rate, VAT = gross x rate / (100 + rate), rounded half-up to the cent, and posted in one journal entry. [adviser to confirm] that rounding per day, not per sale, is acceptable.
+- **Hand-keyed takings need the till's Z-reports kept.** Until the till is connected, the owner types the figures from the daily report. Ledgerline stores the typed totals, not the till's own data, so the Z-reports are the source documents and must be kept as part of the records. [adviser to confirm]
+
 ## Document extraction by an external provider (optional)
 
-This applies only if the operator sets `LEDGERLINE_EXTRACTION_PROVIDER=anthropic`. By default nothing is sent anywhere.
+This applies only if the operator sets `LEDGERLINE_EXTRACTION_PROVIDER` to `anthropic` or `openrouter`. By default nothing is sent anywhere.
 
-- **What is transferred:** the received invoice or receipt (PDF, JPEG, PNG), when the UBL and PDF-text steps could not read it. Such a document can contain personal data (names and bank details of suppliers, including sole traders).
-- **Recipient:** Anthropic, as processor. The operator needs its data processing agreement under the AVG and should check its current commercial terms and data-retention policy for retention, training use and the transfer mechanism for processing outside the EU.
+- **What is transferred:** the received invoice or receipt (PDF, JPEG, PNG), when the UBL and PDF-text steps did not produce a result. That covers photos and scans, and also a PDF whose text layer could not be parsed into an invoice. A PDF read from its text layer is not sent. Such a document can contain personal data (names and bank details of suppliers, including sole traders).
+- **Recipient:** Anthropic, as processor (provider `anthropic`, the pilot default when extraction is on, model `claude-haiku-5-5`). With provider `openrouter` the recipients are OpenRouter and the underlying model provider. The operator needs its data processing agreement under the AVG and should check its current commercial terms and data-retention policy for retention, training use and the transfer mechanism for processing outside the EU.
 - **Transparency:** name the provider in the privacy notice (template section "Document extraction (optional)") and in the processing register. Without this, the feature should stay off.
 - **Control:** results are proposals; the owner reviews every figure before booking. A monthly cap per administration limits volume. Details: `docs/EXTRACTION.md`.
