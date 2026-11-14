@@ -135,7 +135,7 @@ For businesses that sell over a counter. Until the till's own data is connected,
 ## Bank
 
 - Add the account on [Bank](/bank) (name, IBAN). In your online banking look for "Download transactions" and choose CAMT.053 or MT940 if your bank offers them, then upload the file with Import. If it does not, a CSV works too. Importing posts nothing to the ledger.
-- Reconcile: for each transaction, Match selected pairs it with open invoices, "Accept all exact matches" takes every exact amount match in one go, "Book to an account" posts a cost or receipt with an optional VAT code, Ignore sets it aside.
+- Reconcile: for each transaction, Match selected pairs it with open invoices, "Accept all exact matches" takes every exact amount match in one go (an invoice that differs by a cent or two is proposed with its difference; tick the box to book the difference to Rounding differences, 4890; the tolerance is `LEDGERLINE_BANK_MATCH_TOLERANCE_CENTS`, default 2), "Book to an account" posts a cost or receipt with an optional VAT code, Ignore sets it aside.
 - Undo: on the Matched and Ignored tabs, Undo reverses the match (a reversing journal entry is posted) and puts the transaction back to Unmatched.
 - The same file twice is refused ("this file has already been imported").
 
@@ -151,6 +151,8 @@ For businesses that sell over a counter. Until the till's own data is connected,
 Say you import a CAMT.053 for June and later a CSV that also covers June. Different formats carry different references and wording, so file contents cannot be compared. Ledgerline instead treats a CSV or CAMT line as already stored when a line of another format (or a manual line) on the same bank account has the same amount, a booking or value date that agrees on both sides, and a counterparty IBAN that does not contradict (an unknown IBAN is not a contradiction). Each stored line is used up once, so two equal payments on one day need two stored lines. Lines left out are counted in the import message. Within one format, repeated payments are handled by the bank reference or, without one, by date, amount, IBAN and text. The rule can wrongly drop a genuinely new payment that has the same amount and date as a stored one from a counterparty with no IBAN in the file; check the "left out" count after mixing formats.
 
 ### Lines entered by hand
+
+A bank statement uploaded as a PDF to the inbox is not read: it is filed under Not invoices with a hint to import the CSV or CAMT export under Bank.
 
 Use "Add a line by hand" under the bank account only when no file is available. Enter date, amount and direction, counterparty and a reason (for example "read from the banking app"). The line is labelled "Manually entered" in the reconciliation, also after matching, and the audit log records who entered it, when, and the reason. A later file containing the same payment does not add it again (see above). A manual line can be matched, booked, ignored or undone like any other.
 - A payment to the Belastingdienst: book it to the VAT settlement account (see below).

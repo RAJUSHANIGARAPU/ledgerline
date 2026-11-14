@@ -16,6 +16,8 @@ class ExtractedLine:
     vat_rate_percent: int | None = None  # 21, 9, 0 or None when unknown
     vat_cents: int | None = None
     is_deposit: bool = False  # statiegeld / emballage / borg
+    # Untaxed on the document: 0%, exempt and outside scope look alike, so the owner decides.
+    vat_unconfirmed: bool = False
 
 
 @dataclass
@@ -41,7 +43,8 @@ class ExtractedInvoice:
     total_vat_cents: int | None = None
     total_incl_cents: int | None = None
     reverse_charge: bool = False
-    # invoice | statement | reminder | contract | own_sales; only "invoice" is a purchase
+    # invoice | statement | reminder | contract | own_sales | ledger | payslip | bank_statement;
+    # only "invoice" is a purchase
     document_type: str = "invoice"
     credit_note: bool = False
     paid_at_delivery: bool = False  # printed as paid: pin, cash, "reeds voldaan"

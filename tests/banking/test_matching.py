@@ -115,3 +115,18 @@ def test_without_a_booking_date_the_score_is_unchanged():
     c = dated(PURCHASE, 1, "A-1", 5_000, date(2026, 6, 30), date(2026, 6, 1))
     [s] = score_candidates(-5_000, "x", None, "Energie NV", [c])
     assert s.score == 50 + 15 and not s.before_invoice
+
+
+def test_a_one_cent_difference_is_proposed_with_its_difference_and_never_exact():
+    [s] = score_candidates(12_099, "x", None, None, [cand(SALES, 1, "2026-0001", 12_100)])
+    assert s.difference_cents == 1 and not s.exact_amount
+    assert "difference €0.01" in s.reason and "partial" not in s.reason
+    assert s.score > 0
+
+
+def test_a_difference_beyond_the_tolerance_is_not_an_amount_hit():
+    c = cand(SALES, 1, "2026-0001", 12_100)
+    [s] = score_candidates(12_097, "x", None, None, [c])
+    assert s.score == 0 and s.difference_cents == 0
+    [s] = score_candidates(12_097, "x", None, None, [c], tolerance_cents=3)
+    assert s.difference_cents == 3

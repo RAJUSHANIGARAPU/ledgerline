@@ -217,6 +217,7 @@ def review_form(
     new_country: FormText = "NL",
     line_description: FormList = None, line_account: FormList = None,
     line_amount: FormList = None, line_vat_code: FormList = None, line_vat: FormList = None,
+    vat_flagged: FormList = None, vat_confirmed: FormList = None,
 ) -> review.ReviewForm:
     count = len(line_description or [])
     vat = (line_vat or []) + [""] * count
@@ -226,6 +227,8 @@ def review_form(
     return review.ReviewForm(
         contact_id, supplier_reference, invoice_date, due_date, description, rows,
         new_name, new_vat, new_kvk, new_iban, new_country,
+        [int(n) for n in vat_flagged or [] if n.isdigit()],
+        [int(n) for n in vat_confirmed or [] if n.isdigit()],
     )
 
 
@@ -241,6 +244,10 @@ def _rerender(request, session, admin, document, data: review.ReviewForm, errors
         "invoice_date": data.invoice_date, "due_date": data.due_date,
         "description": data.description,
     }
+    for number in data.vat_flagged:
+        if number < len(data.rows):
+            data.rows[number]["vat_check"] = "1"
+            data.rows[number]["vat_confirmed"] = "1" if number in data.vat_confirmed else ""
     ctx = _detail_ctx(session, admin, document, values=values, rows=data.rows, errors=errors)
     ctx["new_supplier"] = data
     return render(request, "inbox/detail.html", ctx, status_code=422)

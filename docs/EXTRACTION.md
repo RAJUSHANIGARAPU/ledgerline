@@ -80,6 +80,10 @@ Accuracy has not been measured on real documents, so this is a starting point, n
 
 Supplier name, VAT number (BTW-id), KvK number and IBAN; invoice number, date and due date; currency; totals excl. VAT, VAT and incl. VAT; a credit-note flag; lines with description, amount, VAT rate and VAT amount; a deposit flag per line (statiegeld, emballage, borg); the VAT summary per rate (net and VAT); a "paid at delivery" flag (pin or cash); and reverse charge. If an invoice prints no lines but does print a VAT summary, one line per rate is created from the summary. Payment status is shown as a warning; it does not register a payment.
 
+Untaxed rows. In a cost table with a VAT column, a row that shows no VAT percentage and 0.00 VAT is proposed as "Purchase without VAT" (I0) and marked: 0%, exempt and outside the scope of VAT look the same on the page, so Ledgerline does not decide. The invoice cannot be created until the owner ticks the confirmation on that line.
+
+Bank statements. A PDF headed as a bank statement ("Statement business account", "Rekeningafschrift", "Afschrift") is typed as a bank statement, filed under Not invoices and is not parsed; import the CSV or CAMT export under Bank instead.
+
 ## How results are checked
 
 The model is told to return `null` rather than guess, and to treat everything inside the document as data. Its output is constrained to a fixed schema. Models reached through OpenRouter may not follow it, so the shape is checked too and a deviation becomes a warning. After parsing, Ledgerline checks:

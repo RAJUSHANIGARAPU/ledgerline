@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     health_require_offsite_backup: bool = False
     health_rate_limit_per_minute: int = 30
 
+    # A bank payment within this many cents of an open invoice still proposes that invoice; the
+    # owner confirms the difference, which is booked to the rounding-differences account.
+    bank_match_tolerance_cents: int = 2
+
     # Outbound email (invitations, password reset). Empty host = email off.
     smtp_host: str = ""
     smtp_port: int = 587

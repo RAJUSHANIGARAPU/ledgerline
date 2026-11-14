@@ -21,6 +21,7 @@ from ledgerline.ledger.service import (
     LineSpec,
     post_entry,
     reverse_entry,
+    rounding_account,
     system_account,
 )
 from ledgerline.models import (
@@ -488,6 +489,7 @@ def match(
     tx: BankTransaction,
     allocations: list[Allocation],
     user_id: int | None = None,
+    allow_rounding: bool = False,
 ) -> JournalEntry:
     _require_unmatched(tx)
     if not allocations:
@@ -497,7 +499,13 @@ def match(
     model = SalesInvoice if kind == matching.SALES else PurchaseInvoice
     if len({a.invoice_id for a in allocations}) != len(allocations):
         raise BankingError("an invoice can only be selected once")
-    if sum(a.amount_cents for a in allocations) != abs(tx.amount_cents):
+    difference = sum(a.amount_cents for a in allocations) - abs(tx.amount_cents)
+    tolerance = get_settings().bank_match_tolerance_cents
+    if difference and not (allow_rounding and abs(difference) <= tolerance):
+        if abs(difference) <= tolerance:
+            raise BankingError(
+                f"the payment differs from the invoice by €{abs(difference) / 100:.2f}; confirm "
+                "that the difference is booked to rounding differences")
         raise BankingError("the allocated amounts must add up to the transaction amount")
 
     bank = session.get(BankAccount, tx.bank_account_id)
@@ -540,11 +548,19 @@ def match(
         debit_cents=total if kind == matching.SALES else 0,
         credit_cents=total if kind == matching.PURCHASE else 0,
     )
+    rounding_lines = []
+    if difference:
+        # Sales: the customer paid less (difference > 0) is a cost. Purchases: the opposite.
+        costs = (difference > 0) == (kind == matching.SALES)
+        rounding_lines.append(LineSpec(
+            rounding_account(session, admin_id).id,
+            debit_cents=abs(difference) if costs else 0,
+            credit_cents=0 if costs else abs(difference)))
     label = "Receipt" if kind == matching.SALES else "Payment"
     entry = post_entry(
         session, admin_id, tx.booking_date, f"{label} {', '.join(numbers)}"[:300],
-        [bank_line, *contact_lines], source_type="bank_transaction", source_id=tx.id,
-        user_id=user_id,
+        [bank_line, *contact_lines, *rounding_lines], source_type="bank_transaction",
+        source_id=tx.id, user_id=user_id,
     )
     for invoice, alloc in invoices:
         session.add(
@@ -562,7 +578,8 @@ def match(
     audit.record(
         session, "bank_transaction.match", user_id=user_id, administration_id=admin_id,
         entity_type="bank_transaction", entity_id=tx.id,
-        details={"entry": entry.number, "invoices": numbers},
+        details={"entry": entry.number, "invoices": numbers,
+                 **({"rounding_cents": difference} if difference else {})},
     )
     return entry
 

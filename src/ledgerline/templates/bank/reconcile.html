@@ -57,7 +57,7 @@
               <tbody>
               {% for s in row.suggestions %}
                 <tr>
-                  <td><input class="checkbox" type="checkbox" name="allocation" value="{{ s.candidate.kind }}:{{ s.candidate.invoice_id }}:{{ s.amount_cents if s.amount_cents <= tx.amount_cents|abs else tx.amount_cents|abs }}"{% if s.recommended %} checked{% endif %}></td>
+                  <td><input class="checkbox" type="checkbox" name="allocation" value="{{ s.candidate.kind }}:{{ s.candidate.invoice_id }}:{{ s.amount_cents if (s.amount_cents <= tx.amount_cents|abs or s.difference_cents) else tx.amount_cents|abs }}"{% if s.recommended %} checked{% endif %}></td>
                   <td>{{ s.candidate.number }}</td>
                   <td>{{ s.candidate.contact_name }}</td>
                   <td class="num">{{ s.candidate.remaining_cents|eur }}</td>
@@ -67,6 +67,9 @@
               </tbody>
             </table>
           </div>
+          {% if row.suggestions|selectattr("difference_cents")|list %}
+          <label class="field-hint"><input class="checkbox" type="checkbox" name="rounding_ok" value="1"> The payment differs from the invoice by a few cents. Book the difference to Rounding differences (4890).</label>
+          {% endif %}
           {% if not row.suggestions[0].recommended %}
           <p class="muted">More than one invoice could fit, or the dates do not agree. Check before matching.</p>
           {% endif %}

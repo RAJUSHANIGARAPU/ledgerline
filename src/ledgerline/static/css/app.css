@@ -103,7 +103,7 @@ img { max-width: 100%; }
 }
 .page-title { font-size: 1.2rem; margin: 0; }
 .topbar-actions { margin-left: auto; display: flex; gap: 0.5rem; flex-wrap: wrap; }
-.content { padding: 1.5rem 1.75rem 2.5rem; display: grid; gap: 1.25rem; align-content: start; }
+.content { padding: 1.5rem 1.75rem 2.5rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.25rem; align-content: start; }
 .disclaimer { padding: 1rem 1.75rem 1.5rem; font-size: 12px; color: var(--text-muted); }
 .menu-toggle { display: none; }
 
@@ -143,6 +143,8 @@ img { max-width: 100%; }
 .table { width: 100%; border-collapse: collapse; }
 .table th, .table td { padding: 0.6rem 0.85rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
 .table td.wrap, .table th.wrap { white-space: normal; }
+.table td.cell-file { white-space: normal; overflow-wrap: anywhere; min-width: 14rem; max-width: 30rem; }
+.table td.cell-from { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; }
 .table th { font-size: 12px; font-weight: 600; color: var(--text-muted); background: var(--surface-2); position: sticky; top: 0; }
 .table tbody tr:last-child td { border-bottom: 0; }
 .table tbody tr:hover { background: var(--surface-2); }

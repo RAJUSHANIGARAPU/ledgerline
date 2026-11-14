@@ -617,3 +617,48 @@ def test_a_hand_entered_line_unblocks_the_same_document(client, session, admin, 
                          line_amount=["100.00"], line_vat_code=["I21"], line_vat=["21.00"]),
         follow_redirects=False)
     assert r.status_code == 303
+
+
+def untaxed_line_document(client, session):
+    doc = upload_ubl(client, session)
+    doc.extraction = ExtractedInvoice(
+        supplier_name="Bakker Software B.V.", invoice_number="INV-2026-17",
+        total_excl_cents=868, total_vat_cents=26, total_incl_cents=894,
+        lines=[ExtractedLine("Parking", 747, 0, 0, vat_unconfirmed=True),
+               ExtractedLine("Fees", 121, 21, 26)],
+    ).to_json()
+    session.commit()
+    return doc
+
+
+def test_untaxed_line_is_proposed_without_vat_and_needs_the_owners_confirmation(
+        client, session, admin, supplier):
+    doc = untaxed_line_document(client, session)
+    proposal = review.build_proposal(session, admin, doc)
+    assert [r["vat_code"] for r in proposal.rows] == ["I0", "I21"]
+    assert any("Line 1" in w and "Confirm" in w for w in proposal.warnings)
+    page = client.get(f"/inbox/{doc.id}").text
+    assert 'name="vat_flagged" value="0"' in page and 'name="vat_confirmed" value="0"' in page
+    assert 'name="vat_flagged" value="1"' not in page
+    data = create_data(client, doc, supplier.id, session, admin,
+                       line_description=["Parking", "Fees"], line_amount=["7.47", "1.21"],
+                       line_vat_code=["I0", "I21"], line_vat=["", "0.26"], vat_flagged=["0"])
+    refused = client.post(f"/inbox/{doc.id}/create", data=data, follow_redirects=False)
+    assert refused.status_code == 422 and "line 1: the document charges no VAT" in refused.text
+    assert 'name="vat_flagged" value="0"' in refused.text
+    assert session.scalars(select(PurchaseInvoice)).all() == []
+    data["vat_confirmed"] = ["0"]
+    ok = client.post(f"/inbox/{doc.id}/create", data=data, follow_redirects=False)
+    assert ok.status_code == 303
+    session.expire_all()
+    invoice = session.scalars(select(PurchaseInvoice)).one()
+    assert invoice.total_incl_cents == 894
+
+
+def test_bank_statement_lands_in_not_invoices_with_the_import_hint(client, session, admin):
+    doc = upload_ubl(client, session)
+    doc.extraction = ExtractedInvoice(
+        document_type="bank_statement", warnings=["Import the CSV or CAMT export."]).to_json()
+    session.commit()
+    assert "Bank statement: import the CSV or CAMT export in Bank" in client.get(
+        "/inbox?tab=other").text

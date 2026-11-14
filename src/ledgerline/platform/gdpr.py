@@ -13,15 +13,19 @@ from ledgerline import audit
 from ledgerline.models import (
     Account,
     Administration,
+    ApiToken,
     Attachment,
     AuditEvent,
     BankAccount,
     BankStatement,
     BankTransaction,
     Contact,
+    DailyTakings,
     FeedbackEntry,
+    InboxDocument,
     JournalEntry,
     JournalLine,
+    Membership,
     NumberSequence,
     PaymentAllocation,
     PurchaseInvoice,
@@ -29,6 +33,7 @@ from ledgerline.models import (
     Role,
     SalesInvoice,
     SalesInvoiceLine,
+    User,
 )
 from ledgerline.platform.validation import retention_until
 from ledgerline.web import AdminDep, OwnerDep, SessionDep, UserDep, flash, render
@@ -147,6 +152,14 @@ def export_contact(contact_id: int, request: Request, session: SessionDep, user:
         "Content-Disposition": f'attachment; filename="contact-{contact.id}.json"'})
 
 
+# Tenant tables deliberately left out of the export, with the reason. A new tenant table must be
+# added to _table_dumps or here; tests/platform/test_gdpr.py fails until it is one or the other.
+EXPORT_EXCLUDED = {
+    # memberships and api_tokens are exported with a fixed list of safe fields, see _access_dumps.
+    "forwarding_notices": "a one-time mail-forwarding link that expires; holds no books",
+}
+
+
 def _table_dumps(session, admin: Administration):
     aid = admin.id
     sales_ids = select(SalesInvoice.id).where(SalesInvoice.administration_id == aid)
@@ -178,10 +191,30 @@ def _table_dumps(session, admin: Administration):
         "attachments": select(Attachment).where(Attachment.administration_id == aid),
         "audit_events": select(AuditEvent).where(AuditEvent.administration_id == aid),
         "feedback_entries": select(FeedbackEntry).where(FeedbackEntry.administration_id == aid),
+        "daily_takings": select(DailyTakings).where(DailyTakings.administration_id == aid),
+        "inbox_documents": select(InboxDocument).where(InboxDocument.administration_id == aid),
     }
     for name, stmt in queries.items():
         pk = inspect(stmt.column_descriptions[0]["entity"]).primary_key[0]
         yield name, [row_dict(o) for o in session.scalars(stmt.order_by(pk))]
+    yield from _access_dumps(session, admin)
+
+
+def _access_dumps(session, admin: Administration):
+    """Who has access and which phones can upload: never password hashes, 2FA secrets,
+    recovery codes or token hashes."""
+    members = session.execute(
+        select(Membership, User.email, User.is_active).join(User, User.id == Membership.user_id)
+        .where(Membership.tenant_id == admin.tenant_id).order_by(Membership.id)).all()
+    yield "memberships", [
+        {"id": m.id, "email": email, "role": m.role, "status": m.status,
+         "user_active": active, "created_at": m.created_at}
+        for m, email, active in members]
+    tokens = session.scalars(select(ApiToken).where(
+        ApiToken.administration_id == admin.id).order_by(ApiToken.id))
+    yield "api_tokens", [
+        {"id": t.id, "user_id": t.user_id, "name": t.name, "created_at": t.created_at,
+         "last_used_at": t.last_used_at, "revoked_at": t.revoked_at} for t in tokens]
 
 
 def build_export_zip(session, admin: Administration):

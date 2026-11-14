@@ -46,6 +46,7 @@ DOCUMENT_TYPES = {
     "reminder": "Payment reminder, not an invoice",
     "contract": "Contract or order form, not an invoice",
     "own_sales": "Looks like your own sales invoice",
+    "bank_statement": "Bank statement: import the CSV or CAMT export in Bank",
 }
 IDENTIFIERS = ("supplier_vat_number", "supplier_kvk", "supplier_iban")
 _LEGAL_SUFFIX = re.compile(r"(bv|nv|vof|cv|bvba|gmbh|ltd|inc)$")
@@ -180,7 +181,12 @@ def _rows(extracted: ExtractedInvoice, account: Account | None, country: str,
             "amount": forms.money_text(line.amount_excl_cents), "vat_code": code,
             "vat": forms.money_text(stated) if stated is not None else "",
             "vat_auto": "0" if stated is not None else "1",
+            "vat_check": "1" if line.vat_unconfirmed else "",
         })
+        if line.vat_unconfirmed:
+            warnings.append(
+                f"Line {number}: the document charges no VAT here. Confirm that no VAT applies "
+                "(outside the scope or exempt) before creating the invoice.")
     return rows
 
 
@@ -221,6 +227,9 @@ class ReviewForm:
     new_kvk: str = ""
     new_iban: str = ""
     new_country: str = "NL"
+    # Row numbers (0-based) whose untaxed VAT code the owner must confirm, and those confirmed.
+    vat_flagged: list[int] = field(default_factory=list)
+    vat_confirmed: list[int] = field(default_factory=list)
 
 
 def _new_supplier(session: Session, admin: Administration, data: ReviewForm) -> Contact:
@@ -277,6 +286,11 @@ def create_purchase(
         raise InvoiceError(
             f"the document shows a total of {forms.money_text(stated)} but no line has an "
             "amount; enter the lines before creating the invoice")
+    unconfirmed = [str(n + 1) for n in data.vat_flagged if n not in data.vat_confirmed]
+    if unconfirmed:
+        raise InvoiceError(
+            f"line {', '.join(unconfirmed)}: the document charges no VAT; tick the box to "
+            "confirm that no VAT applies")
     unset = [str(n) for n, row in enumerate(data.rows, 1)
              if not row["vat_code"] and any(row[k].strip() for k in ("description", "amount"))]
     if unset:

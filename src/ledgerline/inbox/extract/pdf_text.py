@@ -113,6 +113,10 @@ PAYSLIP_RE = re.compile(
 CONTRACT_TITLE_RE = re.compile(
     r"orderformulier|bestelformulier|overeenkomst|offerte|contract|pro\s*forma|order\s+form|quotation",
     re.IGNORECASE)
+BANK_STATEMENT_RE = re.compile(
+    r"rekeningafschrift|bankafschrift|\bafschrift\b(?!\s+factuur)|"
+    r"statement\s+(?:business\s+|private\s+|payment\s+|savings\s+)?account|"
+    r"(?:bank|account)\s+statement|statement\s+of\s+account", re.IGNORECASE)
 NOT_INVOICE_NOTES = {
     "statement": "This looks like a payout or account statement, not an invoice.",
     "reminder": "This looks like a payment reminder, not an invoice.",
@@ -120,6 +124,8 @@ NOT_INVOICE_NOTES = {
     "own_sales": "The issuer looks like your own business: probably a sales invoice.",
     "ledger": "This looks like an accounting report (ledger card or balance), not an invoice.",
     "payslip": "This looks like a payslip, not an invoice; nothing was read from it.",
+    "bank_statement": ("This looks like a bank statement, not an invoice. Import the CSV or CAMT "
+                       "export of the account in Bank instead."),
 }
 SKIP_NAME = re.compile(
     r"factuur|invoice|creditnota|pagina|page|datum|date|www\.|@|^\W*\d|\b\d{4}\s?[A-Z]{2}\b|"
@@ -244,6 +250,8 @@ def _invoice_number(text: str) -> str | None:
 
 def _document_type(lines: list[str], text: str, number: str | None, foreign_ids: bool,
                    own_ids_seen: bool, has_amounts: bool) -> str:
+    if not number and BANK_STATEMENT_RE.search("\n".join(lines[:6])):
+        return "bank_statement"
     if own_ids_seen and not foreign_ids and (number or has_amounts):
         return "own_sales"
     if number:
@@ -441,11 +449,64 @@ def _total_rows(lines: list[str]) -> list[tuple[int, int, int]]:
     """(excl, vat, incl) from a 'Totaal  qty  net  vat  gross' row whose last three add up."""
     rows = []
     for line in lines:
-        if PLAIN_TOTAL.search(line):
+        if TABLE_TOTAL.search(line):
             found = _amounts(line)
             if len(found) >= 3 and abs(found[-3] + found[-2] - found[-1]) <= TOLERANCE_CENTS:
                 rows.append((found[-3], found[-2], found[-1]))
     return rows
+
+
+TABLE_HEADER = re.compile(r"\bbtw\b.*\btotaal\b|\bvat\b.*\btotal\b", re.IGNORECASE)
+TABLE_TOTAL = re.compile(r"^\s*(?:totaal(?:bedrag)?|total(?:\s+amount)?)\b", re.IGNORECASE)
+ROW_RATE = re.compile(r"(?<![\d,.])(\d{1,2})(?:[,.]\d+)?\s*%")
+ROW_LABEL = re.compile(r"^\s*([^\d€%][^€%]*?)\s+(?:\d+\s+)?(?:€|eur)?\s*-?\d", re.IGNORECASE)
+
+
+def _table_rows(lines: list[str]):
+    """Rows of a cost table (description, qty, base, rate %, VAT, total) under a header with BTW and
+    Totaal columns, plus its closing total row. Each row's base + VAT must equal its total, so a
+    row with an empty rate and no VAT is an untaxed one (rate None); returns None otherwise."""
+    start = next((i for i, ln in enumerate(lines)
+                  if TABLE_HEADER.search(ln) and not _amounts(ln)), None)
+    if start is None:
+        return None
+    rows, total = [], None
+    for line in lines[start + 1:]:
+        found = _amounts(line)
+        if len(found) < 3 or abs(found[-3] + found[-2] - found[-1]) > TOLERANCE_CENTS:
+            if rows:
+                break
+            continue
+        if TABLE_TOTAL.search(line):
+            total = (found[-3], found[-2], found[-1])
+            break
+        label = ROW_LABEL.match(line)
+        if not label:
+            return None
+        rate = ROW_RATE.search(line)
+        rows.append((label.group(1).strip(), found[-3], int(rate.group(1)) if rate else None,
+                     found[-2]))
+    return (rows, total) if rows and total else None
+
+
+def _table_lines(lines: list[str], excl, vat_total) -> list[ExtractedLine]:
+    """Lines of a cost table, only when its rows add up to the invoice totals."""
+    table = _table_rows(lines)
+    if table is None or excl is None or vat_total is None:
+        return []
+    rows, _ = table
+    if (abs(sum(r[1] for r in rows) - excl) > TOLERANCE_CENTS
+            or abs(sum(r[3] for r in rows) - vat_total) > TOLERANCE_CENTS):
+        return []
+    out = []
+    for label, base, rate, vat in rows:
+        if rate is None and vat == 0:
+            rate = 0
+        elif rate is None:
+            rate = _infer_rate(base, vat)
+        untaxed = rate == 0
+        out.append(ExtractedLine(label, base, rate, vat, vat_unconfirmed=untaxed))
+    return out
 
 
 def _choose_totals(excl, incl, ambiguous, vats, deposit):
@@ -577,8 +638,14 @@ def parse_text(
 
     description = f"Invoice {number}" if number else "Purchase"
     extracted_lines: list[ExtractedLine] = []
+    table_lines = _table_lines(lines, excl, vat_total) if not reverse else []
     if reverse and excl is not None:
         extracted_lines.append(ExtractedLine(description, excl, None, 0))
+    elif table_lines:
+        extracted_lines.extend(table_lines)
+        if any(ln.vat_unconfirmed for ln in table_lines):
+            warnings.append("Some lines show no VAT; they were proposed as without VAT. Confirm "
+                            "whether they are outside the scope, exempt or taxed.")
     elif groups or (recap and excl is not None
                     and abs(sum(b for b, _ in recap.values()) - excl) <= TOLERANCE_CENTS):
         if not groups:
