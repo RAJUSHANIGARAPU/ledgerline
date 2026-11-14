@@ -523,4 +523,50 @@ def test_unreadable_document_gets_one_blank_line(session, admin):
     doc, _ = service.receive(session, admin.id, "s.pdf", pdf_without_text(), "upload")
     proposal = review.build_proposal(session, admin, doc)
     assert proposal.extracted is None and len(proposal.rows) == 1
-    assert proposal.rows[0]["vat_code"] == "I21"
+    assert proposal.rows[0]["vat_code"] == ""
+
+
+def test_unreadable_vat_rate_is_left_for_the_owner_never_filled_with_21(
+    client, session, admin, supplier
+):
+    doc = upload_ubl(client, session)
+    doc.extraction = ExtractedInvoice(
+        invoice_number="X-9", total_excl_cents=10000, lines=[ExtractedLine("Parts", 10000)]
+    ).to_json()
+    session.commit()
+    proposal = review.build_proposal(session, admin, doc)
+    assert proposal.rows[0]["vat_code"] == ""
+    assert any("choose the VAT code" in w for w in proposal.warnings)
+    assert not any("21%" in w for w in proposal.warnings)
+    page = client.get(f"/inbox/{doc.id}")
+    assert '<option value="" selected>Choose a VAT code</option>' in page.text
+    data = create_data(
+        client, doc, supplier.id, session, admin, line_vat_code=["", "I21"]
+    )
+    r = client.post(f"/inbox/{doc.id}/create", data=data, follow_redirects=False)
+    assert "line 1: choose a VAT code" in r.text
+    session.expire_all()
+    assert session.scalars(select(PurchaseInvoice)).first() is None
+
+
+def test_non_invoices_have_their_own_tab_and_can_be_rejected_in_one_click(client, session, admin):
+    invoice_doc = upload_ubl(client, session)
+    statement = upload_ubl(client, session, number="INV-2")
+    statement.extraction = ExtractedInvoice(
+        document_type="statement", warnings=["This looks like a payout or account statement."]
+    ).to_json()
+    session.commit()
+    assert review.status_counts(session, admin.id) == {
+        InboxStatus.REVIEW: 1, "other": 1}
+    review_tab = client.get("/inbox?tab=review").text
+    other_tab = client.get("/inbox?tab=other").text
+    assert f"/inbox/{invoice_doc.id}" in review_tab and f"/inbox/{statement.id}" not in review_tab
+    assert f"/inbox/{statement.id}" in other_tab and "Reject all 1" in other_tab
+    assert "Payout statement, not an invoice" in other_tab
+    r = client.post(
+        "/inbox/reject-non-invoices", data={"csrf_token": client.csrf}, follow_redirects=False
+    )
+    assert r.status_code == 303
+    session.expire_all()
+    assert session.get(InboxDocument, statement.id).status == InboxStatus.REJECTED
+    assert session.get(InboxDocument, invoice_doc.id).status == InboxStatus.REVIEW

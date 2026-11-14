@@ -40,6 +40,7 @@ router = APIRouter()
 
 TABS = (
     ("review", "To review", InboxStatus.REVIEW),
+    ("other", "Not invoices", InboxStatus.REVIEW),
     ("new", "Processing", InboxStatus.NEW),
     ("booked", "Booked", InboxStatus.BOOKED),
     ("rejected", "Rejected", InboxStatus.REJECTED),
@@ -72,10 +73,8 @@ def _process_in_background(tenant_id: int, ids: list[int]) -> None:
 def inbox_list(request: Request, session: SessionDep, user: UserDep, admin: AdminDep,
                tab: str = "review", dup: str = ""):
     tab = tab if tab in {t[0] for t in TABS} else "review"
-    status = next(t[2] for t in TABS if t[0] == tab)
     documents = list(session.scalars(
-        select(InboxDocument)
-        .where(InboxDocument.administration_id == admin.id, InboxDocument.status == status)
+        select(InboxDocument).where(*review.in_tab(tab, admin.id))
         .order_by(InboxDocument.id.desc()).limit(200)
     ))
     counts = review.status_counts(session, admin.id)
@@ -90,6 +89,7 @@ def inbox_list(request: Request, session: SessionDep, user: UserDep, admin: Admi
     return render(request, "inbox/index.html", {
         "documents": documents, "tab": tab, "tabs": TABS, "counts": counts,
         "duplicates": duplicates, "names": names, "labels": review.METHODS,
+        "types": review.DOCUMENT_TYPES, "user_can_write": user.role in WRITE_ROLES,
         "max_mb": get_settings().max_upload_bytes // (1024 * 1024),
         "inbox_address": email_intake.inbox_address(get_settings(), admin.inbox_token)
         if user.role in WRITE_ROLES else None,
@@ -253,6 +253,15 @@ def inbox_reject(document_id: int, request: Request, session: SessionDep, owner:
     review.reject(session, admin, owner, document)
     session.commit()
     flash(request, "Document rejected.")
+    return _redirect("/inbox")
+
+
+@router.post("/inbox/reject-non-invoices")
+def inbox_reject_non_invoices(request: Request, session: SessionDep, owner: OwnerDep,
+                              admin: AdminDep):
+    count = review.reject_non_invoices(session, admin, owner)
+    session.commit()
+    flash(request, f"{count} document(s) rejected.")
     return _redirect("/inbox")
 
 

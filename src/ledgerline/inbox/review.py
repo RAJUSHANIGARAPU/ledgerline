@@ -41,6 +41,12 @@ METHODS = {
     "vision": ("Read from photo — check every figure", "bad"),
     "none": ("Could not be read — enter it by hand", "bad"),
 }
+DOCUMENT_TYPES = {
+    "statement": "Payout statement, not an invoice",
+    "reminder": "Payment reminder, not an invoice",
+    "contract": "Contract or order form, not an invoice",
+    "own_sales": "Looks like your own sales invoice",
+}
 _LEGAL_SUFFIX = re.compile(r"(bv|nv|vof|cv|bvba|gmbh|ltd|inc)$")
 
 
@@ -144,8 +150,8 @@ def _rows(extracted: ExtractedInvoice, account: Account | None, country: str,
     for number, line in enumerate(extracted.lines, 1):
         code = vat_code_for(line, extracted.reverse_charge, country)
         if code is None:
-            code = "I21"
-            warnings.append(f"Line {number}: the VAT rate could not be read; 21% was filled in.")
+            code = ""
+            warnings.append(f"Line {number}: the VAT rate could not be read; choose the VAT code.")
         reverse = code in ("IRV21", "IEU21")
         stated = None if reverse or code == "I0" else line.vat_cents
         rows.append({
@@ -160,7 +166,7 @@ def _rows(extracted: ExtractedInvoice, account: Account | None, country: str,
 def build_proposal(session: Session, admin: Administration, document: InboxDocument) -> Proposal:
     if not document.extraction:
         account = default_account(session, admin.id, None)
-        row = forms.blank_purchase_row(account.id if account else "", "I21")
+        row = forms.blank_purchase_row(account.id if account else "")
         return Proposal(None, rows=[row])
     extracted = ExtractedInvoice.from_json(document.extraction)
     contact, how = match_supplier(session, admin.id, extracted)
@@ -174,7 +180,7 @@ def build_proposal(session: Session, admin: Administration, document: InboxDocum
         _rows(extracted, account, country, warnings), warnings,
     )
     if not proposal.rows:
-        proposal.rows = [forms.blank_purchase_row(account.id if account else "", "I21")]
+        proposal.rows = [forms.blank_purchase_row(account.id if account else "")]
     if contact and proposal.reference:
         proposal.duplicate = find_duplicate_purchase(session, admin, contact.id, proposal.reference)
     return proposal
@@ -243,6 +249,10 @@ def create_purchase(
     invoice_date = forms.parse_date(data.invoice_date, "invoice date")
     due_date = forms.parse_optional_date(data.due_date, "due date")
     lines = forms.purchase_inputs(data.rows)
+    unset = [str(n) for n, row in enumerate(data.rows, 1)
+             if not row["vat_code"] and any(row[k].strip() for k in ("description", "amount"))]
+    if unset:
+        raise InvoiceError(f"line {', '.join(unset)}: choose a VAT code")
     attachment = session.get(Attachment, document.attachment_id)
     contact = _contact(session, admin, data)
     invoice = create_purchase_invoice(
@@ -290,9 +300,37 @@ def reject(session: Session, admin: Administration, user: User, document: InboxD
                  entity_type="inbox_document", entity_id=document.id)
 
 
+def _document_type():
+    return func.coalesce(InboxDocument.extraction["document_type"].as_string(), "invoice")
+
+
+def in_tab(tab: str, admin_id: int):
+    """The where-clause for an inbox tab; documents that are not purchase invoices get their own."""
+    status = InboxStatus(tab) if tab != "other" else InboxStatus.REVIEW
+    clause = [InboxDocument.administration_id == admin_id, InboxDocument.status == status]
+    if tab == "review":
+        clause.append(_document_type() == "invoice")
+    elif tab == "other":
+        clause.append(_document_type() != "invoice")
+    return clause
+
+
 def status_counts(session: Session, admin_id: int) -> dict[str, int]:
+    """Documents per tab key: the status values, plus 'other' for non-invoices waiting in review."""
     rows = session.execute(
         select(InboxDocument.status, func.count()).where(
             InboxDocument.administration_id == admin_id).group_by(InboxDocument.status)
     ).all()
-    return dict(rows)
+    counts = dict(rows)
+    other = session.scalar(select(func.count()).where(*in_tab("other", admin_id))) or 0
+    counts[InboxStatus.REVIEW] = counts.get(InboxStatus.REVIEW, 0) - other
+    counts["other"] = other
+    return counts
+
+
+def reject_non_invoices(session: Session, admin: Administration, user: User) -> int:
+    """Reject every document in the 'Not invoices' tab; returns how many."""
+    documents = list(session.scalars(select(InboxDocument).where(*in_tab("other", admin.id))))
+    for document in documents:
+        reject(session, admin, user, document)
+    return len(documents)
