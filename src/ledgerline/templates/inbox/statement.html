@@ -50,6 +50,13 @@
             {% endfor %}
             </tbody>
           </table>
+          {% if fee_rate_needs_input %}
+          {% set chosen = values.fee_vat_rate if values.fee_vat_rate is defined and values.fee_vat_rate else (st.fee_vat_rate_percent|string if st.fee_vat_rate_percent else '') %}
+          <label class="field"><span class="field-label">VAT rate on the fees{% if st.fee_vat_rate_percent %} (inferred {{ st.fee_vat_rate_percent }}% from the amounts, confirm){% else %} (not printed and not derivable: choose){% endif %}</span>
+            <select class="input" name="fee_vat_rate" required><option value="">Choose the VAT rate</option>
+              {% for r in (21, 9) %}<option value="{{ r }}"{% if chosen == r|string %} selected{% endif %}>{{ r }}%</option>{% endfor %}
+            </select></label>
+          {% endif %}
           {% if st.tips_cents %}
           <label class="field"><span class="field-label">Account for tips</span>
             <select class="input" name="tips_account"><option value="">Choose an account</option>

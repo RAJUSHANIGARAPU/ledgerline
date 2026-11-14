@@ -174,7 +174,8 @@ def _statement_ctx(session: Session, admin, document: InboxDocument, errors=None
     return {
         "document": document, "attachment": attachment, "st": st, "errors": errors or [],
         "decisions": platform_booking.pending_decisions(st), "entry": entry,
-        "values": values or {}, "sales_codes": [
+        "values": values or {}, "fee_rate_needs_input": platform_booking.fee_rate_needs_input(st),
+        "sales_codes": [
             c for c in codes.for_direction(Direction.SALES) if not c.reverse_charge],
         "accounts": list(session.scalars(
             select(Account).where(Account.administration_id == admin.id,
@@ -330,18 +331,20 @@ def inbox_book_statement(
     document_id: int, request: Request, session: SessionDep, owner: OwnerDep, admin: AdminDep,
     sales_code: FormList = None, sales_amount: FormList = None, tips_account: FormText = "",
     adjustments_account: FormText = "", accept_difference: FormText = "",
+    fee_vat_rate: FormText = "",
 ):
     document = _document_or_404(session, admin.id, document_id)
     try:
         choices = platform_booking.StatementChoices(
             _split(sales_code, sales_amount), _account_id(tips_account),
-            _account_id(adjustments_account), accept_difference == "1")
+            _account_id(adjustments_account), accept_difference == "1", _account_id(fee_vat_rate))
         entry = platform_booking.book_statement(session, admin, owner, document, choices)
         session.commit()
     except platform_booking.PlatformBookingError as exc:
         session.rollback()
         document = session.get(InboxDocument, document.id)
         values = {"tips_account": tips_account, "adjustments_account": adjustments_account,
+                  "fee_vat_rate": fee_vat_rate,
                   "split": dict(zip(sales_code or [], sales_amount or [], strict=False))}
         ctx = _statement_ctx(session, admin, document, exc.problems, values)
         return render(request, "inbox/statement.html", ctx, status_code=422)

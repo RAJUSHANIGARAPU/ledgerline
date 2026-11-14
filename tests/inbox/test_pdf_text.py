@@ -330,3 +330,126 @@ def test_supplier_name_printed_twice_is_trusted():
     text = layout_text("Some Shop", "Factuurnummer 9", "Totaal excl btw 10,00", "BTW 21% 2,10",
                        "Totaal 12,10", "Betalen aan Some Shop")
     assert not any("supplier name" in w for w in parse_text(text).warnings)
+
+
+def test_a_pathological_long_line_is_cut_before_the_line_regexes_run():
+    import time
+
+    from ledgerline.inbox.extract import pdf_text
+    from ledgerline.inbox.extract.platform import parse_platform_text
+
+    text = pdf_text._bounded("Label" + " 123" * 40000 + " x")
+    assert max(len(line) for line in text.splitlines()) <= pdf_text.MAX_LINE_CHARS
+    started = time.monotonic()
+    parse_platform_text(text)
+    assert time.monotonic() - started < 1
+
+
+def test_reading_a_pdf_stops_at_the_time_budget(monkeypatch):
+    from ledgerline.inbox.extract import pdf_text
+    from tests.inbox.factories import invoice_html, pdf_from_html
+
+    monkeypatch.setattr(pdf_text, "MAX_READ_SECONDS", -1.0)
+    with pytest.raises(ExtractionError, match="too long"):
+        pdf_text.read_texts(pdf_from_html(invoice_html()))
+
+
+def test_cash_and_carry_recap_without_rates_yields_a_line_per_derived_rate():
+    text = layout_text(
+        "Kassabon", "12-05-2026   2600000001   KASSA3", "Item one   1,00",
+        "Totaal   3   205,23   43,12   248,35",
+        "Factuurrecapitulatie volgens Groothandel - groepsindeling",
+        "119   Disposables      23    155,20    32,60   187,80",
+        "120   Paper             6      9,90     2,08    11,98",
+        "534   Clothing          2     26,64     5,60    32,24",
+        "130   Food              2     13,49     1,21    14,70",
+    )
+    ex = parse_text(text)
+    assert {(ln.vat_rate_percent, ln.amount_excl_cents) for ln in ex.lines} == {
+        (21, 19174), (9, 1349)}
+    assert sum(ln.vat_cents for ln in ex.lines) == 4149
+
+
+def test_recap_whose_bases_do_not_match_the_total_is_not_used():
+    text = layout_text(
+        "Totaal   3   100,00   21,00   121,00",
+        "119   Disposables   2   50,00   10,50   60,50",
+    )
+    ex = parse_text(text)
+    assert [(ln.amount_excl_cents, ln.vat_rate_percent) for ln in ex.lines] == [(10000, 21)]
+
+
+def test_single_rate_base_comes_from_the_printed_total_not_the_vat_amount():
+    text = layout_text(
+        "Supplier B.V.", "Factuurnummer 77", "Totaal excl btw 1,00", "BTW 21% 0,20",
+        "Totaal 1,20")
+    ex = parse_text(text)
+    assert [(ln.amount_excl_cents, ln.vat_cents) for ln in ex.lines] == [(100, 20)]
+    assert any("worked out from the total excl. VAT" in w for w in ex.warnings)
+
+
+def test_rate_tolerance_grows_with_the_size_of_the_invoice():
+    from ledgerline.inbox.extract.pdf_text import _infer_rate
+
+    assert _infer_rate(126407, 26547) == 21 and _infer_rate(10000, 2103) is None
+
+
+@pytest.mark.parametrize("name_line", [
+    "Namens de gemeente Amsterdam draagt Voorbeeldbedrijf zorg voor de uitvoering",
+    "Tarief", "Aant", "Crediteurenadministratie", "Per maand", "Kenmerk",
+    "ITEM-X 45CL 1/2 PAK",
+])
+def test_headers_sentences_and_item_lines_are_not_proposed_as_the_supplier(name_line):
+    text = layout_text(name_line, "Factuurnummer 9", "Totaal excl btw 10,00", "BTW 21% 2,10",
+                       "Totaal 12,10")
+    ex = parse_text(text)
+    assert ex.supplier_name is None
+    assert any("supplier name could not be read" in w for w in ex.warnings)
+
+
+def test_name_after_a_payee_marker_and_in_a_pipe_footer_is_found():
+    text = layout_text(
+        "Factuurnummer 9", "Totaal excl btw 10,00", "BTW 21% 2,10", "Totaal 12,10",
+        "op rekening NL02ABNA0123456789 t.n.v. Northwind Supplies B.V.",
+        "Northwind Supplies B.V. | Teststraat 1 | 1234 AB | Teststad | Tel: 0201234567")
+    assert parse_text(text).supplier_name == "Northwind Supplies B.V."
+
+
+def test_a_trust_account_name_is_not_the_supplier():
+    text = layout_text(
+        "Sample Wholesale Stichting Derdengelden", "Factuurnummer 9", "Totaal excl btw 10,00",
+        "BTW 21% 2,10", "Totaal 12,10", "Sample Wholesale B.V.   KvK 87654321")
+    assert parse_text(text).supplier_name == "Sample Wholesale B.V."
+
+
+def test_invoice_number_printed_under_its_label_in_a_shared_row():
+    text = layout_text(
+        "Factuuradres:     Verzendadres:     Factuurnummer:     Factuurdatum:",
+        "Voorbeeld BV      Voorbeeld BV      TST-2024001        16-10-2024")
+    assert _invoice_number(text) == "TST-2024001"
+
+
+def test_remaining_balance_is_not_the_total_payable():
+    text = layout_text(
+        "Supplier B.V.", "Factuurnummer 77", "Subtotaal   € 602,17", "BTW 21%   € 126,45",
+        "Nog te betalen:   € 0,00     Factuurbedrag:   € 728,62   incl. BTW")
+    ex = parse_text(text)
+    assert (ex.total_excl_cents, ex.total_vat_cents, ex.total_incl_cents) == (60217, 12645, 72862)
+    assert not any("add up" in w for w in ex.warnings)
+
+
+@pytest.mark.parametrize(("title", "kind"), [
+    ("Grootboekmutatiekaarten\nperiode 1-12\nmutatiekaart: 2500 Suspense items", "ledger"),
+    ("Salarisspecificatie\nperiode 07\nNetto 1.234,56", "payslip"),
+    ("Loonstrook juli\nNetto 1.234,56", "payslip"),
+])
+def test_ledger_cards_and_payslips_are_typed_and_nothing_is_kept(title, kind):
+    ex = parse_text(title + "\nTotaal 1.234,56")
+    assert ex.document_type == kind
+    assert ex.lines == [] and ex.total_incl_cents is None and ex.invoice_number is None
+
+
+def test_an_invoice_that_mentions_payslips_in_its_body_stays_an_invoice():
+    text = layout_text("Payroll Service B.V.", "Factuurnummer INV-9", "Totaal excl btw 10,00",
+                       "BTW 21% 2,10", "Totaal 12,10", "Tarief per salarisspecificatie")
+    assert parse_text(text).document_type == "invoice"

@@ -178,7 +178,8 @@ def _forwarding_confirmation(
     link = forwarding.confirmation_link(message)
     if link is None:
         log.warning("forwarding confirmation without a usable link; nothing shown")
-    elif forwarding.record_gmail_confirmation(session, admin_id, link):
+    elif forwarding.record_gmail_confirmation(
+            session, admin_id, link, forwarding.sender_verified(message)):
         log.info("forwarding confirmation shown to the owners")
     return True
 
