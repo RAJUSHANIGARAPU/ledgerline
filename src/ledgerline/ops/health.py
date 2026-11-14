@@ -66,11 +66,20 @@ def check_disk(settings: Settings) -> Check:
 
 
 def check_operator_identity(settings: Settings) -> Check:
-    """Production must not serve legal pages with placeholders. Names only, never values."""
+    """Production must not serve legal pages with placeholders: neither an unset operator field
+    nor a drafting marker left in the page text. Names only, never values."""
     if settings.environment != "production":
         return True, {}
+    from ledgerline.platform.legal import unresolved_placeholders
+
     missing = settings.operator_identity.missing()
-    return (not missing), ({"missing": missing} if missing else {})
+    placeholders = unresolved_placeholders()
+    detail = {}
+    if missing:
+        detail["missing"] = missing
+    if placeholders:
+        detail["placeholders"] = placeholders
+    return (not detail), detail
 
 
 def run_checks(

@@ -3,6 +3,7 @@ import pytest
 
 from ledgerline.config import get_settings
 from ledgerline.ops import health, routes
+from ledgerline.platform import legal
 
 IDENTITY = {
     "OPERATOR_LEGAL_NAME": "Voorbeeld Boekhoudsoftware B.V.",
@@ -81,8 +82,8 @@ def _reset(database_url):
 def test_production_health_fails_loudly_until_every_field_is_set(monkeypatch, tmp_path):
     body = deep(monkeypatch, tmp_path, "production")
     assert body["status"] == "fail"
-    assert body["checks"]["legal"] == {"ok": False, "missing": [
-        "legal_name", "kvk_number", "address", "contact_email"]}
+    assert body["checks"]["legal"]["missing"] == [
+        "legal_name", "kvk_number", "address", "contact_email"]
     partial = deep(monkeypatch, tmp_path, "production",
                    OPERATOR_LEGAL_NAME="X B.V.", OPERATOR_CONTACT_EMAIL="a@x.example")
     assert partial["checks"]["legal"]["missing"] == ["kvk_number", "address"]
@@ -91,10 +92,11 @@ def test_production_health_fails_loudly_until_every_field_is_set(monkeypatch, tm
 def test_a_value_that_is_still_a_bracketed_placeholder_counts_as_unset(monkeypatch, tmp_path):
     body = deep(monkeypatch, tmp_path, "production",
                 **{**{k: v for k, v in IDENTITY.items()}, "OPERATOR_ADDRESS": "[ADDRESS]"})
-    assert body["checks"]["legal"] == {"ok": False, "missing": ["address"]}
+    assert body["checks"]["legal"]["missing"] == ["address"]
 
 
-def test_production_legal_check_passes_when_all_set(monkeypatch, tmp_path):
+def test_production_legal_check_passes_when_all_set_and_no_marker_is_left(monkeypatch, tmp_path):
+    monkeypatch.setattr(legal, "unresolved_placeholders", lambda: {})
     body = deep(monkeypatch, tmp_path, "production", **IDENTITY)
     assert body["checks"]["legal"] == {"ok": True}
 
@@ -107,3 +109,40 @@ def test_check_never_returns_the_values(monkeypatch, tmp_path):
     settings = get_settings()
     ok, detail = health.check_operator_identity(settings)
     assert "KvK" not in str(detail)
+
+
+def test_shipped_legal_pages_still_hold_markers_and_production_reports_them(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from ledgerline.main import create_app
+
+    monkeypatch.setenv("LEDGERLINE_OPS_DIR", str(tmp_path))
+    monkeypatch.setenv("LEDGERLINE_ENVIRONMENT", "production")
+    for key, value in IDENTITY.items():
+        monkeypatch.setenv(f"LEDGERLINE_{key}", value)
+    get_settings.cache_clear()
+    routes._limiter = None
+    response = TestClient(create_app()).get("/healthz/deep")
+    assert response.status_code == 503
+    legal_check = response.json()["checks"]["legal"]
+    assert legal_check["ok"] is False and "missing" not in legal_check
+    assert "[HOSTING PROVIDER]" in legal_check["placeholders"]["privacy"]
+    assert set(legal_check["placeholders"]) <= {"privacy", "terms", "cookies", "disclaimer"}
+
+
+def test_marker_scan_finds_uppercase_markers_only(monkeypatch):
+    class Fake:
+        env = type("E", (), {
+            "list_templates": staticmethod(lambda filter_func: ["legal/_x.html", "legal/_y.html"]),
+            "get_template": staticmethod(lambda n: type("T", (), {"render": staticmethod(
+                lambda **_: "a [NEEDS REVIEW] b [KVK 12] [x] [Ok] [A]"
+                if n.endswith("x.html") else "clean text")})()),
+        })()
+
+    monkeypatch.setattr(legal, "templates", Fake)
+    assert legal.unresolved_placeholders() == {"x": ["[KVK 12]", "[NEEDS REVIEW]"]}
+
+
+def test_development_does_not_enforce_markers(monkeypatch, tmp_path):
+    body = deep(monkeypatch, tmp_path, "development")
+    assert body["checks"]["legal"] == {"ok": True}

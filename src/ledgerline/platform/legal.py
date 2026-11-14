@@ -1,7 +1,9 @@
+import re
+
 from fastapi import APIRouter, Request
 
 from ledgerline.config import get_settings
-from ledgerline.web import render
+from ledgerline.web import render, templates
 
 router = APIRouter(prefix="/legal")
 
@@ -26,6 +28,22 @@ def operator_context() -> dict:
     identity = get_settings().operator_identity
     return {name: getattr(identity, name) or placeholder
             for name, placeholder in _PLACEHOLDERS.items()}
+
+
+# A leftover drafting marker such as [HOSTING PROVIDER] or [NEEDS REVIEW].
+_PLACEHOLDER_MARKER = re.compile(r"\[[A-Z][A-Z0-9 ,.'/&-]*[A-Z0-9]\]")
+
+
+def unresolved_placeholders() -> dict[str, list[str]]:
+    """Render every legal partial and list the bracketed markers still in it, per page."""
+    found = {}
+    for name in sorted(templates.env.list_templates(
+            filter_func=lambda n: n.startswith("legal/_") and n.endswith(".html"))):
+        text = templates.env.get_template(name).render(operator=operator_context())
+        markers = sorted(set(_PLACEHOLDER_MARKER.findall(text)))
+        if markers:
+            found[name.removeprefix("legal/_").removesuffix(".html")] = markers
+    return found
 
 
 def _page(request: Request, slug: str):
