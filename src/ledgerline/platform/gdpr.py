@@ -34,6 +34,7 @@ from ledgerline.models import (
     SalesInvoice,
     SalesInvoiceLine,
     User,
+    VatApproval,
 )
 from ledgerline.platform.validation import retention_until
 from ledgerline.web import AdminDep, OwnerDep, SessionDep, UserDep, flash, render
@@ -193,6 +194,7 @@ def _table_dumps(session, admin: Administration):
         "feedback_entries": select(FeedbackEntry).where(FeedbackEntry.administration_id == aid),
         "daily_takings": select(DailyTakings).where(DailyTakings.administration_id == aid),
         "inbox_documents": select(InboxDocument).where(InboxDocument.administration_id == aid),
+        "vat_approvals": select(VatApproval).where(VatApproval.administration_id == aid),
     }
     for name, stmt in queries.items():
         pk = inspect(stmt.column_descriptions[0]["entity"]).primary_key[0]

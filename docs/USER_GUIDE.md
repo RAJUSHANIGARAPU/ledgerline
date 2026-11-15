@@ -168,7 +168,8 @@ Open [VAT return](/vat). Choose Period (month, quarter or year), the year and th
 - Private use of business assets (rubriek 1d): book a journal entry on the VAT payable account with VAT code VPRIV, usually in the last return of the year.
 - Under the KOR you normally file no VAT return; the page says so when KOR is switched on.
 - File the return yourself in Mijn Belastingdienst Zakelijk (DigiD, eHerkenning or a European login). Ledgerline does not submit it. See the [Belastingdienst page](https://www.belastingdienst.nl/wps/wcm/connect/nl/btw/content/ik-moet-btw-aangifte-doen-hoe-vul-ik-die-in).
-- Optional: Post VAT settlement books one entry that clears the period's VAT accounts into the VAT settlement account. When you pay (or get a refund), book that bank transaction to the VAT settlement account.
+- Approve the return before you file it: tick the Checked box of every rubriek (including 5a and 5b), confirm that you checked the documents behind the amounts, then Approve this return. Owner and bookkeeper can approve; the page shows who approved and when. If a booking changes the figures afterwards, the approval no longer counts and the page asks you to approve again.
+- Optional: Post VAT settlement (only after approval, and only while the figures still match what was approved) books one entry that clears the period's VAT accounts into the VAT settlement account. When you pay (or get a refund), book that bank transaction to the VAT settlement account.
 - After filing, lock the period on the [period lock](/ledger/lock) page: entries on or before that date can no longer be posted. Moving the lock back needs a confirmation and is audited.
 
 ## ICP

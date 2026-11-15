@@ -349,6 +349,27 @@ class DailyTakings(TenantScoped, Base):
         return self.gross_high_cents + self.gross_low_cents + self.gross_zero_cents
 
 
+class VatApproval(TenantScoped, Base):
+    """The approval of one VAT return: who confirmed which figures, and when.
+
+    One row per administration and period. Approving again replaces the figures; the earlier
+    approvals stay in the append-only audit log.
+    """
+
+    __tablename__ = "vat_approvals"
+    __table_args__ = (
+        UniqueConstraint("administration_id", "period_start", "period_end",
+                         name="uq_vat_approvals_period"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
+    period_start: Mapped[date] = mapped_column(Date)
+    period_end: Mapped[date] = mapped_column(Date)
+    figures: Mapped[dict] = mapped_column(JSONB)
+    approved_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    approved_at: Mapped[datetime] = _now()
+
+
 class Attachment(TenantScoped, Base):
     __tablename__ = "attachments"
     id: Mapped[int] = mapped_column(primary_key=True)
