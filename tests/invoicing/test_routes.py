@@ -289,3 +289,15 @@ def test_editor_pages_render(client, session, admin, supplier, customer):
     inv = session.scalars(select(PurchaseInvoice)).one()
     draft = client.get(f"/purchases/{inv.id}").text
     assert "S-100" in draft and "Book invoice" in draft and 'value="21.00"' in draft
+
+
+def test_purchases_page_leads_with_upload_and_keeps_manual_entry(client):
+    page = client.get("/purchases").text
+    assert page.index('href="/inbox#upload-form"') < page.index('href="/purchases/new"')
+    assert "Upload invoices" in page and "Enter by hand" in page
+    assert "read automatically" in page
+
+
+def test_purchases_page_offers_no_actions_to_a_read_only_role(readonly_client):
+    page = readonly_client.get("/purchases").text
+    assert "Upload invoices" not in page and "Enter by hand" not in page
