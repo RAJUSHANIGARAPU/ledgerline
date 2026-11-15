@@ -102,6 +102,17 @@ The model is told to return `null` rather than guess, and to treat everything in
 
 An identifier that fails its check stays visible but is not used to find the supplier. The supplier is matched on VAT number, then KvK number, then IBAN, then name. Failures show up as warnings on the review screen. They do not block you; the human review does.
 
+## Checks after reading
+
+The arithmetic checks above cannot catch a misread that still adds up, such as 9% VAT read as 21%. The review screen therefore also compares the document with what was already booked for the same supplier. These notes are advice: they are shown above the form, need no click, never block creating or booking, and write nothing. They are computed on the fly from booked purchase invoices (drafts, cancelled invoices and opening balances are not counted; the latest 50 are used), and only when the supplier was matched.
+
+- **Usual VAT code.** With at least 3 earlier invoices, if 80% or more of them use one single VAT code, a line with a different code is noted. Suppliers that mix codes on their invoices (for example food at 9% and non-food at 21%) have no usual code and are never noted. Reverse-charge codes are not compared.
+- **Amount.** With at least 5 earlier invoices, a total excl. VAT of more than 5 times their median is noted.
+- **Period.** If the invoice date falls in a period that is closed, in a VAT return that is already approved, or in a return that is already settled, the note says what booking it will require.
+- **Invoice number.** The existing duplicate check already runs on the review screen for every registered invoice of the supplier, so no second rule is added.
+
+The thresholds are constants in `ledgerline/advisory/rules.py`.
+
 ## Your obligations
 
 - **Processor agreement (AVG/GDPR).** Anthropic acts as your processor for this data (with `openrouter`: OpenRouter and the underlying provider). Accept or sign its data processing agreement, which is part of its commercial terms; check the provider's current terms for how to do so.
