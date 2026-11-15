@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Sign in{% endblock %}
+{% block title %}{{ t('auth.login.title') }}{% endblock %}
 {% block public %}
 <div class="auth-page">
   <form class="card auth-card" method="post" action="/login">
@@ -7,17 +7,17 @@
       <img src="{{ url_for('static', path='img/mark.svg') }}" alt="" width="36" height="36">
       <span>Ledgerline</span>
     </div>
-    <p class="muted">Sign in to your books.</p>
+    <p class="muted">{{ t('auth.login.intro') }}</p>
     {% for f in flashes %}<div class="flash flash-{{ f.kind }}" role="status">{{ f.message }}</div>{% endfor %}
     {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <label class="field"><span class="field-label">Email</span>
+    <label class="field"><span class="field-label">{{ t('auth.email') }}</span>
       <input class="input" type="email" name="email" autocomplete="username" required autofocus></label>
-    <label class="field"><span class="field-label">Password</span>
+    <label class="field"><span class="field-label">{{ t('auth.password') }}</span>
       <input class="input" type="password" name="password" autocomplete="current-password" required></label>
-    <button class="btn btn-primary btn-block" type="submit">Sign in</button>
-    <p class="fine-print"><a href="/forgot">Forgot password?</a></p>
-    <p class="fine-print">Only functional cookies are used. <a href="/legal/privacy">Privacy</a></p>
+    <button class="btn btn-primary btn-block" type="submit">{{ t('auth.login.submit') }}</button>
+    <p class="fine-print"><a href="/forgot">{{ t('auth.forgot_link') }}</a></p>
+    <p class="fine-print">{{ t('auth.login.cookies') }} <a href="/legal/privacy">{{ t('foot.privacy') }}</a></p>
   </form>
 </div>
 {% endblock %}

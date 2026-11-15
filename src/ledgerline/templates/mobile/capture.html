@@ -1,8 +1,9 @@
 {% extends "base.html" %}
 {% import "components/macros.html" as ui with context %}
-{% block title %}Capture{% endblock %}
-{% block heading %}Capture a document{% endblock %}
-{% block head %}<script src="{{ url_for('static', path='js/capture-queue.js') }}" defer></script>
+{% block title %}{{ t('capture.title') }}{% endblock %}
+{% block heading %}{{ t('capture.heading') }}{% endblock %}
+{% block head %}<script type="application/json" id="capture-strings">{{ js_strings('js.capture.')|tojson }}</script>
+<script src="{{ url_for('static', path='js/capture-queue.js') }}" defer></script>
 <script src="{{ url_for('static', path='js/capture.js') }}" defer></script>{% endblock %}
 {% block content %}
 <div class="stack" id="capture-queue" aria-live="polite" data-user-id="{{ user_id }}" data-tenant-id="{{ tenant_id }}" hidden></div>
@@ -11,24 +12,24 @@
     {{ ui.csrf() }}
     <input type="hidden" name="administration_id" value="{{ admin.id }}">
     <label class="field">
-      <span class="field-label">Take photo</span>
+      <span class="field-label">{{ t('capture.take_photo') }}</span>
       <input class="input" type="file" name="files" accept="image/*" capture="environment" data-picker>
-      <span class="field-hint">Opens the camera. Lay the receipt flat in good light.</span>
+      <span class="field-hint">{{ t('capture.take_photo_hint') }}</span>
     </label>
     <label class="field">
-      <span class="field-label">Choose file</span>
+      <span class="field-label">{{ t('capture.choose_file') }}</span>
       <input class="input" type="file" name="files" accept="application/pdf,image/*" multiple data-picker>
-      <span class="field-hint">PDF, JPEG or PNG, up to {{ max_mb }} MB each.</span>
+      <span class="field-hint">{{ t('capture.choose_file_hint', mb=max_mb) }}</span>
     </label>
-    {% if photo_reading %}<p class="field-hint" data-testid="photo-privacy-note">Photo reading is on: photos and scans are sent to an external service to be read. Do not upload payslips, bank statements or other documents with personal data as photos or scans. Upload those as PDF with a text layer, where they are recognised and never sent.</p>{% endif %}
+    {% if photo_reading %}<p class="field-hint" data-testid="photo-privacy-note">{{ t('privacy.photo_reading') }}</p>{% endif %}
     <div class="row" id="capture-previews" aria-live="polite"></div>
     <label class="field">
-      <span class="field-label">Note (optional)</span>
-      <input class="input" type="text" name="note" maxlength="300" placeholder="e.g. Fuel, client lunch">
+      <span class="field-label">{{ t('capture.note') }}</span>
+      <input class="input" type="text" name="note" maxlength="300" placeholder="{{ t('capture.note_placeholder') }}">
     </label>
     <progress id="capture-progress" max="100" value="0" hidden></progress>
-    <button class="btn btn-primary btn-block" type="submit" id="capture-submit">Upload to inbox</button>
-    <p class="fine-print">Uploads for {{ admin.name }}. Duplicates are recognised and not stored twice. Without a connection, uploads wait on this phone and are sent when you are back online.</p>
+    <button class="btn btn-primary btn-block" type="submit" id="capture-submit">{{ t('capture.submit') }}</button>
+    <p class="fine-print">{{ t('capture.footnote', admin=admin.name) }}</p>
   </div>
 </form>
 {% endblock %}

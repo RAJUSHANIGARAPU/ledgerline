@@ -25,6 +25,7 @@ log = logging.getLogger("ledgerline")
 # (imports before platform).
 MODULES = [
     "ledgerline.auth",
+    "ledgerline.i18n.routes",
     "ledgerline.accounts.routes",
     "ledgerline.reports.routes",
     "ledgerline.ledger.routes",

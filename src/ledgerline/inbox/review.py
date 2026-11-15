@@ -6,6 +6,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ledgerline import audit
+from ledgerline.advisory import review_advice
+from ledgerline.advisory.rules import Advice
 from ledgerline.inbox.extract import ExtractedInvoice, ExtractedLine
 from ledgerline.invoicing import forms
 from ledgerline.invoicing.calc import InvoiceError
@@ -27,8 +29,9 @@ from ledgerline.models import (
     PurchaseInvoiceLine,
     User,
 )
-from ledgerline.money import percent_of
+from ledgerline.money import MoneyError, percent_of, to_cents
 from ledgerline.platform.validation import check_iban, check_kvk, check_vat, normalise_vat
+from ledgerline.vat import codes as vat_codes
 
 EU_NON_NL = {
     "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "EL", "ES", "FI", "FR", "HR", "HU", "IE",
@@ -64,6 +67,7 @@ class Proposal:
     rows: list[dict[str, str]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     duplicate: PurchaseInvoice | None = None
+    advice: list[Advice] = field(default_factory=list)
 
 
 def method_label(method: str | None) -> tuple[str, str]:
@@ -212,6 +216,10 @@ def build_proposal(session: Session, admin: Administration, document: InboxDocum
         proposal.rows = [forms.blank_purchase_row(account.id if account else "")]
     if contact and proposal.reference:
         proposal.duplicate = find_duplicate_purchase(session, admin, contact.id, proposal.reference)
+    proposal.advice = review_advice(
+        session, admin, contact=contact, line_codes=[r["vat_code"] for r in proposal.rows],
+        total_excl_cents=sum(line.amount_excl_cents for line in extracted.lines) or None,
+        document_date=extracted.invoice_date)
     return proposal
 
 
@@ -271,6 +279,46 @@ def _link(document: InboxDocument, invoice: PurchaseInvoice, user: User) -> None
     document.reviewed_by_id = user.id
 
 
+def _figures(rows: list[dict[str, str]]) -> tuple[int, dict[str, int]]:
+    """Net total and VAT per rate of form rows; the same rule on both sides of a comparison."""
+    net, vat = 0, {}
+    for row in rows:
+        try:
+            amount = to_cents(row["amount"] or "0")
+            stated = to_cents(row["vat"]) if row["vat_auto"] == "0" and row["vat"].strip() else None
+        except (MoneyError, ArithmeticError, ValueError):
+            continue
+        code = vat_codes.VAT_CODES.get(row["vat_code"])
+        if code is None:
+            net += amount
+            continue
+        rate = str(int(code.rate))
+        vat[rate] = vat.get(rate, 0) + (percent_of(amount, code.rate) if stated is None else stated)
+        net += amount
+    return net, vat
+
+
+def edited_fields(proposal: Proposal, data: ReviewForm) -> list[str]:
+    """Names of the proposed fields the user changed before saving. No values are kept."""
+    changed = []
+    proposed_contact = str(proposal.contact.id) if proposal.contact else None
+    if data.contact_id != proposed_contact:
+        changed.append("supplier")
+    if data.supplier_reference.strip() != proposal.reference.strip():
+        changed.append("invoice_number")
+    if data.invoice_date.strip() != proposal.invoice_date:
+        changed.append("date")
+    before, after = _figures(proposal.rows), _figures(data.rows)
+    if before[0] != after[0]:
+        changed.append("net")
+    for rate in sorted(set(before[1]) | set(after[1]), key=int, reverse=True):
+        if abs(before[1].get(rate, 0) - after[1].get(rate, 0)) > 1:
+            changed.append(f"vat_{rate}")
+    if abs(before[0] + sum(before[1].values()) - after[0] - sum(after[1].values())) > 1:
+        changed.append("total")
+    return changed
+
+
 def create_purchase(
     session: Session, admin: Administration, user: User, document: InboxDocument,
     data: ReviewForm,
@@ -297,6 +345,7 @@ def create_purchase(
     if unset:
         raise InvoiceError(f"line {', '.join(unset)}: choose a VAT code")
     attachment = session.get(Attachment, document.attachment_id)
+    proposal = build_proposal(session, admin, document)
     contact = _contact(session, admin, data)
     invoice = create_purchase_invoice(
         session, admin, contact, lines, supplier_reference=data.supplier_reference,
@@ -307,7 +356,9 @@ def create_purchase(
     audit.record(
         session, "inbox.create_purchase", user_id=user.id, administration_id=admin.id,
         entity_type="inbox_document", entity_id=document.id,
-        details={"purchase_invoice_id": invoice.id},
+        details={"purchase_invoice_id": invoice.id,
+                 "method": document.extraction_method or "none",
+                 "changed": edited_fields(proposal, data) if proposal.extracted else []},
     )
     return invoice
 

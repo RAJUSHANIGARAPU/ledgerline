@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% import "components/macros.html" as ui with context %}
-{% block title %}Uploaded{% endblock %}
-{% block heading %}Upload result{% endblock %}
+{% block title %}{{ t('captured.title') }}{% endblock %}
+{% block heading %}{{ t('captured.heading') }}{% endblock %}
 {% block head %}<script src="{{ url_for('static', path='js/capture-queue.js') }}" defer></script>
 <script src="{{ url_for('static', path='js/capture.js') }}" defer></script>{% endblock %}
 {% block content %}
@@ -10,12 +10,12 @@
     {% if r.error %}
       <div class="flash flash-error" role="alert">{{ r.name }}: {{ r.error }}</div>
     {% elif r.duplicate %}
-      <div class="flash flash-info" role="status">{{ r.name }} is already in your inbox.{% if not is_uploader %} <a href="/inbox/{{ r.id }}">View it</a>{% endif %}</div>
+      <div class="flash flash-info" role="status">{{ t('captured.duplicate', name=r.name) }}{% if not is_uploader %} <a href="/inbox/{{ r.id }}">{{ t('captured.view') }}</a>{% endif %}</div>
     {% else %}
-      <div class="flash flash-success" role="status"><strong>In your inbox:</strong> {{ r.name }}.{% if not is_uploader %} <a href="/inbox/{{ r.id }}">Open document</a>{% endif %}</div>
+      <div class="flash flash-success" role="status"><strong>{{ t('captured.in_inbox') }}</strong> {{ r.name }}.{% if not is_uploader %} <a href="/inbox/{{ r.id }}">{{ t('captured.open') }}</a>{% endif %}</div>
     {% endif %}
   {% endfor %}
-  <a class="btn btn-primary btn-block" href="/capture">Capture another</a>
-  {% if not is_uploader %}<a class="btn btn-secondary btn-block" href="/inbox">Go to inbox</a>{% endif %}
+  <a class="btn btn-primary btn-block" href="/capture">{{ t('captured.another') }}</a>
+  {% if not is_uploader %}<a class="btn btn-secondary btn-block" href="/inbox">{{ t('captured.go_inbox') }}</a>{% endif %}
 </div>
 {% endblock %}

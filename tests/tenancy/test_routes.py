@@ -149,7 +149,7 @@ def test_route_table_is_covered():
 
 
 POSTS_OPEN_TO_EVERYONE = {
-    "/login", "/tenants", "/logout", "/administration/switch", "/api/v1/inbox",
+    "/login", "/tenants", "/logout", "/language", "/administration/switch", "/api/v1/inbox",
     "/login/totp", "/forgot", "/reset/{token}", "/invite/{token}", "/account/password",
     "/account/sign-out-everywhere", "/account/invitations/{membership_id}/{decision}",
     "/account/security/2fa/start", "/account/security/2fa/enable",
