@@ -20,7 +20,7 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8000/healthz}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-120}"
-DEEP_HEALTH_URL="${DEEP_HEALTH_URL:-$HEALTH_URL/deep}"
+DEEP_HEALTH_URL="${DEEP_HEALTH_URL:-${HEALTH_URL%/}/deep}"
 TARGET="${1:-}"
 
 say() { echo "[update] $*"; }
@@ -38,55 +38,48 @@ wait_healthy() {
 # /healthz/deep answers 503 with the same JSON when a check fails, so no -f here.
 read_deep() { curl -sS -m 5 "$DEEP_HEALTH_URL" 2>/dev/null || true; }
 
-# Compare the deep check now with the one taken before the update. Prints "ok",
-# "regressed: <checks>" or "unreadable". The worker counts only when its heartbeat was written
-# after the restart ($1 seconds ago): the heartbeat file outlives the old worker.
-deep_verdict() {
-  read_deep | python3 -c '
+# Evaluate one /healthz/deep body (stdin) against the reading taken before the update ($2, may
+# be empty). Prints "<state>|<regressed>|<still failing>|<new and failing>": state is ok,
+# regressed or unreadable. A check that was ok before regresses when it is not ok now or is
+# gone. The worker counts only with a heartbeat at most $1 seconds old, i.e. written after the
+# restart: the heartbeat file outlives the old worker. Never fails: bad input is "unreadable".
+deep_eval() {
+  python3 -c '
 import json, sys
 def checks(text):
     try:
         found = json.loads(text).get("checks")
-    except (ValueError, AttributeError):
+    except Exception:
         return None
     return found if isinstance(found, dict) and found else None
-before, after = checks(sys.argv[2]), checks(sys.stdin.read())
-if after is None:
-    print("unreadable")
-    sys.exit()
-bad = []
-for name, was in before.items():
-    if not (isinstance(was, dict) and was.get("ok") is True):
-        continue
-    now = after.get(name) if isinstance(after.get(name), dict) else {}
-    ok = now.get("ok") is True
-    if name == "worker" and ok:
-        ok = float(now.get("age_seconds", "inf")) <= float(sys.argv[1])
-    if not ok:
-        bad.append(name)
-print("regressed: " + " ".join(bad) if bad else "ok")' "$1" "$2"
-}
-
-# Whether a deep check JSON carries a non-empty "checks" object.
-deep_readable() {
-  printf '%s' "$1" | python3 -c '
-import json, sys
+def ok(check):
+    return isinstance(check, dict) and check.get("ok") is True
 try:
-    found = json.load(sys.stdin).get("checks")
-except (ValueError, AttributeError):
-    found = None
-sys.exit(0 if isinstance(found, dict) and found else 1)'
-}
-
-# Names of the checks failing in a deep check JSON; empty when none or unreadable.
-deep_failing() {
-  printf '%s' "$1" | python3 -c '
-import json, sys
-try:
-    found = json.load(sys.stdin).get("checks") or {}
-except (ValueError, AttributeError):
-    found = {}
-print(" ".join(n for n, c in found.items() if not (isinstance(c, dict) and c.get("ok") is True)))'
+    since = float(sys.argv[1])
+    before, after = checks(sys.argv[2]) or {}, checks(sys.stdin.read())
+    if after is None:
+        print("unreadable|||")
+        sys.exit()
+    regressed = []
+    for name, was in before.items():
+        if not ok(was):
+            continue
+        now = after.get(name)
+        fine = ok(now)
+        if fine and name == "worker":
+            try:
+                fine = float(now.get("age_seconds")) <= since
+            except (TypeError, ValueError):
+                fine = False
+        if not fine:
+            regressed.append(name)
+    failing = [n for n, c in after.items() if not ok(c)]
+    still = [n for n in failing if n in before]
+    new = [n for n in failing if n not in before]
+    state = "regressed" if regressed else "ok"
+    print("|".join([state, " ".join(regressed), " ".join(still), " ".join(new)]))
+except Exception:
+    print("unreadable|||")' "$1" "$2" 2>/dev/null || echo "unreadable|||"
 }
 
 [ -z "$(git status --porcelain --untracked-files=no)" ] \
@@ -151,12 +144,20 @@ for service in app worker migrate backup; do
   echo "$name $id" >> "$IMAGES_FILE"
 done
 
-DEEP_BEFORE="$(read_deep)"
-if deep_readable "$DEEP_BEFORE"; then
-  say "deep check before the update: failing [$(deep_failing "$DEEP_BEFORE")]"
+# Read the deep check before touching anything; retry so one rate-limited answer does not
+# switch the comparison off.
+DEEP_BEFORE=""
+for _ in 1 2 3; do
+  body="$(read_deep)"
+  out="$(printf '%s' "$body" | deep_eval 0 "")"
+  if [ "${out%%|*}" != "unreadable" ]; then DEEP_BEFORE="$body"; break; fi
+  sleep 3
+done
+if [ -n "$DEEP_BEFORE" ]; then
+  say "deep check before the update read; failing then: [${out##*|}]"
 else
-  DEEP_BEFORE=""
-  say "no readable deep check before the update ($DEEP_HEALTH_URL); skipping the deep check"
+  say "no readable deep check before the update ($DEEP_HEALTH_URL): $(printf '%s' "$body" | head -c 200)"
+  say "skipping the deep check"
 fi
 
 if [ -n "$TARGET" ]; then git checkout --quiet "$TARGET"; else git merge --ff-only "@{upstream}"; fi
@@ -183,31 +184,36 @@ rollback() {
 # rolled back: the new version keeps running and the script exits 2.
 check_deep() {
   [ -n "$DEEP_BEFORE" ] || return 0
-  waited=0
+  deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
   while :; do
-    verdict="$(deep_verdict "$(( $(date +%s) - UP_AT ))" "$DEEP_BEFORE")"
-    [ "$verdict" = "ok" ] && break
-    if [ "$waited" -ge "$HEALTH_TIMEOUT" ]; then
-      [ "$verdict" = "unreadable" ] && verdict="deep check unreadable after the update"
-      say "DEPLOYED, BUT $verdict ($DEEP_HEALTH_URL). Not rolled back: check"
+    body="$(read_deep)"
+    out="$(printf '%s' "$body" | deep_eval "$(( $(date +%s) - UP_AT ))" "$DEEP_BEFORE")"
+    state="${out%%|*}"; rest="${out#*|}"
+    regressed="${rest%%|*}"; rest="${rest#*|}"
+    still="${rest%%|*}"; new="${rest#*|}"
+    [ "$state" = "ok" ] && break
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      if [ "$state" = "unreadable" ]; then
+        why="deep check unreadable after the update: $(printf '%s' "$body" | head -c 200)"
+      else
+        why="regressed: $regressed"
+      fi
+      say "DEPLOYED, BUT $why ($DEEP_HEALTH_URL). Not rolled back: check"
       say "docker compose logs app worker, then fix forward or roll back by hand (docs/OPERATIONS.md)"
       exit 2
     fi
     sleep 3
-    waited=$((waited + 3))
   done
-  still="$(deep_failing "$(read_deep)")"
-  if [ -n "$still" ]; then
-    say "deep check ok for everything that was ok before; already failing before the update: $still"
-  else
-    say "deep check ok"
-  fi
+  [ -z "$still" ] || say "deep check: already failing before the update: $still"
+  [ -z "$new" ] || say "deep check: new check failing: $new"
+  say "deep check ok for everything that was ok before"
 }
 
 if docker compose up -d --build && UP_AT="$(date +%s)" && wait_healthy; then
   say "healthy: $(curl -fsS -m 5 "$HEALTH_URL")"
-  check_deep
+  # Prune first: a disk regression must not keep the dangling layers (":rollback" tags stay).
   docker image prune -f >/dev/null 2>&1 || true
+  check_deep
   exit 0
 fi
 rollback

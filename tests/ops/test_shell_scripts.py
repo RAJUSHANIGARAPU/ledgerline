@@ -104,8 +104,11 @@ STUBS = {
           [ -f "$STATE/checks.json" ] || exit 22; cat "$STATE/checks.json"; exit 0 ;;
         esac
         case "$*" in *healthz/deep*)
-          deep="$STATE/deep_before.json"; [ -f "$STATE/upgraded" ] && deep="$STATE/deep_after.json"
-          if [ -f "$deep" ]; then cat "$deep"; else echo '{"status":"ok"}'; fi; exit 0 ;;
+          deep="$STATE/deep_before"; [ -f "$STATE/upgraded" ] && deep="$STATE/deep_after"
+          # A *_first.json answer is given once, then the regular one.
+          if [ -f "${deep}_first.json" ]; then cat "${deep}_first.json"; rm "${deep}_first.json"
+          elif [ -f "$deep.json" ]; then cat "$deep.json"; else echo '{"status":"ok"}'; fi
+          exit 0 ;;
         esac
         [ -f "$STATE/unhealthy" ] && exit 22
         echo '{"status":"ok"}' """,
@@ -123,7 +126,7 @@ GREEN = check_runs(test="success", docker="success", e2e="success")
 
 def run_update(
     tmp_path, healthy_after_rollback=True, new_version_healthy=False, args=(), checks=GREEN, env=(),
-    deep_before=None, deep_after=None,
+    deep_before=None, deep_after=None, deep_before_first=None, deep_after_first=None,
 ):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -131,7 +134,9 @@ def run_update(
     state.mkdir()
     if checks is not None:
         (state / "checks.json").write_text(checks)
-    for name, deep in (("deep_before", deep_before), ("deep_after", deep_after)):
+    for name, deep in (("deep_before", deep_before), ("deep_after", deep_after),
+                       ("deep_before_first", deep_before_first),
+                       ("deep_after_first", deep_after_first)):
         if deep is not None:
             (state / f"{name}.json").write_text(deep)
     log = tmp_path / "log"
@@ -240,13 +245,16 @@ def test_update_override_deploys_and_says_why(tmp_path):
 
 
 
-def deep(worker=True, worker_age=0, backup=True, database=True, disk=True):
+def deep(worker=True, worker_age=0, backup=True, database=True, disk=True, drop=(), **extra):
     checks = {
         "database": {"ok": database},
         "worker": {"ok": worker, "age_seconds": worker_age},
         "backup": {"ok": backup, "age_hours": 3.2, "offsite": True},
         "disk": {"ok": disk, "free_percent": 32.8},
+        **{name: {"ok": ok} for name, ok in extra.items()},
     }
+    for name in drop:
+        del checks[name]
     status = "ok" if all(c["ok"] for c in checks.values()) else "fail"
     return json.dumps({"status": status, "checks": checks})
 
@@ -299,6 +307,60 @@ def test_an_unhealthy_update_still_rolls_back_without_reading_the_deep_check(tmp
     result, log, _ = run_update(tmp_path, new_version_healthy=False,
                                 deep_before=deep(), deep_after=deep(worker=False))
     assert result.returncode == 1 and "ROLLING BACK" in result.stdout
+    assert "DEPLOYED, BUT" not in result.stdout and "regressed" not in result.stdout
+    after_up = log[log.index("docker compose up -d --build"):]
+    assert not any("healthz/deep" in line for line in after_up)
+
+
+def test_the_check_waits_until_the_new_worker_has_written_a_heartbeat(tmp_path):
+    result, _, _ = run_update(tmp_path, new_version_healthy=True, deep_before=deep(),
+                              deep_after_first=deep(worker_age=500), deep_after=deep())
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "deep check ok" in result.stdout
+
+
+@pytest.mark.parametrize("after, regressed", [
+    (deep(database=False), "database"),
+    (deep(drop=("disk",)), "disk"),
+    (deep(worker_age=None), "worker"),
+    (json.dumps({"status": "ok", "checks": {"worker": "yes", "database": {"ok": True}}}),
+     "backup disk worker"),
+])
+def test_regressions_and_malformed_checks_exit_2_not_1(tmp_path, after, regressed):
+    result, log, _ = run_update(tmp_path, new_version_healthy=True,
+                                deep_before=deep(), deep_after=after)
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert sorted(result.stdout.split("regressed: ")[1].split(" (")[0].split()) == sorted(
+        regressed.split())
+    assert "Traceback" not in result.stderr
+
+
+def test_a_new_check_failing_after_the_update_is_reported_without_failing(tmp_path):
+    result, _, _ = run_update(tmp_path, new_version_healthy=True,
+                              deep_before=deep(), deep_after=deep(legal=False))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "new check failing: legal" in result.stdout
+
+
+def test_images_are_pruned_before_the_deep_check_can_exit_2(tmp_path):
+    _, log, _ = run_update(tmp_path, new_version_healthy=True,
+                           deep_before=deep(), deep_after=deep(disk=False))
+    prune = log.index("docker image prune -f")
+    assert any("healthz/deep" in line for line in log[prune:])
+
+
+def test_a_rate_limited_first_reading_is_retried(tmp_path):
+    result, _, _ = run_update(tmp_path, new_version_healthy=True,
+                              deep_before_first='{"status":"rate_limited"}',
+                              deep_before=deep(), deep_after=deep(worker=False))
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "skipping the deep check" not in result.stdout
+
+
+def test_a_trailing_slash_in_the_health_url_still_finds_the_deep_check(tmp_path):
+    _, log, _ = run_update(tmp_path, new_version_healthy=True,
+                           env={"HEALTH_URL": "http://127.0.0.1:8000/healthz/"})
+    assert any("http://127.0.0.1:8000/healthz/deep" in line for line in log)
 
 
 # Provisioning files.
