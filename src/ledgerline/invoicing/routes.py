@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ledgerline.config import get_settings
 from ledgerline.invoicing import forms
-from ledgerline.invoicing.calc import InvoiceError
+from ledgerline.invoicing.calc import InvoiceError, StaleInvoiceError
 from ledgerline.invoicing.pdf import render_invoice_pdf, vat_summary
 from ledgerline.invoicing.service import (
     book_purchase_invoice,
@@ -365,6 +365,7 @@ class PurchaseForm:
     due_date: str
     description: str
     rows: list[dict[str, str]]
+    version: str = ""
 
 
 def purchase_form(
@@ -373,12 +374,14 @@ def purchase_form(
     line_description: FormList = None, line_account: FormList = None,
     line_amount: FormList = None, line_vat_code: FormList = None, line_vat: FormList = None,
     line_vat_auto: FormList = None, op: FormText = "", remove: FormText = "",
+    version: FormText = "",
 ) -> PurchaseForm:
     rows = forms.purchase_rows(
         line_description, line_account, line_amount, line_vat_code, line_vat, line_vat_auto,
         op, remove,
     )
-    return PurchaseForm(contact_id, supplier_reference, invoice_date, due_date, description, rows)
+    return PurchaseForm(contact_id, supplier_reference, invoice_date, due_date, description, rows,
+                        version)
 
 
 PurchaseFormDep = Annotated[PurchaseForm, Depends(purchase_form)]
@@ -416,6 +419,7 @@ def _purchase_editor_ctx(session, admin, rows, invoice=None, values=None, errors
         "due_date": (invoice.due_date if invoice
                      else today + timedelta(days=admin.payment_terms_days)).isoformat(),
         "description": (invoice.description or "") if invoice else "",
+        "version": str(invoice.version) if invoice else "",
     }
     attachment = session.get(Attachment, invoice.attachment_id) \
         if invoice and invoice.attachment_id else None
@@ -476,15 +480,17 @@ def _save_purchase(session, request, admin, data: PurchaseForm, upload, invoice)
                 session, admin, invoice, contact, lines,
                 supplier_reference=data.supplier_reference, invoice_date=invoice_date,
                 due_date=due, description=data.description.strip(), attachment=attachment,
+                expected_version=int(data.version) if data.version.isdigit() else -1,
             )
     except InvoiceError as exc:
         session.rollback()
         values = {k: getattr(data, k) for k in
-                  ("contact_id", "supplier_reference", "invoice_date", "due_date", "description")}
+                  ("contact_id", "supplier_reference", "invoice_date", "due_date", "description",
+                   "version")}
         return render(
             request, "purchases/form.html",
             _purchase_editor_ctx(session, admin, data.rows, invoice, values, exc.problems),
-            status_code=422,
+            status_code=409 if isinstance(exc, StaleInvoiceError) else 422,
         )
     session.commit()
     flash(request, "Draft saved.")

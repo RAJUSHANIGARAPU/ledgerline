@@ -20,10 +20,11 @@
 </label>
 {% endmacro %}
 
-{% macro empty(title, text, href=None, cta=None) %}
+{% macro empty(title, text, href=None, cta=None, href2=None, cta2=None) %}
 <div class="empty">
   <h3>{{ title }}</h3>
   <p>{{ text }}</p>
   {% if href %}<a class="btn btn-primary" href="{{ href }}">{{ cta }}</a>{% endif %}
+  {% if href2 %} <a class="btn btn-secondary" href="{{ href2 }}">{{ cta2 }}</a>{% endif %}
 </div>
 {% endmacro %}

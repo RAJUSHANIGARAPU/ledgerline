@@ -403,3 +403,19 @@ def test_uploader_can_use_the_offline_queue(uploader_client, session, admin):
     [row] = response.json()["results"]
     assert "error" not in row and row["duplicate"] is False
     assert len(docs(session)) == 1
+
+
+def test_photo_privacy_note_shows_only_when_photo_reading_is_on(client, monkeypatch):
+    from ledgerline.config import get_settings
+
+    assert "photo-privacy-note" not in client.get("/capture").text
+    assert "photo-privacy-note" not in client.get("/inbox").text
+    monkeypatch.setenv("LEDGERLINE_EXTRACTION_PROVIDER", "anthropic")
+    get_settings.cache_clear()
+    try:
+        for url in ("/capture", "/inbox"):
+            page = client.get(url).text
+            assert "Do not upload payslips" in page
+    finally:
+        monkeypatch.undo()
+        get_settings.cache_clear()

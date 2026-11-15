@@ -11,6 +11,7 @@ from ledgerline import audit
 from ledgerline.config import get_settings
 from ledgerline.invoicing.calc import (
     InvoiceError,
+    StaleInvoiceError,
     allocate_vat,
     line_amount,
     side,
@@ -542,6 +543,14 @@ def create_purchase_invoice(
     return invoice
 
 
+def lock_purchase_invoice(session: Session, invoice: PurchaseInvoice) -> PurchaseInvoice:
+    """Take the row lock and reload the invoice, so status and version are what is committed."""
+    return session.execute(
+        select(PurchaseInvoice).where(PurchaseInvoice.id == invoice.id)
+        .with_for_update(of=PurchaseInvoice).execution_options(populate_existing=True)
+    ).scalar_one()
+
+
 def update_purchase_invoice(
     session: Session,
     admin: Administration,
@@ -554,9 +563,13 @@ def update_purchase_invoice(
     due_date: date,
     description: str | None = None,
     attachment: Attachment | None = None,
+    expected_version: int | None = None,
 ) -> PurchaseInvoice:
+    lock_purchase_invoice(session, invoice)
     if invoice.status != InvoiceStatus.DRAFT:
         raise InvoiceError("a booked invoice cannot be edited")
+    if expected_version is not None and invoice.version != expected_version:
+        raise StaleInvoiceError()
     _contact(admin, contact, (ContactKind.SUPPLIER, ContactKind.BOTH))
     reference = supplier_reference.strip()
     if not reference:
@@ -573,6 +586,7 @@ def update_purchase_invoice(
     if attachment:
         invoice.attachment_id = attachment.id
     invoice.lines = new_lines
+    invoice.version += 1
     recompute_purchase_totals(invoice)
     session.flush()
     return invoice
@@ -632,6 +646,7 @@ def book_purchase_invoice(
 ) -> PurchaseInvoice:
     if invoice.administration_id != admin.id:
         raise InvoiceError("invoice belongs to another administration")
+    lock_purchase_invoice(session, invoice)
     if invoice.status != InvoiceStatus.DRAFT:
         raise InvoiceError("only a draft can be booked")
     if not invoice.lines:

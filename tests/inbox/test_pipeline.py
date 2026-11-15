@@ -168,3 +168,65 @@ def test_ubl_next_to_pdf_in_the_same_email_is_preferred(session, admin):
         .id
         == pdf.id
     )
+
+
+PAYSLIPS = [
+    "<h1>Salarisspecificatie</h1><p>Periode 07</p><p>Netto 1.234,56</p>",
+    "<p>Bakker Horeca</p><p>Maandoverzicht</p><p>Bruto loon 2.000,00</p>"
+    "<p>Loonheffing 400,00</p><p>Netto loon 1.600,00</p>",
+    "<p>Naam medewerker</p>" + "<p>regel</p>" * 12 + "<p>Loonstrook juli</p><p>Netto 1.234,56</p>",
+]
+
+
+@pytest.mark.parametrize("html", PAYSLIPS)
+@pytest.mark.parametrize("provider", ["anthropic", "openrouter"])
+def test_a_payslip_never_reaches_the_vision_step(
+    session, admin, monkeypatch, html, provider
+):
+    import sys
+    import types
+
+    monkeypatch.setenv("LEDGERLINE_EXTRACTION_PROVIDER", provider)
+    get_settings.cache_clear()
+    fake = FakeVision(ExtractedInvoice(invoice_number="V-1", total_incl_cents=500))
+    name = "vision" if provider == "anthropic" else provider
+    module = types.ModuleType(f"ledgerline.inbox.extract.{name}")
+    module.get_extractor = lambda session, administration_id: fake
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    document = receive(session, admin, pdf_from_html(html), "loon.pdf")
+    pipeline.run(session, document)
+    get_settings.cache_clear()
+    assert fake.calls == 0
+    assert document.extraction["document_type"] == "payslip"
+    assert document.extraction_method == "pdf_text"
+
+
+@pytest.fixture
+def capped_vision(session, admin, monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "extraction_provider", "anthropic")
+    monkeypatch.setattr(settings, "extraction_monthly_limit", 1)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    used = receive(session, admin, pdf_without_text() + b"\n% used", "used.pdf")
+    used.extraction_method = "vision"
+    session.commit()
+
+
+def test_a_document_over_the_monthly_cap_says_why(session, admin, capped_vision):
+    document = receive(session, admin, pdf_without_text(), "scan.pdf")
+    pipeline.run(session, document)
+    assert document.extraction is None and document.extraction_method == "limit"
+    assert "limit of 1 documents" in document.extraction_error
+    assert "resets next month" in document.extraction_error
+
+
+def test_a_text_pdf_is_still_read_over_the_cap(session, admin, capped_vision):
+    document = receive(session, admin, pdf_from_html(invoice_html()), "text.pdf")
+    pipeline.run(session, document)
+    assert document.extraction_method == "pdf_text" and document.extraction_error is None
+
+
+def test_the_cap_reason_is_not_given_when_photo_reading_is_off(session, admin):
+    document = receive(session, admin, pdf_without_text(), "scan.pdf")
+    pipeline.run(session, document)
+    assert document.extraction_method == "none"

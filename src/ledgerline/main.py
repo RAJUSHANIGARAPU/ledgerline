@@ -8,6 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
 from ledgerline.config import get_settings
+from ledgerline.models import Role
+from ledgerline.platform.settings import LEGAL_FORMS
 from ledgerline.web import (
     CaptureOnly,
     LoginRequired,
@@ -94,7 +96,9 @@ def create_app() -> FastAPI:
     async def no_administration(request: Request, _exc: NoAdministration):
         if request.headers.get("hx-request"):
             return RedirectResponse("/", 303, headers={"HX-Redirect": "/"})
-        return render(request, "auth/no_administration.html", status_code=409)
+        is_owner = getattr(request.state, "role", None) == Role.OWNER
+        return render(request, "auth/no_administration.html",
+                      {"is_owner": is_owner, "legal_forms": LEGAL_FORMS}, status_code=409)
 
     @app.exception_handler(TwoFactorRequired)
     async def to_two_factor_setup(request: Request, _exc: TwoFactorRequired):

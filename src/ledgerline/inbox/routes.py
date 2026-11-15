@@ -94,10 +94,13 @@ def inbox_list(request: Request, session: SessionDep, user: UserDep, admin: Admi
         "duplicates": duplicates, "names": names, "labels": review.METHODS,
         "types": review.DOCUMENT_TYPES, "user_can_write": user.role in WRITE_ROLES,
         "max_mb": get_settings().max_upload_bytes // (1024 * 1024),
+        "photo_reading": get_settings().extraction_provider != "none",
         "inbox_address": email_intake.inbox_address(get_settings(), admin.inbox_token)
         if user.role in WRITE_ROLES else None,
         "notices": forwarding.active_notices(session, admin.id)
         if user.role == Role.OWNER else [],
+        "limit_banner": pipeline.limit_message(capped[1])
+        if (capped := pipeline.vision_limit_reached(session, admin.id)) else None,
     })
 
 
@@ -171,6 +174,7 @@ def _statement_ctx(session: Session, admin, document: InboxDocument, errors=None
     return {
         "document": document, "attachment": attachment, "st": st, "errors": errors or [],
         "decisions": platform_booking.pending_decisions(st), "entry": entry,
+        "fee_vat_unclaimed": bool(entry and platform_booking.fee_vat_unclaimed(st, entry)),
         "values": values or {}, "fee_rate_needs_input": platform_booking.fee_rate_needs_input(st),
         "sales_codes": [
             c for c in codes.for_direction(Direction.SALES) if not c.reverse_charge],
@@ -335,23 +339,28 @@ def inbox_book_statement(
     document_id: int, request: Request, session: SessionDep, owner: OwnerDep, admin: AdminDep,
     sales_code: FormList = None, sales_amount: FormList = None, tips_account: FormText = "",
     adjustments_account: FormText = "", accept_difference: FormText = "",
-    fee_vat_rate: FormText = "",
+    fee_vat_rate: FormText = "", fee_invoice_number: FormText = "",
+    fee_invoice_asked: FormText = "",
 ):
     document = _document_or_404(session, admin.id, document_id)
     try:
         choices = platform_booking.StatementChoices(
             _split(sales_code, sales_amount), _account_id(tips_account),
-            _account_id(adjustments_account), accept_difference == "1", _account_id(fee_vat_rate))
+            _account_id(adjustments_account), accept_difference == "1", _account_id(fee_vat_rate),
+            fee_invoice_number if fee_invoice_asked else None)
         entry = platform_booking.book_statement(session, admin, owner, document, choices)
         session.commit()
     except platform_booking.PlatformBookingError as exc:
         session.rollback()
         document = session.get(InboxDocument, document.id)
         values = {"tips_account": tips_account, "adjustments_account": adjustments_account,
-                  "fee_vat_rate": fee_vat_rate,
+                  "fee_vat_rate": fee_vat_rate, "fee_invoice_number": fee_invoice_number,
                   "split": dict(zip(sales_code or [], sales_amount or [], strict=False))}
         ctx = _statement_ctx(session, admin, document, exc.problems, values)
         return render(request, "inbox/statement.html", ctx, status_code=422)
     flash(request, f"Statement booked as journal entry {entry.number}. Book the payout from "
                    "the bank screen when it arrives.")
+    if platform_booking.fee_vat_unclaimed(platform_booking.statement_of(document), entry):
+        flash(request, "No commission invoice number was given, so the VAT on the platform fees "
+                       "was booked as part of the cost and no input VAT is claimed.", "error")
     return _redirect(f"/inbox/{document.id}")

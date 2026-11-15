@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy import select
 
-from ledgerline.inbox import review
+from ledgerline.inbox import review, service
 from ledgerline.inbox.extract import ExtractedInvoice, ExtractedLine
 from ledgerline.invoicing.service import PurchaseLineInput, create_purchase_invoice
 from ledgerline.ledger.chart import create_administration
@@ -662,3 +662,26 @@ def test_bank_statement_lands_in_not_invoices_with_the_import_hint(client, sessi
     session.commit()
     assert "Bank statement: import the CSV or CAMT export in Bank" in client.get(
         "/inbox?tab=other").text
+
+
+def test_inbox_shows_the_cap_banner_and_reason(client, session, admin, monkeypatch):
+    from ledgerline.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "extraction_provider", "anthropic")
+    monkeypatch.setattr(settings, "extraction_monthly_limit", 1)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    assert "photo-reading limit" not in client.get("/inbox").text
+    first = service.receive(session, admin.id, "a.pdf", pdf_without_text() + b"a", "upload")[0]
+    capped = service.receive(session, admin.id, "b.pdf", pdf_without_text() + b"b", "upload")[0]
+    first.extraction_method, first.status = "vision", InboxStatus.REVIEW
+    capped.extraction_method, capped.status = "limit", InboxStatus.REVIEW
+    capped.extraction_error = ("The monthly photo-reading limit of 1 documents was reached, "
+                               "so this one was not read.")
+    session.commit()
+    page = client.get("/inbox").text
+    assert "monthly photo-reading limit of 1 documents" in page
+    assert "Not read: monthly photo-reading limit reached" in page
+    detail = client.get(f"/inbox/{capped.id}").text
+    assert "Not read: monthly photo-reading limit reached" in detail
+    assert "limit of 1 documents" in detail

@@ -36,6 +36,7 @@ CLEARING = {
 FEES = (SystemRole.PLATFORM_FEES, "4610", "Delivery platform fees", "I21")
 CASH_CODE = "1000"
 FEE_VAT_CODES = {21: "I21", 9: "I9"}
+INVOICE_NUMBER_MAX = 40
 
 
 class PlatformBookingError(ValueError):
@@ -54,6 +55,9 @@ class StatementChoices:
     accept_difference: bool = False
     # The owner's answer when the statement does not print the VAT rate on the fees.
     fee_vat_rate: int | None = None
+    # The platform's commission invoice number. None: use the one read from the document;
+    # blank: the owner has none, so no input VAT is claimed.
+    fee_invoice_number: str | None = None
 
 
 def statement_of(document: InboxDocument) -> PlatformStatement | None:
@@ -121,11 +125,30 @@ def fee_rate(st: PlatformStatement, choices: StatementChoices) -> int | None:
     return choices.fee_vat_rate if fee_rate_needs_input(st) else st.fee_vat_rate_percent
 
 
+def fee_invoice(st: PlatformStatement, choices: StatementChoices) -> str | None:
+    """The commission invoice the input VAT hangs on; a payout statement alone is not one."""
+    number = st.reference if choices.fee_invoice_number is None else choices.fee_invoice_number
+    return (number or "").strip() or None
+
+
+def fee_vat_claimed(st: PlatformStatement, choices: StatementChoices) -> bool:
+    return bool(st.fee_vat_cents) and fee_invoice(st, choices) is not None
+
+
+def fee_vat_unclaimed(st: PlatformStatement, entry: JournalEntry) -> bool:
+    """True for a booked statement whose fee VAT went into the cost instead of input VAT."""
+    return bool(st.fee_vat_cents) and not any(
+        ln.vat_role == "vat" and ln.vat_code in FEE_VAT_CODES.values() for ln in entry.lines)
+
+
 def pending_decisions(st: PlatformStatement) -> list[str]:
     """What the owner must still decide; shown with the proposal."""
     items = ["Split sales by VAT rate: neither document prints the split."]
     if fee_rate_needs_input(st):
         items.append("Confirm the VAT rate on the fees: the document does not print it.")
+    if st.fee_vat_cents and not st.reference:
+        items.append("Enter the number of the platform's commission invoice: without it no "
+                     "input VAT is claimed on the fees.")
     if st.tips_cents:
         items.append("Choose where tips are booked: the document does not say how they are taxed.")
     if st.adjustments_cents:
@@ -144,6 +167,8 @@ def _validate(st: PlatformStatement, choices: StatementChoices) -> None:
     if not st.arithmetic_ok and not choices.accept_difference:
         problems.append("the figures do not add up; tick that you checked the difference or "
                         "reject the document")
+    if len(fee_invoice(st, choices) or "") > INVOICE_NUMBER_MAX:
+        problems.append(f"the invoice number can be at most {INVOICE_NUMBER_MAX} characters")
     total = sum(cents for _, cents in choices.sales_split)
     if total != st.gross_sales_cents:
         problems.append("the sales split must add up to the gross sales of the statement")
@@ -181,12 +206,17 @@ def build_lines(session: Session, admin: Administration, st: PlatformStatement,
     if st.cash_collected_cents:
         cash = _account(session, aid, CASH_CODE, "Cash", AccountType.ASSET)
         rows.append((cash, st.cash_collected_cents, None, None, "Cash collected by the restaurant"))
-    fee_code = FEE_VAT_CODES.get(fee_rate(st, choices) or 0) if st.fee_vat_cents else "I0"
+    invoice = fee_invoice(st, choices)
+    claimed = fee_vat_claimed(st, choices)
+    fee_code = FEE_VAT_CODES.get(fee_rate(st, choices) or 0) if claimed else "I0"
     fees = _account(session, aid, FEES[1], FEES[2], AccountType.EXPENSE, FEES[3], FEES[0])
-    rows.append((fees, st.fees_cents, fee_code, "base", f"{st.name} fees"))
-    if st.fee_vat_cents:
+    ref = f" (invoice {invoice})" if invoice else ""
+    # Without a commission invoice the VAT is part of the cost, not claimed.
+    fee_cents = st.fees_cents + (0 if claimed else st.fee_vat_cents)
+    rows.append((fees, fee_cents, fee_code, "base", f"{st.name} fees{ref}"))
+    if claimed:
         rows.append((system_account(session, aid, SystemRole.VAT_RECEIVABLE), st.fee_vat_cents,
-                     fee_code, "vat", f"VAT on {st.name} fees"))
+                     fee_code, "vat", f"VAT on {st.name} fees{ref}"))
     if st.adjustments_cents:
         target = _owned(session, aid, choices.adjustments_account_id, "adjustments")
         rows.append((target, -st.adjustments_cents, None, None, "Promotions and corrections"))
@@ -239,6 +269,8 @@ def book_statement(session: Session, admin: Administration, user: User, document
         session, "inbox.book_platform_statement", user_id=user.id, administration_id=admin.id,
         entity_type="inbox_document", entity_id=document.id,
         details={"entry": entry.number, "platform": st.platform,
-                 "payout_cents": st.payout_cents, "fee_vat_rate": fee_rate(st, choices)},
+                 "payout_cents": st.payout_cents, "fee_vat_rate": fee_rate(st, choices),
+                 "fee_invoice": fee_invoice(st, choices),
+                 "fee_vat_claimed": fee_vat_claimed(st, choices)},
     )
     return entry

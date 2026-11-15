@@ -15,7 +15,7 @@ from ledgerline.vat.vat_return import (
     whole_euros,
 )
 from tests.helpers import account
-from tests.vat.booking import book_purchase, book_sale
+from tests.vat.booking import approve_period, book_purchase, book_sale
 
 D = date(2026, 2, 10)
 Q1 = (date(2026, 1, 1), date(2026, 3, 31))
@@ -170,6 +170,7 @@ def _settlements(session):
 def test_settlement_clears_vat_accounts_and_is_posted_once(client, session, admin):
     _book_every_code(session, admin)
     form = {"kind": "quarter", "year": "2026", "number": "1", "csrf_token": client.csrf}
+    approve_period(client)
     response = client.post("/vat/settle", data=form, follow_redirects=False)
     assert response.status_code == 303
     session.expire_all()
@@ -190,6 +191,7 @@ def test_settlement_clears_vat_accounts_and_is_posted_once(client, session, admi
 def test_settlement_of_a_refund_debits_the_settlement_account(client, session, admin):
     book_purchase(session, admin, "I21", 10000, D)
     session.commit()
+    approve_period(client, "month", "2026", "2")
     client.post("/vat/settle", data={"kind": "month", "year": "2026", "number": "2",
                                      "csrf_token": client.csrf})
     session.expire_all()
@@ -198,6 +200,7 @@ def test_settlement_of_a_refund_debits_the_settlement_account(client, session, a
 
 
 def test_settlement_with_no_movement_is_refused(client, session, admin):
+    approve_period(client, "quarter", "2026", "3")
     response = client.post("/vat/settle", data={
         "kind": "quarter", "year": "2026", "number": "3", "csrf_token": client.csrf},
         follow_redirects=True)
@@ -207,6 +210,8 @@ def test_settlement_with_no_movement_is_refused(client, session, admin):
 
 def test_settlement_blocked_by_period_lock(client, session, admin):
     book_sale(session, admin, "V21", 10000, D)
+    session.commit()
+    approve_period(client)
     admin.locked_until = date(2026, 3, 31)
     session.commit()
     response = client.post("/vat/settle", data={

@@ -6,6 +6,7 @@
 {% set source_icon = {'email': '✉', 'upload': '⬆', 'phone': '📱'} %}
 {% set status_badge = {'new': 'draft', 'review': 'open', 'booked': 'posted', 'rejected': 'cancelled'} %}
 {% block content %}
+{% if limit_banner %}<div class="flash flash-error" role="status">{{ limit_banner }}</div>{% endif %}
 {% for d in duplicates %}
 <div class="flash flash-info" role="status">{{ names.get(d.attachment_id, 'This file') }} is already in your inbox: <a href="/inbox/{{ d.id }}">open it</a>.</div>
 {% endfor %}
@@ -36,6 +37,7 @@
         <span class="field-label">Add invoices (PDF, JPEG, PNG or UBL XML, up to {{ max_mb }} MB each)</span>
         <input class="input" type="file" name="files" multiple required accept="application/pdf,image/jpeg,image/png,application/xml,text/xml,.xml">
         <span class="field-hint">Drop files here or choose them. Photos and PDFs are read for you to check; nothing is booked without your review.</span>
+        {% if photo_reading %}<p class="field-hint" data-testid="photo-privacy-note">Photo reading is on: photos and scans are sent to an external service to be read. Do not upload payslips, bank statements or other documents with personal data as photos or scans. Upload those as PDF with a text layer, where they are recognised and never sent.</p>{% endif %}
       </label>
       <div class="form-actions"><button class="btn btn-primary" type="submit">Upload</button></div>
     </form>

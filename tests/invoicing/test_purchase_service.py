@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from ledgerline.config import get_settings
-from ledgerline.invoicing.calc import InvoiceError
+from ledgerline.invoicing.calc import InvoiceError, StaleInvoiceError
 from ledgerline.invoicing.service import (
     PurchaseLineInput,
     book_purchase_invoice,
@@ -141,3 +141,96 @@ def test_attachment_size_limit(session, admin, monkeypatch):
     monkeypatch.setattr(get_settings(), "max_upload_bytes", 20)
     with pytest.raises(InvoiceError, match="too large"):
         store_attachment(session, admin, "a.png", PNG)
+
+
+def _draft(session, admin, supplier, reference="LOCK-1"):
+    inv = create_purchase_invoice(
+        session, admin, supplier, [pline(session, admin, "a", 1000)],
+        supplier_reference=reference, invoice_date=date(2026, 3, 2),
+    )
+    session.commit()
+    return inv
+
+
+def _edit(session, admin, inv, supplier, cents, **extra):
+    return update_purchase_invoice(
+        session, admin, inv, supplier, [pline(session, admin, "b", cents)],
+        supplier_reference=inv.supplier_reference, invoice_date=date(2026, 3, 2),
+        due_date=date(2026, 4, 1), **extra,
+    )
+
+
+def test_save_with_the_loaded_version_increments_it(session, admin, supplier):
+    inv = _draft(session, admin, supplier)
+    assert inv.version == 1
+    _edit(session, admin, inv, supplier, 2000, expected_version=1)
+    session.commit()
+    assert inv.version == 2 and inv.total_excl_cents == 2000
+
+
+def test_save_with_a_stale_version_is_refused_and_changes_nothing(session, admin, supplier):
+    inv = _draft(session, admin, supplier)
+    _edit(session, admin, inv, supplier, 2000, expected_version=1)
+    session.commit()
+    with pytest.raises(StaleInvoiceError, match="Someone else changed this invoice"):
+        _edit(session, admin, inv, supplier, 3000, expected_version=1)
+    session.rollback()
+    assert inv.version == 2 and inv.total_excl_cents == 2000
+
+
+def test_second_booking_of_the_same_draft_is_refused(session, admin, owner, supplier):
+    inv = _draft(session, admin, supplier)
+    book_purchase_invoice(session, admin, inv, owner.id)
+    session.commit()
+    with pytest.raises(InvoiceError, match="only a draft"):
+        book_purchase_invoice(session, admin, inv, owner.id)
+    session.rollback()
+    assert len(session.scalars(select(JournalEntry).where(
+        JournalEntry.source_type == "purchase_invoice")).all()) == 1
+
+
+def test_booking_decides_on_the_committed_status_not_a_stale_object(
+        session, admin, owner, supplier, tenant):
+    from tests.conftest import tenant_db
+
+    inv = _draft(session, admin, supplier)
+    with tenant_db(tenant.id) as other:
+        theirs = other.get(type(inv), inv.id)
+        book_purchase_invoice(other, admin, theirs, owner.id)
+        other.commit()
+    assert inv.status == InvoiceStatus.DRAFT  # this session still holds the old state
+    with pytest.raises(InvoiceError, match="only a draft"):
+        book_purchase_invoice(session, admin, inv, owner.id)
+    session.rollback()
+
+
+def test_concurrent_double_booking_posts_once(session, admin, owner, supplier, tenant):
+    import threading
+    import time
+
+    from tests.conftest import tenant_db
+
+    inv = _draft(session, admin, supplier)
+    outcome = {}
+
+    def second_request():
+        with tenant_db(tenant.id) as other:
+            try:
+                book_purchase_invoice(other, admin, other.get(type(inv), inv.id), owner.id)
+                other.commit()
+                outcome["result"] = "booked"
+            except InvoiceError as exc:
+                other.rollback()
+                outcome["result"] = str(exc)
+
+    book_purchase_invoice(session, admin, inv, owner.id)
+    thread = threading.Thread(target=second_request)
+    thread.start()
+    time.sleep(0.5)
+    assert thread.is_alive()  # waiting on the row lock held by the first request
+    session.commit()
+    thread.join(timeout=20)
+    assert outcome["result"] == "only a draft can be booked"
+    session.expire_all()
+    assert len(session.scalars(select(JournalEntry).where(
+        JournalEntry.source_type == "purchase_invoice")).all()) == 1

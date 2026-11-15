@@ -6,6 +6,8 @@
 #   git-ref  tag, branch or commit to deploy; default: the current branch, fast-forwarded.
 # Environment: HEALTH_URL (default http://127.0.0.1:8000/healthz), HEALTH_TIMEOUT seconds (120),
 #              SKIP_BACKUP=1 to skip the pre-update backup.
+#              CI_REPO (owner/name on GitHub; default: taken from the origin URL),
+#              ALLOW_UNVERIFIED_DEPLOY="<reason>" to deploy a commit without a green CI run.
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -32,6 +34,40 @@ wait_healthy() {
 [ -n "$TARGET" ] || [ "$(git rev-parse --abbrev-ref HEAD)" != "HEAD" ] \
   || { say "detached HEAD (deployed from a tag): pass the tag to deploy, e.g. update.sh v1.2.0"; exit 1; }
 
+# Refuse a commit whose CI run is missing, failed or still running: absent evidence is not a pass.
+REQUIRED_CHECKS="test docker e2e"
+ci_verdict() {
+  curl -fsS -m 15 -H "Accept: application/vnd.github+json" \
+    "https://api.github.com/repos/$1/commits/$2/check-runs?per_page=100" \
+  | python3 -c '
+import json, sys
+runs = {r["name"]: r for r in json.load(sys.stdin).get("check_runs", [])}
+bad = []
+for name in sys.argv[1:]:
+    run = runs.get(name)
+    if run is None:
+        bad.append(name + ": missing")
+    elif run["conclusion"] != "success":
+        bad.append(name + ": " + (run["conclusion"] or run["status"]))
+print("; ".join(bad) or "green")' $REQUIRED_CHECKS
+}
+
+git fetch --tags --prune origin
+REF="$TARGET"
+[ -n "$REF" ] || REF="@{upstream}"
+DEPLOY_COMMIT="$(git rev-parse "$REF^{commit}")"
+CI_REPO="${CI_REPO:-$(git remote get-url origin | sed -E 's#^.*github\.com[:/]##; s#\.git$##')}"
+verdict="$(ci_verdict "$CI_REPO" "$DEPLOY_COMMIT" 2>/dev/null)" || verdict="CI status could not be read"
+if [ "$verdict" = "green" ]; then
+  say "CI green for $(echo "$DEPLOY_COMMIT" | cut -c1-7) ($REQUIRED_CHECKS)"
+elif [ -n "${ALLOW_UNVERIFIED_DEPLOY:-}" ]; then
+  say "WARNING: deploying without green CI ($verdict); reason given: $ALLOW_UNVERIFIED_DEPLOY"
+else
+  say "not deploying $(echo "$DEPLOY_COMMIT" | cut -c1-7): $verdict"
+  say "wait for CI, or set ALLOW_UNVERIFIED_DEPLOY=\"<reason>\" to override"
+  exit 1
+fi
+
 PREVIOUS_COMMIT="$(git rev-parse HEAD)"
 PREVIOUS_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 IMAGES_FILE="$ROOT/.update-previous-images"
@@ -54,7 +90,6 @@ for service in app worker migrate backup; do
   echo "$name $id" >> "$IMAGES_FILE"
 done
 
-git fetch --tags --prune origin
 if [ -n "$TARGET" ]; then git checkout --quiet "$TARGET"; else git merge --ff-only "@{upstream}"; fi
 say "deploying $(git rev-parse --short HEAD) (was $(echo "$PREVIOUS_COMMIT" | cut -c1-7))"
 

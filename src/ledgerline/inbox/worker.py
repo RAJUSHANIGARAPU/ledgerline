@@ -9,6 +9,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ledgerline.actor import WORKER, acting_as
 from ledgerline.config import get_settings
 from ledgerline.db import for_each_tenant, get_sessionmaker
 from ledgerline.inbox import email_intake
@@ -115,5 +116,6 @@ def main() -> int:
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
-    run_forever(stop)
+    with acting_as(WORKER):
+        run_forever(stop)
     return 0

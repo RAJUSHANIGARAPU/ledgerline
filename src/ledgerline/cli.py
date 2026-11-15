@@ -7,6 +7,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, func, select
 
 from ledgerline.accounts import tokens
+from ledgerline.actor import SYSTEM, acting_as
 from ledgerline.auth import hash_password
 from ledgerline.config import get_settings
 from ledgerline.db import get_sessionmaker, tenant_session
@@ -578,7 +579,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    with acting_as(SYSTEM):
+        return args.func(args)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,8 @@ from ledgerline.inbox.extract.ubl import UblExtractor
 from ledgerline.models import Administration, Attachment, InboxDocument, InboxStatus
 
 log = logging.getLogger(__name__)
+LIMIT_METHOD = "limit"
+PHOTO_TYPES = {"image/jpeg", "image/png", "application/pdf"}
 SIBLING_NOTE = "Same invoice as the PDF from this email; its data was read from this e-invoice."
 
 
@@ -27,6 +29,33 @@ def _vision_extractor(session: Session, administration_id: int) -> Extractor | N
         log.warning("vision extraction is enabled but not available")
         return None
     return get_extractor(session, administration_id)
+
+
+def vision_limit_reached(session: Session, administration_id: int) -> tuple[int, int] | None:
+    """(used, limit) when photo reading is configured and this month's cap is used up."""
+    settings = get_settings()
+    limit = settings.extraction_monthly_limit
+    provider = settings.extraction_provider
+    if limit <= 0 or provider not in ("anthropic", "openrouter"):
+        return None
+    try:
+        if provider == "anthropic":
+            from ledgerline.inbox.extract.vision import has_credentials
+        else:
+            from ledgerline.inbox.extract.openrouter import has_credentials
+        from ledgerline.inbox.extract.vision import vision_usage_this_month
+    except ImportError:
+        return None
+    if not has_credentials():
+        return None
+    used = vision_usage_this_month(session, administration_id)
+    return (used, limit) if used >= limit else None
+
+
+def limit_message(limit: int) -> str:
+    return (f"The monthly photo-reading limit of {limit} documents was reached, so this one was "
+            "not read. The limit resets next month; the operator can raise it with "
+            "LEDGERLINE_EXTRACTION_MONTHLY_LIMIT. Enter the invoice by hand.")
 
 
 def build_extractors(session: Session, admin: Administration) -> list[Extractor]:
@@ -87,9 +116,13 @@ def run(session: Session, document: InboxDocument) -> None:
     if used_sibling and sibling[0].status in (InboxStatus.NEW, InboxStatus.REVIEW):
         sibling[0].status = InboxStatus.REJECTED
         sibling[0].extraction_error = SIBLING_NOTE
+    capped = None
+    if result is None and content_type in PHOTO_TYPES:
+        capped = vision_limit_reached(session, admin.id)
     document.extraction = result.to_json() if result else None
-    document.extraction_method = method
+    document.extraction_method = LIMIT_METHOD if capped else method
     document.extraction_error = None if result else (
+        limit_message(capped[1]) if capped else
         "; ".join(dict.fromkeys(errors)) or "No reader could handle this file")[:500]
     document.attempts += 1
     document.status = InboxStatus.REVIEW

@@ -117,6 +117,9 @@ BANK_STATEMENT_RE = re.compile(
     r"rekeningafschrift|bankafschrift|\bafschrift\b(?!\s+factuur)|"
     r"statement\s+(?:business\s+|private\s+|payment\s+|savings\s+)?account|"
     r"(?:bank|account)\s+statement|statement\s+of\s+account", re.IGNORECASE)
+PAYROLL_RE = re.compile(
+    r"loonheffing|brutoloon|bruto\s+loon|netto\s+loon|loonbelasting|burgerservicenummer|\bBSN\b",
+    re.IGNORECASE)
 NOT_INVOICE_NOTES = {
     "statement": "This looks like a payout or account statement, not an invoice.",
     "reminder": "This looks like a payment reminder, not an invoice.",
@@ -268,6 +271,21 @@ def _document_type(lines: list[str], text: str, number: str | None, foreign_ids:
     if PAYSLIP_RE.search(title):
         return "payslip"
     return "invoice"
+
+
+def personal_data_type(texts: list[str]) -> str | None:
+    """A payslip, bank statement or ledger card found anywhere in the text layer.
+
+    Used when no invoice could be read: such a document must not fall through to a model.
+    """
+    for text in texts:
+        if PAYSLIP_RE.search(text) or len(PAYROLL_RE.findall(text)) >= 2:
+            return "payslip"
+        if BANK_STATEMENT_RE.search("\n".join(text.splitlines()[:30])):
+            return "bank_statement"
+        if LEDGER_RE.search(text):
+            return "ledger"
+    return None
 
 
 def _after_label(lines: list[str], label: re.Pattern[str], parse, window: int = 1):
@@ -736,4 +754,10 @@ class PdfTextExtractor:
                     warnings=statement.warnings,
                     platform_statement=statement.to_json(),
                 )
-        return parse_texts(texts, *self.ignore)
+        try:
+            return parse_texts(texts, *self.ignore)
+        except ExtractionError:
+            kind = personal_data_type(texts)
+            if kind is None:
+                raise
+            return ExtractedInvoice(document_type=kind, warnings=[NOT_INVOICE_NOTES[kind]])

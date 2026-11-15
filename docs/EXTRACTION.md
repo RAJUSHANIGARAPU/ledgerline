@@ -24,6 +24,8 @@ It does not contain the administration name, other documents, ledger data or use
 
 **To whom, with `LEDGERLINE_EXTRACTION_PROVIDER=openrouter`:** **OpenRouter** receives the request and passes it to the underlying model provider that serves the model you chose. That provider is a second recipient with its own data handling and retention rules (https://openrouter.ai/docs/features/privacy-and-logging: "Each provider on OpenRouter has its own data handling policies"). Which provider serves a request can depend on routing, so name both OpenRouter and the provider in your privacy notice and processing register, and check both sets of terms. In-region routing in the EU is offered on OpenRouter's Business and Enterprise plans only (same page, read 2026-11-14).
 
+**Payslips and other personal documents.** A PDF whose text layer shows a payslip (salarisspecificatie, loonstrook, or payroll terms such as loonheffing), a bank statement or a ledger card is typed as such and is never sent to a provider, whatever the provider settings are. This holds when the PDF has a text layer. A photo or a scan has no text before the vision step, so Ledgerline cannot tell what it shows: do not upload payslips as photos or scans while photo reading is on. The upload and capture screens say so when a provider is set. If you cannot guarantee that, leave `LEDGERLINE_EXTRACTION_PROVIDER=none`. A password-protected or unreadable PDF cannot be typed either. (Checked in `pdf_text.py`, `personal_data_type`, and `tests/inbox/test_pipeline.py`.)
+
 A supplier invoice contains the supplier's name, address, bank details and sometimes personal data of a sole trader. Sending it is a transfer of personal data to a processor. See "Your obligations" below.
 
 ## Enable it
@@ -58,7 +60,7 @@ Set `LEDGERLINE_EXTRACTION_PROVIDER=openrouter`, `OPENROUTER_API_KEY` and `LEDGE
 
 ### Monthly cap
 
-Each document read by the vision step counts towards the cap, per administration. When the cap is reached, the vision step is skipped (a warning is logged) and the document stays in the inbox for manual entry. The count resets on the first of the month. Set `LEDGERLINE_EXTRACTION_MONTHLY_LIMIT=0` to turn the cap off; then your spend limit in the provider console is the only brake.
+Each document read by the vision step counts towards the cap, per administration. When the cap is reached, the vision step is skipped (a warning is logged) and the document stays in the inbox for manual entry. The inbox then shows a banner, and each affected document says that the monthly limit was reached and that it resets next month. The count resets on the first of the month. Set `LEDGERLINE_EXTRACTION_MONTHLY_LIMIT=0` to turn the cap off; then your spend limit in the provider console is the only brake.
 
 ## Cost
 
@@ -70,7 +72,7 @@ This is an estimate, not a quote. The token counts are an assumption, not a meas
 | `claude-sonnet-5-5` | US$2 / US$10 | about US$0.016 |
 | `claude-haiku-5-5` | US$0.10 / US$0.50 (prompts up to 100k tokens) | under US$0.001 |
 
-Multi-page PDFs cost more. At the default cap of 200 documents per month the Opus estimate is roughly US$6 per administration and the Haiku estimate under US$0.20.
+Multi-page PDFs cost more. At the default cap of 200 documents per month the estimate for the default model, `claude-haiku-5-5`, is under US$0.20 per administration. The Opus alternative comes to roughly US$6.
 
 ### Choosing a model
 

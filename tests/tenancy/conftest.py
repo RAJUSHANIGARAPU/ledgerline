@@ -22,6 +22,7 @@ from ledgerline.models import (
     PurchaseInvoice,
     SalesInvoice,
     User,
+    VatApproval,
 )
 from ledgerline.takings import service as takings
 from tests.conftest import tenant_db
@@ -43,6 +44,9 @@ def seed_tenant(tenant_id: int, owner_id: int | None = None) -> dict:
         s.add(ForwardingNotice(administration_id=books.id, kind="gmail",
                                link="https://mail-settings.google.com/x",
                                expires_at=datetime.now(UTC) + timedelta(days=7)))
+        s.add(VatApproval(administration_id=books.id, period_start=date(2026, 1, 1),
+                          period_end=date(2026, 3, 31), figures={"balance": [0, 0]},
+                          approved_by_id=user_id))
         _, secret = tokens.create_token(s, s.get(User, user_id), books.id, "Phone")
         takings.post_takings(s, books, takings.TakingsInput(
             date(2026, 1, 15), gross_high_cents=1210, cash_cents=1210), user_id)

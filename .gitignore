@@ -13,3 +13,4 @@ playwright-report/
 test-results/
 node_modules/
 .update-previous-images
+pytest-junit.xml

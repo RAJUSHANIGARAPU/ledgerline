@@ -140,3 +140,45 @@ _SINGLE_COLUMN_TENANT_FKS = f"""
     WHERE contype = 'f' AND array_length(conkey, 1) = 1
       AND conrelid IN ({_TENANT_TABLE_IDS}) AND confrelid IN ({_TENANT_TABLE_IDS})
 """
+
+
+def test_migrations_0014_to_0016_up_down_up_keep_the_data(old_database):
+    cfg, engine = old_database
+    command.upgrade(cfg, "0013")
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO contacts (administration_id, kind, name, country, tenant_id)
+            VALUES (1, 'supplier', 'Leverancier', 'NL', 1);
+            INSERT INTO purchase_invoices (administration_id, contact_id, supplier_reference,
+                status, invoice_date, due_date, total_excl_cents, total_vat_cents,
+                total_incl_cents, paid_cents, tenant_id)
+            VALUES (1, 2, 'P-1', 'draft', '2026-01-05', '2026-02-05', 0, 0, 0, 0, 1);
+        """))
+    before = _facts(engine)
+
+    command.upgrade(cfg, "0016")
+    assert _facts(engine) == before
+    with engine.connect() as conn:
+        one = lambda sql: conn.execute(text(sql)).scalar()  # noqa: E731
+        assert one("SELECT actor_type FROM journal_entries") == "unknown"
+        assert one("SELECT actor_type FROM audit_events") == "unknown"
+        assert one("SELECT version FROM purchase_invoices") == 1
+        assert one("SELECT to_regclass('vat_approvals')") is not None
+        assert one("SELECT relforcerowsecurity FROM pg_class WHERE relname = 'vat_approvals'")
+        assert one("SELECT count(*) FROM pg_policy WHERE polrelid = 'vat_approvals'::regclass"
+                   ) == 1
+    with engine.begin() as conn, pytest.raises(Exception, match="ck_audit_events_actor_type"):
+        conn.execute(text("INSERT INTO audit_events (action, actor_type, tenant_id) "
+                          "VALUES ('x', 'robot', 1)"))
+
+    command.downgrade(cfg, "0013")
+    assert _facts(engine) == before
+    with engine.connect() as conn:
+        columns = conn.execute(text(
+            "SELECT table_name, column_name FROM information_schema.columns WHERE "
+            "table_schema = 'public' AND column_name IN ('actor_type', 'version')")).all()
+        assert columns == []
+        assert conn.execute(text("SELECT to_regclass('vat_approvals')")).scalar() is None
+
+    command.upgrade(cfg, "0016")
+    assert _facts(engine) == before

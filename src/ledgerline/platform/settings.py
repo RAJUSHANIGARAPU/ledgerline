@@ -145,6 +145,25 @@ def add_administration(request: Request, session: SessionDep, user: ManagerDep,
     return RedirectResponse("/settings", 303)
 
 
+@router.post("/first-administration")
+def create_first_administration(request: Request, session: SessionDep, user: ManagerDep,
+                                name: Annotated[str, Form()] = "",
+                                legal_form: Annotated[str, Form()] = "eenmanszaak"):
+    if session.scalar(select(Administration.id).limit(1)) is not None:
+        return RedirectResponse("/", 303)
+    name = v.clean(name)
+    if not name or legal_form not in LEGAL_FORMS:
+        flash(request, "A name and a valid legal form are required.", "error")
+        return RedirectResponse("/", 303)
+    created = create_administration(session, name=name, legal_form=legal_form)
+    audit.record(session, "administration.create", user_id=user.id,
+                 administration_id=created.id, entity_type="administration",
+                 entity_id=created.id)
+    session.commit()
+    request.session["administration_id"] = created.id
+    return RedirectResponse("/", 303)
+
+
 @router.post("/inbox-address")
 def regenerate_inbox_address(request: Request, session: SessionDep, user: ManagerDep,
                              admin: AdminDep):
