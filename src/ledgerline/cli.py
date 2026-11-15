@@ -1,5 +1,6 @@
 import argparse
 import getpass
+import json
 import os
 import sys
 from pathlib import Path
@@ -123,9 +124,13 @@ def pilot_report(args: argparse.Namespace) -> int:
     from ledgerline.platform import pilot
 
     start, end = _date_range(args)
-    for tid, (reports, feedback) in pilot.report_by_tenant(
-        _tenant_sessions(args), start, end
-    ).items():
+    results = pilot.report_by_tenant(_tenant_sessions(args), start, end)
+    if args.json:
+        print(json.dumps({"from": str(start), "to": str(end), "tenants": {
+            str(tid): [pilot.report_dict(r) for r in reports]
+            for tid, (reports, _) in results.items()}}, indent=2))
+        return 0
+    for tid, (reports, feedback) in results.items():
         print(pilot.render_text(tid, reports, feedback, start, end), end="\n\n")
     return 0
 
@@ -549,6 +554,9 @@ def build_parser() -> argparse.ArgumentParser:
         cmd.add_argument("--tenant", type=int, help="limit to one tenant")
         cmd.add_argument("--allow-rls-bypass", action="store_true",
                          help="run even if the database role bypasses row-level security")
+        if name == "pilot-report":
+            cmd.add_argument("--json", action="store_true",
+                             help="numbers as JSON (no feedback text)")
         cmd.set_defaults(func=handler)
 
     imp = sub.add_parser("import-contacts",
