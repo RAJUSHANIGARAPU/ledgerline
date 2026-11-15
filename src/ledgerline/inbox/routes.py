@@ -98,6 +98,8 @@ def inbox_list(request: Request, session: SessionDep, user: UserDep, admin: Admi
         if user.role in WRITE_ROLES else None,
         "notices": forwarding.active_notices(session, admin.id)
         if user.role == Role.OWNER else [],
+        "limit_banner": pipeline.limit_message(capped[1])
+        if (capped := pipeline.vision_limit_reached(session, admin.id)) else None,
     })
 
 
