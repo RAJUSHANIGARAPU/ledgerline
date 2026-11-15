@@ -32,7 +32,8 @@
       </div>
     </div>
     {% if document.status == 'booked' %}
-      <div class="card"><div class="card-body">{% if entry %}<p>Booked as journal entry {{ entry.number }}. Book the payout from the bank screen.</p>{% endif %}</div></div>
+      <div class="card"><div class="card-body">{% if entry %}<p>Booked as journal entry {{ entry.number }}. Book the payout from the bank screen.</p>{% endif %}
+      {% if fee_vat_unclaimed %}<p class="flash flash-error" role="alert" data-testid="fee-vat-unclaimed">No commission invoice number was given: the VAT on the platform fees is part of the cost and no input VAT was claimed. Ask your adviser if you still want to claim it.</p>{% endif %}</div></div>
     {% else %}
     <form method="post" action="/inbox/{{ document.id }}/book-statement" class="stack">
       {{ ui.csrf() }}
@@ -50,6 +51,12 @@
             {% endfor %}
             </tbody>
           </table>
+          {% if st.fee_vat_cents %}
+          <label class="field"><span class="field-label">Commission invoice number</span>
+            <input type="hidden" name="fee_invoice_asked" value="1">
+            <input class="input" name="fee_invoice_number" maxlength="40" value="{{ values.fee_invoice_number if values.fee_invoice_number is defined else (st.reference or '') }}">
+            <span class="field-hint" data-testid="fee-invoice-hint">Input VAT on the fees is claimed only with the platform's commission invoice: the payout statement alone is not a valid VAT invoice. Leave this empty and the fees are booked including VAT, with no input VAT claimed.</span></label>
+          {% endif %}
           {% if fee_rate_needs_input %}
           {% set chosen = values.fee_vat_rate if values.fee_vat_rate is defined and values.fee_vat_rate else (st.fee_vat_rate_percent|string if st.fee_vat_rate_percent else '') %}
           <label class="field"><span class="field-label">VAT rate on the fees{% if st.fee_vat_rate_percent %} (inferred {{ st.fee_vat_rate_percent }}% from the amounts, confirm){% else %} (not printed and not derivable: choose){% endif %}</span>
