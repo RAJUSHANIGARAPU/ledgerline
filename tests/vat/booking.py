@@ -39,3 +39,22 @@ def book_purchase(session, admin, code, excl, when, vat=None):
         specs.append(LineSpec(account(session, admin, "1600").id, credit_cents=excl + vat))
     return post_entry(session, admin.id, when, f"Purchase {code}", specs)
 
+
+
+def approve_form(client, kind: str = "quarter", year: str = "2026", number: str = "1",
+                 **overrides) -> dict:
+    """The approve form as the page offers it: its digest and every Checked box ticked."""
+    import re
+
+    page = client.get(f"/vat?kind={kind}&year={year}&number={number}").text
+    digest = re.search(r'name="figures" value="([0-9a-f]+)"', page).group(1)
+    form = {"kind": kind, "year": year, "number": number, "figures": digest,
+            "documents_checked": "yes",
+            "confirm": re.findall(r'name="confirm" value="([^"]+)"', page),
+            "csrf_token": client.csrf}
+    return {**form, **overrides}
+
+
+def approve_period(client, kind: str = "quarter", year: str = "2026", number: str = "1"):
+    return client.post("/vat/approve", data=approve_form(client, kind, year, number),
+                       follow_redirects=False)

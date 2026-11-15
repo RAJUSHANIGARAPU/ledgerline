@@ -5,8 +5,10 @@
 {% block head %}<script src="{{ url_for('static', path='js/invoicing.js') }}" defer></script>{% endblock %}
 {% block content %}
 {% for e in errors %}<div class="flash flash-error" role="alert">{{ e }}</div>{% endfor %}
+{% if invoice and errors and values.version != invoice.version|string %}<p><a class="btn btn-secondary" href="/purchases/{{ invoice.id }}">Reload the latest version</a></p>{% endif %}
 <form method="post" action="{{ '/purchases/%d/save' % invoice.id if invoice else '/purchases/new' }}" enctype="multipart/form-data" class="stack">
   {{ ui.csrf() }}
+  {% if invoice %}<input type="hidden" name="version" value="{{ values.version }}">{% endif %}
   <div class="card">
     <div class="card-body form-grid">
       <label class="field">

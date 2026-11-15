@@ -6,12 +6,21 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Form, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from ledgerline import audit
 from ledgerline.ledger.service import LedgerError, LineSpec, post_entry, system_account
-from ledgerline.models import WRITE_ROLES, JournalEntry, JournalLine, SystemRole
+from ledgerline.models import (
+    WRITE_ROLES,
+    JournalEntry,
+    JournalLine,
+    SystemRole,
+    User,
+    VatApproval,
+)
 from ledgerline.reports.export import Cents, csv_response
 from ledgerline.reports.params import parse_int
+from ledgerline.vat.approval import approval_state, digest, rubrieken, snapshot
 from ledgerline.vat.icp import icp_overview
 from ledgerline.vat.sources import SOURCES
 from ledgerline.vat.vat_return import (
@@ -71,8 +80,12 @@ def vat_overview(request: Request, session: SessionDep, user: UserDep, admin: Ad
                  kind: Opt = None, year: Opt = None, number: Opt = None):
     p = _period(kind, year, number)
     result = compute_vat_return(session, admin.id, p["start"], p["end"])
+    state = approval_state(session, admin.id, p["start"], p["end"], result)
+    approver = session.get(User, state.approval.approved_by_id) if state.approval else None
     return render(request, "vat/index.html", {
-        "p": p, "r": result, "whole": whole_euros, "verify": VERIFY, "sources": SOURCES,
+        "approval": state.approval, "approval_current": state.current, "approver": approver,
+        "figures_digest": digest(snapshot(result)), "p": p, "r": result, "whole": whole_euros,
+        "verify": VERIFY, "sources": SOURCES,
         "deadline": filing_deadline(p["kind"], p["end"]), "kor": admin.kor,
         "settlement": _existing_settlement(session, admin, p["label"]),
         "can_write": user.role in WRITE_ROLES, "years": _years(),
@@ -91,6 +104,50 @@ def vat_lines(request: Request, session: SessionDep, user: UserDep, admin: Admin
         "p": p, "bucket": bucket, "rows": rows, "total": sum(r[3] for r in rows)})
 
 
+@router.post("/vat/approve")
+def vat_approve(request: Request, session: SessionDep, user: OwnerDep, admin: AdminDep,
+                kind: Annotated[str, Form()], year: Annotated[str, Form()],
+                number: Annotated[str, Form()], figures: Annotated[str, Form()],
+                documents_checked: Annotated[str | None, Form()] = None,
+                confirm: Annotated[list[str] | None, Form()] = None):
+    p = _period(kind, year, number)
+    back = RedirectResponse(f"/vat?{p['qs']}", status.HTTP_303_SEE_OTHER)
+    if _existing_settlement(session, admin, p["label"]):
+        flash(request, f"{p['label']} has already been settled; reverse that entry first.",
+              "error")
+        return back
+    result = compute_vat_return(session, admin.id, p["start"], p["end"])
+    current = snapshot(result)
+    if figures != digest(current):
+        flash(request, "The figures changed while you were reviewing them. Check them again.",
+              "error")
+        return back
+    if documents_checked is None or set(confirm or []) != set(rubrieken(result)):
+        flash(request, "Confirm every rubriek and that you checked the documents behind them.",
+              "error")
+        return back
+    approval = session.scalar(select(VatApproval).where(
+        VatApproval.administration_id == admin.id, VatApproval.period_start == p["start"],
+        VatApproval.period_end == p["end"]))
+    if approval is None:
+        session.add(VatApproval(administration_id=admin.id, period_start=p["start"],
+                                period_end=p["end"], figures=current, approved_by_id=user.id))
+    else:
+        approval.figures, approval.approved_by_id = current, user.id
+        approval.approved_at = func.now()
+    audit.record(session, "vat.approve", user_id=user.id, administration_id=admin.id,
+                 entity_type="vat_approval", details={"period": p["label"], "figures": current})
+    try:
+        session.commit()
+    except IntegrityError:
+        session.rollback()
+        flash(request, "Someone approved this return at the same moment. Check it again.",
+              "error")
+        return back
+    flash(request, f"VAT return {p['label']} approved.")
+    return back
+
+
 @router.post("/vat/settle")
 def vat_settle(request: Request, session: SessionDep, user: OwnerDep, admin: AdminDep,
                kind: Annotated[str, Form()], year: Annotated[str, Form()],
@@ -100,6 +157,13 @@ def vat_settle(request: Request, session: SessionDep, user: OwnerDep, admin: Adm
     try:
         if _existing_settlement(session, admin, p["label"]):
             raise LedgerError(f"{p['label']} has already been settled; reverse that entry first")
+        result = compute_vat_return(session, admin.id, p["start"], p["end"])
+        state = approval_state(session, admin.id, p["start"], p["end"], result)
+        if state.approval is None:
+            raise LedgerError(f"the {p['label']} return has not been approved; approve it first")
+        if not state.current:
+            raise LedgerError(
+                f"the figures for {p['label']} changed after they were approved; approve again")
         specs = _settlement_specs(session, admin, p["start"], p["end"])
         entry = post_entry(session, admin.id, p["end"], f"VAT settlement {p['label']}", specs,
                            source_type=_settlement_key(p["label"]), user_id=user.id)

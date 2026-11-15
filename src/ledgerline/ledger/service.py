@@ -7,6 +7,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from ledgerline.actor import actor_type
 from ledgerline.models import (
     Account,
     AccountType,
@@ -146,6 +147,7 @@ def post_entry(
         source_id=source_id,
         reversal_of_id=reversal_of_id,
         created_by_id=user_id,
+        actor_type=actor_type(user_id),
         lines=[
             JournalLine(
                 account_id=line.account_id,

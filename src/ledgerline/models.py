@@ -257,6 +257,8 @@ class JournalEntry(TenantScoped, Base):
     __tablename__ = "journal_entries"
     __table_args__ = (
         UniqueConstraint("administration_id", "number"),
+        CheckConstraint("actor_type IN ('user', 'worker', 'system', 'unknown')",
+                        name="ck_journal_entries_actor_type"),
         # An entry can be reversed once; the database settles two requests racing to do it.
         Index("uq_journal_entries_reversal_of", "reversal_of_id", unique=True,
               postgresql_where=text("reversal_of_id IS NOT NULL")),
@@ -270,6 +272,7 @@ class JournalEntry(TenantScoped, Base):
     source_id: Mapped[int | None] = mapped_column(Integer)
     reversal_of_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"))
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    actor_type: Mapped[str] = mapped_column(String(10), server_default="unknown")
     created_at: Mapped[datetime] = _now()
     lines: Mapped[list["JournalLine"]] = relationship(
         back_populates="entry", order_by="JournalLine.id", lazy="selectin"
@@ -349,6 +352,27 @@ class DailyTakings(TenantScoped, Base):
         return self.gross_high_cents + self.gross_low_cents + self.gross_zero_cents
 
 
+class VatApproval(TenantScoped, Base):
+    """The approval of one VAT return: who confirmed which figures, and when.
+
+    One row per administration and period. Approving again replaces the figures; the earlier
+    approvals stay in the append-only audit log.
+    """
+
+    __tablename__ = "vat_approvals"
+    __table_args__ = (
+        UniqueConstraint("administration_id", "period_start", "period_end",
+                         name="uq_vat_approvals_period"),
+    )
+    id: Mapped[int] = mapped_column(primary_key=True)
+    administration_id: Mapped[int] = mapped_column(ForeignKey("administrations.id"), index=True)
+    period_start: Mapped[date] = mapped_column(Date)
+    period_end: Mapped[date] = mapped_column(Date)
+    figures: Mapped[dict] = mapped_column(JSONB)
+    approved_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    approved_at: Mapped[datetime] = _now()
+
+
 class Attachment(TenantScoped, Base):
     __tablename__ = "attachments"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -424,6 +448,8 @@ class PurchaseInvoice(TenantScoped, Base):
     attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachments.id"))
     journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"))
     is_opening: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    # Bumped on every draft save; the edit form carries it so a stale form is refused.
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
     created_at: Mapped[datetime] = _now()
     lines: Mapped[list["PurchaseInvoiceLine"]] = relationship(
         back_populates="invoice", order_by="PurchaseInvoiceLine.position", lazy="selectin",
@@ -527,9 +553,14 @@ class AuditEvent(TenantScoped, Base):
     """Append-only (enforced by a database trigger)."""
 
     __tablename__ = "audit_events"
+    __table_args__ = (
+        CheckConstraint("actor_type IN ('user', 'worker', 'system', 'unknown')",
+                        name="ck_audit_events_actor_type"),
+    )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     administration_id: Mapped[int | None] = mapped_column(ForeignKey("administrations.id"))
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    actor_type: Mapped[str] = mapped_column(String(10), server_default="unknown")
     action: Mapped[str] = mapped_column(String(60))
     entity_type: Mapped[str | None] = mapped_column(String(40))
     entity_id: Mapped[int | None] = mapped_column(Integer)

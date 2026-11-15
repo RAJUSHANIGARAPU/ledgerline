@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 
+from ledgerline.actor import actor_type
 from ledgerline.models import AuditEvent
 
 
@@ -17,6 +18,7 @@ def record(
         AuditEvent(
             action=action,
             user_id=user_id,
+            actor_type=actor_type(user_id),
             administration_id=administration_id,
             entity_type=entity_type,
             entity_id=entity_id,

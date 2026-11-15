@@ -7,8 +7,10 @@
 <div class="flash flash-info" role="note" data-testid="vat-banner">This overview prepares your return; file it yourself in Mijn Belastingdienst Zakelijk. Ledgerline does not submit to the Belastingdienst.{% if deadline %} File and pay by <strong>{{ deadline|nldate }}</strong> (<a href="{{ sources.deadline[1] }}" rel="noopener">deadlines</a>).{% endif %}</div>
 {% if kor %}<div class="flash flash-info" role="note" data-testid="kor-banner">Your business uses the small business scheme (KOR): you normally file no VAT return, except occasionally for some EU trade (<a href="{{ sources.kor[1] }}" rel="noopener">belastingdienst.nl</a>).</div>{% endif %}
 {% include "vat/_period.html" %}
+{% set confirming = can_write and not settlement %}
+{% macro tick(code) %}{% if confirming %}<td><input type="checkbox" name="confirm" value="{{ code }}" form="vat-approve" aria-label="Confirm rubriek {{ code }}" data-testid="confirm-{{ code }}"></td>{% endif %}{% endmacro %}
 <div class="card"><div class="table-wrap"><table class="table">
-  <thead><tr><th>Rubriek</th><th>Description</th><th class="num">Base</th><th class="num">VAT</th><th class="num">Base on form (&euro;)</th><th class="num">VAT on form (&euro;)</th></tr></thead>
+  <thead><tr><th>Rubriek</th><th>Description</th><th class="num">Base</th><th class="num">VAT</th><th class="num">Base on form (&euro;)</th><th class="num">VAT on form (&euro;)</th>{% if confirming %}<th>Checked</th>{% endif %}</tr></thead>
   <tbody>
   {% for line in r.lines %}
     <tr>
@@ -18,15 +20,36 @@
       <td class="num">{{ line.vat_cents|eur if line.has_vat else '' }}</td>
       <td class="num">{{ line.form_base_euros if line.has_base else '' }}</td>
       <td class="num">{{ line.form_vat_euros if line.has_vat else '' }}</td>
+      {{ tick(line.rubriek) }}
     </tr>
   {% endfor %}
-    <tr class="total-row"><td>5a</td><td>Total VAT owed (rubrieken 1 to 4; filled in for you online)</td><td></td><td class="num">{{ r.owed_cents|eur }}</td><td></td><td class="num">{{ r.form_owed_euros }}</td></tr>
-    <tr class="total-row"><td><a href="/vat/lines?bucket=5b&amp;{{ p.qs }}">5b</a> <a class="pill" href="{{ sources['5b'][1] }}" rel="noopener">source</a></td><td>Deductible input VAT</td><td></td><td class="num">{{ r.deductible_cents|eur }}</td><td></td><td class="num">{{ r.form_deductible_euros }}</td></tr>
+    <tr class="total-row"><td>5a</td><td>Total VAT owed (rubrieken 1 to 4; filled in for you online)</td><td></td><td class="num">{{ r.owed_cents|eur }}</td><td></td><td class="num">{{ r.form_owed_euros }}</td>{{ tick('5a') }}</tr>
+    <tr class="total-row"><td><a href="/vat/lines?bucket=5b&amp;{{ p.qs }}">5b</a> <a class="pill" href="{{ sources['5b'][1] }}" rel="noopener">source</a></td><td>Deductible input VAT</td><td></td><td class="num">{{ r.deductible_cents|eur }}</td><td></td><td class="num">{{ r.form_deductible_euros }}</td>{{ tick('5b') }}</tr>
     <tr class="total-row" data-testid="vat-total"><td></td><td>{{ 'Total to pay' if r.form_balance_euros >= 0 else 'Total to claim back' }} (5a minus 5b)</td><td></td>
-      <td class="num">{{ (r.balance_cents|abs)|eur }}</td><td></td><td class="num {{ 'amount-neg' if r.form_balance_euros > 0 else 'amount-pos' }}">{{ r.form_balance_euros|abs }}</td></tr>
+      <td class="num">{{ (r.balance_cents|abs)|eur }}</td><td></td><td class="num {{ 'amount-neg' if r.form_balance_euros > 0 else 'amount-pos' }}">{{ r.form_balance_euros|abs }}</td>{% if confirming %}<td></td>{% endif %}</tr>
   </tbody>
 </table></div></div>
 <p class="fine-print">The form takes whole euros for every amount, rounded in your favour as <a href="{{ sources.rounding_all[1] }}" rel="noopener">the Belastingdienst allows</a>: VAT owed and bases down, deductible VAT up; negative amounts keep their minus sign. Rubriek 1d (private use) goes in the last return of the year: book a correction with VAT code VPRIV in the journal. Rubriek 1c is only for a sports canteen at the flat 13% rate and 3c only for installation in, or distance sales above the EU threshold to, other EU countries without the Unieregeling; Ledgerline has no VAT codes for those.</p>
+<div class="card"><div class="card-header"><h2 class="card-title">Approval</h2></div>
+  <div class="card-body stack" data-testid="vat-approval">
+  {% if approval and approval_current %}
+    <p data-testid="vat-approved">Approved by {{ approver.email }} on {{ approval.approved_at|nldate }}.</p>
+  {% elif approval %}
+    <p class="flash flash-error" data-testid="vat-approval-stale">Approved by {{ approver.email }} on {{ approval.approved_at|nldate }}, but the figures changed since. Check them and approve again.</p>
+  {% else %}
+    <p class="muted">Not approved yet.</p>
+  {% endif %}
+  {% if confirming and not (approval and approval_current) %}
+  <form method="post" action="/vat/approve" id="vat-approve" class="stack">
+    {{ ui.csrf() }}
+    <input type="hidden" name="kind" value="{{ p.kind }}"><input type="hidden" name="year" value="{{ p.year }}"><input type="hidden" name="number" value="{{ p.number }}">
+    <input type="hidden" name="figures" value="{{ figures_digest }}">
+    <p class="muted">Tick the Checked box of every rubriek in the table, including 5a and 5b.</p>
+    <label><input type="checkbox" name="documents_checked" value="yes" data-testid="documents-checked"> I checked the documents behind these amounts.</label>
+    <div class="form-actions"><button class="btn btn-primary" type="submit" data-testid="vat-approve-button">Approve this return</button></div>
+  </form>
+  {% endif %}
+  </div></div>
 {% if can_write %}
 <div class="card"><div class="card-header"><h2 class="card-title">VAT settlement entry</h2></div>
   <form method="post" action="/vat/settle" class="card-body stack">
@@ -34,9 +57,11 @@
     <input type="hidden" name="kind" value="{{ p.kind }}"><input type="hidden" name="year" value="{{ p.year }}"><input type="hidden" name="number" value="{{ p.number }}">
     {% if settlement %}
     <p>Settled in <a href="/ledger/{{ settlement.id }}">{{ settlement.number }}</a>.</p>
-    {% else %}
+    {% elif approval and approval_current %}
     <p class="muted">Posts one entry dated {{ p.end|nldate }} that clears the period's movement on the VAT accounts into the VAT settlement account. Optional.</p>
     <div class="form-actions"><button class="btn btn-secondary" type="submit" data-confirm="Post the VAT settlement for {{ p.label }}?">Post VAT settlement</button></div>
+    {% else %}
+    <p class="muted">Approve the return first; the settlement entry is posted from approved figures only.</p>
     {% endif %}
   </form></div>
 {% endif %}

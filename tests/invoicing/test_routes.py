@@ -1,3 +1,4 @@
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -10,7 +11,7 @@ from ledgerline.invoicing.service import (
     create_sales_invoice,
 )
 from ledgerline.ledger.chart import create_administration
-from ledgerline.models import InvoiceStatus, PurchaseInvoice, SalesInvoice
+from ledgerline.models import InvoiceStatus, JournalEntry, PurchaseInvoice, SalesInvoice
 from tests.helpers import account, contact
 from tests.invoicing.conftest import sline
 
@@ -301,3 +302,46 @@ def test_purchases_page_leads_with_upload_and_keeps_manual_entry(client):
 def test_purchases_page_offers_no_actions_to_a_read_only_role(readonly_client):
     page = readonly_client.get("/purchases").text
     assert "Upload invoices" not in page and "Enter by hand" not in page
+
+
+def _version_of(page: str) -> str:
+    return re.search(r'name="version" value="(\d+)"', page).group(1)
+
+
+def test_stale_purchase_edit_is_refused_with_a_reload_hint(client, session, admin, supplier):
+    client.post("/purchases/new", data=purchase_form(client, supplier, session, admin))
+    session.expire_all()
+    inv = session.scalars(select(PurchaseInvoice)).one()
+    opened = client.get(f"/purchases/{inv.id}").text
+    version = _version_of(opened)
+    assert version == "1"
+
+    mine = purchase_form(client, supplier, session, admin, line_amount=["200,00"],
+                         line_vat=["42.00"], version=version)
+    assert client.post(f"/purchases/{inv.id}/save", data=mine,
+                       follow_redirects=False).status_code == 303
+    assert _version_of(client.get(f"/purchases/{inv.id}").text) == "2"
+
+    theirs = purchase_form(client, supplier, session, admin, line_amount=["300,00"],
+                           line_vat=["63.00"], version=version)
+    r = client.post(f"/purchases/{inv.id}/save", data=theirs, follow_redirects=False)
+    assert r.status_code == 409
+    assert "Someone else changed this invoice" in r.text and "Reload the latest version" in r.text
+    assert _version_of(r.text) == "1"  # resubmitting the same form stays refused
+    session.expire_all()
+    assert session.get(PurchaseInvoice, inv.id).total_excl_cents == 20000
+
+    missing = purchase_form(client, supplier, session, admin)
+    assert client.post(f"/purchases/{inv.id}/save", data=missing).status_code == 409
+
+
+def test_booking_twice_over_http_posts_one_entry(client, session, admin, supplier):
+    client.post("/purchases/new", data=purchase_form(client, supplier, session, admin))
+    session.expire_all()
+    inv = session.scalars(select(PurchaseInvoice)).one()
+    for _ in range(2):
+        client.post(f"/purchases/{inv.id}/book", data={"csrf_token": client.csrf})
+    session.expire_all()
+    assert session.get(PurchaseInvoice, inv.id).status == InvoiceStatus.OPEN
+    assert len(session.scalars(select(JournalEntry).where(
+        JournalEntry.source_type == "purchase_invoice")).all()) == 1
