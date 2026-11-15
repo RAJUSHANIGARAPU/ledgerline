@@ -21,7 +21,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b
       - run: uv sync --frozen
       - run: uv run ruff check src tests
-      - run: uv run pytest
+      - run: uv run pytest --junitxml=pytest-junit.xml
+      - name: The run is evidence (tests ran, few skips)
+        run: uv run python scripts/check_test_run.py pytest-junit.xml
 
   docker:
     runs-on: ubuntu-latest

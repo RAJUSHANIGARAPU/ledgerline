@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import stat
@@ -91,6 +92,7 @@ STUBS = {
         echo "git $*" >> "$LOG"
         case "$1" in
           status) ;;
+          remote) echo git@github.com:owner/ledgerline.git ;;
           rev-parse) case "$2" in
             --abbrev-ref) echo main ;; --short) echo bbbbbbb ;; *) echo "$GIT_HEAD" ;;
           esac ;;
@@ -98,17 +100,32 @@ STUBS = {
         esac""",
     "curl": r"""
         echo "curl $*" >> "$LOG"
+        case "$*" in *api.github.com*)
+          [ -f "$STATE/checks.json" ] || exit 22; cat "$STATE/checks.json"; exit 0 ;;
+        esac
         [ -f "$STATE/unhealthy" ] && exit 22
         echo '{"status":"ok"}' """,
     "sleep": "exit 0",
 }
 
 
-def run_update(tmp_path, healthy_after_rollback=True, new_version_healthy=False, args=()):
+def check_runs(**conclusions):
+    runs = [{"name": n, "status": "completed", "conclusion": c} for n, c in conclusions.items()]
+    return json.dumps({"check_runs": runs})
+
+
+GREEN = check_runs(test="success", docker="success", e2e="success")
+
+
+def run_update(
+    tmp_path, healthy_after_rollback=True, new_version_healthy=False, args=(), checks=GREEN, env=()
+):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     state = tmp_path / "state"
     state.mkdir()
+    if checks is not None:
+        (state / "checks.json").write_text(checks)
     log = tmp_path / "log"
     docker = f"""
         echo "docker $*" >> "$LOG"
@@ -137,6 +154,7 @@ def run_update(tmp_path, healthy_after_rollback=True, new_version_healthy=False,
         "GIT_HEAD": "a" * 40,
         "SKIP_BACKUP": "1",
         "HEALTH_TIMEOUT": "3",
+        **dict(env),
     }
     result = subprocess.run(
         ["sh", str(root / "deploy" / "hetzner" / "update.sh"), *args],
@@ -180,6 +198,37 @@ def test_failed_rollback_is_reported_and_still_exits_nonzero(tmp_path):
 def test_update_to_a_tag_checks_it_out(tmp_path):
     _, log, _ = run_update(tmp_path, new_version_healthy=True, args=("v1.2.0",))
     assert "git checkout --quiet v1.2.0" in log
+
+
+def test_update_checks_ci_for_the_commit_being_deployed(tmp_path):
+    result, log, _ = run_update(tmp_path, new_version_healthy=True, args=("v1.2.0",))
+    assert result.returncode == 0, result.stdout + result.stderr
+    api = f"https://api.github.com/repos/owner/ledgerline/commits/{'a' * 40}/check-runs"
+    assert any(api in line for line in log)
+    assert "CI green" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "checks, reason",
+    [
+        (check_runs(test="success", docker="success", e2e="failure"), "e2e: failure"),
+        (check_runs(test="success", docker="success"), "e2e: missing"),
+        (None, "CI status could not be read"),
+    ],
+)
+def test_update_refuses_without_green_ci_before_touching_anything(tmp_path, checks, reason):
+    result, log, _ = run_update(tmp_path, new_version_healthy=True, checks=checks)
+    assert result.returncode == 1
+    assert reason in result.stdout and "not deploying" in result.stdout
+    assert not any(line.startswith("docker") or "checkout" in line for line in log)
+
+
+def test_update_override_deploys_and_says_why(tmp_path):
+    env = {"ALLOW_UNVERIFIED_DEPLOY": "hotfix while GitHub is down"}
+    result, log, _ = run_update(tmp_path, new_version_healthy=True, checks=None, env=env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "WARNING: deploying without green CI" in result.stdout
+    assert "hotfix while GitHub is down" in result.stdout
 
 
 # Provisioning files.
