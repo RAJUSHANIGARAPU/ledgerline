@@ -73,7 +73,7 @@
   }
 
   function retry(id) {
-    return update(id, { state: "waiting", attempts: 0, nextAt: 0, error: "" });
+    return update(id, { state: "waiting", attempts: 0, nextAt: 0, error: "", code: "" });
   }
 
   // One transaction: either every file of a submission is queued or none is.
@@ -115,15 +115,16 @@
   }
 
   const FAILED = {
-    409: "The administration is no longer available. Send it again from the inbox.",
-    413: "The file is too large.",
-    415: "This file type is not supported. Send a PDF, JPEG or PNG.",
+    409: "admin_gone",
+    413: "too_large",
+    415: "unsupported",
   };
 
+  // Failures carry a code (shown through the page strings) or the server's own translated text.
   // sent / failed (permanent, shown to the user) / forbidden / auth / network / transient.
   async function send(item, csrf) {
     const content = await getBytes(item.id);
-    if (!content) return { outcome: "failed", error: "The saved file is missing. Choose it again." };
+    if (!content) return { outcome: "failed", code: "missing_file" };
     const body = new FormData();
     body.append("csrf_token", csrf);
     body.append("administration_id", String(item.adminId));
@@ -148,17 +149,17 @@
       return row.error ? { outcome: "failed", error: row.error } : { outcome: "sent" };
     }
     if (response.status === 403) return { outcome: "forbidden" };
-    if (FAILED[response.status]) return { outcome: "failed", error: FAILED[response.status] };
+    if (FAILED[response.status]) return { outcome: "failed", code: FAILED[response.status] };
     if (response.status >= 500 || response.status === 408 || response.status === 429) {
       return { outcome: "transient" };
     }
-    return { outcome: "failed", error: `The server refused this upload (error ${response.status}).` };
+    return { outcome: "failed", code: "refused", arg: response.status };
   }
 
   async function backOff(item) {
     const attempts = (item.attempts || 0) + 1;
     if (attempts >= MAX_ATTEMPTS) {
-      await update(item.id, { state: "failed", retryable: true, attempts, error: "The server kept failing. Try again later." });
+      await update(item.id, { state: "failed", retryable: true, attempts, code: "kept_failing" });
     } else {
       const delay = Math.min(BASE_DELAY * 2 ** (attempts - 1), MAX_DELAY);
       await update(item.id, { attempts, nextAt: Date.now() + delay });
@@ -184,14 +185,14 @@
         context = await readContext();
         result = context.status === "ok" ? await send(item, context.csrf) : { outcome: context.status };
         if (result.outcome === "forbidden") {
-          result = { outcome: "failed", error: "Your account is read-only here and cannot upload documents." };
+          result = { outcome: "failed", code: "read_only" };
         }
       }
       if (result.outcome === "sent") {
         await remove(item.id);
         summary.sent += 1;
       } else if (result.outcome === "failed") {
-        await update(item.id, { state: "failed", error: result.error }, true);
+        await update(item.id, { state: "failed", error: result.error || "", code: result.code || "", arg: result.arg }, true);
       } else if (result.outcome === "transient") {
         await backOff(item);
       } else {
