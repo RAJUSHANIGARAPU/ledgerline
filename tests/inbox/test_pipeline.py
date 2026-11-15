@@ -199,3 +199,34 @@ def test_a_payslip_never_reaches_the_vision_step(
     assert fake.calls == 0
     assert document.extraction["document_type"] == "payslip"
     assert document.extraction_method == "pdf_text"
+
+
+@pytest.fixture
+def capped_vision(session, admin, monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "extraction_provider", "anthropic")
+    monkeypatch.setattr(settings, "extraction_monthly_limit", 1)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    used = receive(session, admin, pdf_without_text() + b"\n% used", "used.pdf")
+    used.extraction_method = "vision"
+    session.commit()
+
+
+def test_a_document_over_the_monthly_cap_says_why(session, admin, capped_vision):
+    document = receive(session, admin, pdf_without_text(), "scan.pdf")
+    pipeline.run(session, document)
+    assert document.extraction is None and document.extraction_method == "limit"
+    assert "limit of 1 documents" in document.extraction_error
+    assert "resets next month" in document.extraction_error
+
+
+def test_a_text_pdf_is_still_read_over_the_cap(session, admin, capped_vision):
+    document = receive(session, admin, pdf_from_html(invoice_html()), "text.pdf")
+    pipeline.run(session, document)
+    assert document.extraction_method == "pdf_text" and document.extraction_error is None
+
+
+def test_the_cap_reason_is_not_given_when_photo_reading_is_off(session, admin):
+    document = receive(session, admin, pdf_without_text(), "scan.pdf")
+    pipeline.run(session, document)
+    assert document.extraction_method == "none"

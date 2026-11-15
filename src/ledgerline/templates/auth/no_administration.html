@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% set standalone = true %}
-{% block title %}No access yet{% endblock %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}{% if is_owner %}Create your books{% else %}No access yet{% endif %}{% endblock %}
 {% block public %}
 <div class="auth-page">
   <div class="card auth-card">
@@ -8,9 +9,22 @@
       <img src="{{ url_for('static', path='img/mark.svg') }}" alt="" width="36" height="36">
       <span>Ledgerline</span>
     </div>
+    {% if is_owner %}
+    <h1 class="page-title">Create your books</h1>
+    <p>Your account has no administration yet. Create the first one to start booking.</p>
+    <form method="post" action="/settings/first-administration" class="stack">
+      {{ ui.csrf() }}
+      {% for f in flashes %}<div class="flash flash-{{ f.kind }}" role="alert">{{ f.message }}</div>{% endfor %}
+      {{ ui.field('name', 'Name', required=True) }}
+      <label class="field"><span class="field-label">Legal form</span>
+        <select class="input" name="legal_form">{% for f in legal_forms %}<option value="{{ f }}">{{ f }}</option>{% endfor %}</select></label>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Create your books</button></div>
+    </form>
+    {% else %}
     <h1 class="page-title">No access yet</h1>
     <p>You don't have access to any administration yet.</p>
     <p class="muted">Ask the owner of your account to give you access. You can sign in again once they have.</p>
+    {% endif %}
     {% if can_switch_tenant %}<p><a href="/tenants">Choose another workspace</a></p>{% endif %}
     <form method="post" action="/logout" data-purge-queue>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

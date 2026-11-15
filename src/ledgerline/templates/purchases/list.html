@@ -2,7 +2,7 @@
 {% import "components/macros.html" as ui with context %}
 {% block title %}Purchases{% endblock %}
 {% block heading %}Purchase invoices{% endblock %}
-{% block actions %}<a class="btn btn-primary" href="/purchases/new">New purchase invoice</a>{% endblock %}
+{% block actions %}{% if can_write %}<a class="btn btn-primary" href="/inbox#upload-form">Upload invoices</a> <a class="btn btn-secondary" href="/purchases/new">Enter by hand</a>{% endif %}{% endblock %}
 {% block content %}
 <div class="tabs">
   <a class="tab{% if not status %} is-active{% endif %}" href="/purchases">All</a>
@@ -30,6 +30,10 @@
   </div>
 </div>
 {% else %}
-{{ ui.empty("No purchase invoices here", "Register a supplier's invoice, attach the PDF, then book it.", "/purchases/new", "New purchase invoice") }}
+{% if can_write %}
+{{ ui.empty("No purchase invoices here", "Documents you upload, photograph or forward by email are read automatically; you check them before anything is booked.", "/inbox#upload-form", "Upload invoices", "/purchases/new", "Enter by hand") }}
+{% else %}
+{{ ui.empty("No purchase invoices here", "Documents uploaded, photographed or forwarded by email are read automatically and appear here once booked.") }}
+{% endif %}
 {% endif %}
 {% endblock %}

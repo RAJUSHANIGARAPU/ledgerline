@@ -6,6 +6,7 @@
 {% set source_icon = {'email': '✉', 'upload': '⬆', 'phone': '📱'} %}
 {% set status_badge = {'new': 'draft', 'review': 'open', 'booked': 'posted', 'rejected': 'cancelled'} %}
 {% block content %}
+{% if limit_banner %}<div class="flash flash-error" role="status">{{ limit_banner }}</div>{% endif %}
 {% for d in duplicates %}
 <div class="flash flash-info" role="status">{{ names.get(d.attachment_id, 'This file') }} is already in your inbox: <a href="/inbox/{{ d.id }}">open it</a>.</div>
 {% endfor %}

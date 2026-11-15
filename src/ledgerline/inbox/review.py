@@ -40,6 +40,7 @@ METHODS = {
     "pdf_text": ("Read from PDF text — check", "warn"),
     "vision": ("Read from photo — check every figure", "bad"),
     "none": ("Could not be read — enter it by hand", "bad"),
+    "limit": ("Not read: monthly photo-reading limit reached — enter it by hand", "bad"),
 }
 DOCUMENT_TYPES = {
     "statement": "Payout statement, not an invoice",
