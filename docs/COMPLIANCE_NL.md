@@ -77,6 +77,7 @@ Every backup holds all administrations. Local dumps are kept `BACKUP_KEEP_DAYS` 
 
 - **Platform sales are treated as VAT-inclusive.** Uber Eats and Thuisbezorgd statements do not split sales by VAT rate; the owner enters the split and the entered sales amounts include VAT (`docs/PLATFORM_STATEMENTS.md`). [adviser to confirm]
 - **Uber Eats fee VAT rate is inferred.** The statement does not print the rate on the service fee. Ledgerline works it out from the amounts, shows it as a warning, and the user confirms it against the Uber invoice before booking. [adviser to confirm]
+- **Input VAT on platform fees needs the commission invoice.** A payout statement alone is not a valid VAT invoice, so input VAT on the fees is booked only when the booking carries the platform's commission invoice number (read from the document or entered). Without it the fees are booked including VAT, with a message on the page. [adviser to confirm]
 - **Takings VAT is rounded once per rate per day.** For each day and rate, VAT = gross x rate / (100 + rate), rounded half-up to the cent, and posted in one journal entry. [adviser to confirm] that rounding per day, not per sale, is acceptable.
 - **Hand-keyed takings need the till's Z-reports kept.** Until the till is connected, the owner types the figures from the daily report. Ledgerline stores the typed totals, not the till's own data, so the Z-reports are the source documents and must be kept as part of the records. [adviser to confirm]
 

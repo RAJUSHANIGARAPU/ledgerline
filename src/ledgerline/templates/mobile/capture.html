@@ -20,6 +20,7 @@
       <input class="input" type="file" name="files" accept="application/pdf,image/*" multiple data-picker>
       <span class="field-hint">PDF, JPEG or PNG, up to {{ max_mb }} MB each.</span>
     </label>
+    {% if photo_reading %}<p class="field-hint" data-testid="photo-privacy-note">Photo reading is on: photos and scans are sent to an external service to be read. Do not upload payslips, bank statements or other documents with personal data as photos or scans. Upload those as PDF with a text layer, where they are recognised and never sent.</p>{% endif %}
     <div class="row" id="capture-previews" aria-live="polite"></div>
     <label class="field">
       <span class="field-label">Note (optional)</span>

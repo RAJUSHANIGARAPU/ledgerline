@@ -24,6 +24,8 @@ It does not contain the administration name, other documents, ledger data or use
 
 **To whom, with `LEDGERLINE_EXTRACTION_PROVIDER=openrouter`:** **OpenRouter** receives the request and passes it to the underlying model provider that serves the model you chose. That provider is a second recipient with its own data handling and retention rules (https://openrouter.ai/docs/features/privacy-and-logging: "Each provider on OpenRouter has its own data handling policies"). Which provider serves a request can depend on routing, so name both OpenRouter and the provider in your privacy notice and processing register, and check both sets of terms. In-region routing in the EU is offered on OpenRouter's Business and Enterprise plans only (same page, read 2026-11-14).
 
+**Payslips and other personal documents.** A PDF whose text layer shows a payslip (salarisspecificatie, loonstrook, or payroll terms such as loonheffing), a bank statement or a ledger card is typed as such and is never sent to a provider, whatever the provider settings are. This holds when the PDF has a text layer. A photo or a scan has no text before the vision step, so Ledgerline cannot tell what it shows: do not upload payslips as photos or scans while photo reading is on. The upload and capture screens say so when a provider is set. If you cannot guarantee that, leave `LEDGERLINE_EXTRACTION_PROVIDER=none`. A password-protected or unreadable PDF cannot be typed either. (Checked in `pdf_text.py`, `personal_data_type`, and `tests/inbox/test_pipeline.py`.)
+
 A supplier invoice contains the supplier's name, address, bank details and sometimes personal data of a sole trader. Sending it is a transfer of personal data to a processor. See "Your obligations" below.
 
 ## Enable it

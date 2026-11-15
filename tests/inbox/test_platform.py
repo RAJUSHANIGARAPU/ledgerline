@@ -340,6 +340,7 @@ def test_booking_needs_the_owner_to_choose_an_underivable_fee_rate(client, sessi
     assert r.status_code == 422 and "choose the VAT rate on the fees" in r.text
     assert session.scalars(select(JournalEntry)).all() == []
     data["fee_vat_rate"] = "21"
+    data.update(fee_invoice_asked="1", fee_invoice_number="UE-2026-77")
     assert client.post(f"/inbox/{doc.id}/book-statement", data=data,
                        follow_redirects=False).status_code == 303
     session.expire_all()
@@ -365,3 +366,67 @@ def test_thuisbezorgd_invoice_date_is_the_printed_date_not_the_period_end():
     st = PlatformStatement.from_json(extracted.platform_statement)
     assert st.invoice_date == date(2026, 3, 8) and st.period_end == date(2026, 3, 7)
     assert extracted.invoice_date == date(2026, 3, 8)
+
+
+def book_uber(client, session, admin, **extra):
+    doc = received(client, session, uber_statement_html())
+    adj = account(session, admin, "4600")
+    data = split_form(client, [("V21", "402,50")], adjustments_account=str(adj.id), **extra)
+    return doc, client.post(f"/inbox/{doc.id}/book-statement", data=data, follow_redirects=False)
+
+
+def test_fee_vat_is_booked_as_input_vat_with_the_commission_invoice_number(client, session, admin):
+    doc, r = book_uber(client, session, admin, fee_invoice_asked="1",
+                       fee_invoice_number="UE-2026-77")
+    assert r.status_code == 303
+    session.expire_all()
+    st = platform_booking.statement_of(session.get(InboxDocument, doc.id))
+    assert balance(session, admin, "1400") == st.fee_vat_cents == 1266
+    assert balance(session, admin, "4610") == st.fees_cents
+    entry = session.scalars(select(JournalEntry)).one()
+    assert any("UE-2026-77" in (ln.description or "") for ln in entry.lines)
+    assert "no input VAT" not in client.get(f"/inbox/{doc.id}").text
+
+
+def test_without_a_commission_invoice_the_fee_is_booked_gross_and_says_so(client, session, admin):
+    doc, r = book_uber(client, session, admin, fee_invoice_asked="1", fee_invoice_number="  ")
+    assert r.status_code == 303
+    session.expire_all()
+    st = platform_booking.statement_of(session.get(InboxDocument, doc.id))
+    assert balance(session, admin, "1400") == 0
+    assert balance(session, admin, "4610") == st.fees_cents + st.fee_vat_cents
+    entry = session.scalars(select(JournalEntry)).one()
+    assert sum(ln.debit_cents for ln in entry.lines) == sum(ln.credit_cents for ln in entry.lines)
+    assert not any(ln.vat_role == "vat" and ln.vat_code in ("I21", "I9") for ln in entry.lines)
+    assert "no input VAT was claimed" in client.get(f"/inbox/{doc.id}").text
+    follow = client.get(f"/inbox/{doc.id}")
+    assert "no input VAT" in follow.text
+
+
+def test_the_booking_flash_says_when_no_input_vat_was_claimed(client, session, admin):
+    doc, r = book_uber(client, session, admin)
+    assert r.status_code == 303
+    assert "no input VAT is claimed" in client.get(f"/inbox/{doc.id}", follow_redirects=True).text
+
+
+def test_statement_page_asks_for_the_commission_invoice_number(client, session, admin):
+    doc = received(client, session, uber_statement_html())
+    page = client.get(f"/inbox/{doc.id}").text
+    assert 'name="fee_invoice_number"' in page
+    assert "not a valid VAT invoice" in page and "no input VAT is claimed" in page
+
+
+def test_a_thuisbezorgd_invoice_number_read_from_the_document_is_prefilled(client, session, admin):
+    doc = received(client, session, thuisbezorgd_statement_html(invoice_no="900000042"))
+    assert 'value="900000042"' in client.get(f"/inbox/{doc.id}").text
+
+
+def test_a_thuisbezorgd_owner_can_still_drop_the_invoice_number(client, session, admin):
+    doc = received(client, session, thuisbezorgd_statement_html())
+    tips = account(session, admin, "8900")
+    data = split_form(client, [("V9", "900,00"), ("V21", "100,00")], tips_account=str(tips.id),
+                      fee_invoice_asked="1", fee_invoice_number="")
+    assert client.post(f"/inbox/{doc.id}/book-statement", data=data,
+                       follow_redirects=False).status_code == 303
+    session.expire_all()
+    assert balance(session, admin, "1400") == 0
