@@ -448,6 +448,8 @@ class PurchaseInvoice(TenantScoped, Base):
     attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachments.id"))
     journal_entry_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"))
     is_opening: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
+    # Bumped on every draft save; the edit form carries it so a stale form is refused.
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
     created_at: Mapped[datetime] = _now()
     lines: Mapped[list["PurchaseInvoiceLine"]] = relationship(
         back_populates="invoice", order_by="PurchaseInvoiceLine.position", lazy="selectin",

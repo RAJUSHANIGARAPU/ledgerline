@@ -14,6 +14,14 @@ class InvoiceError(ValueError):
         super().__init__("; ".join(self.problems))
 
 
+class StaleInvoiceError(InvoiceError):
+    """The invoice was changed by someone else after this form was loaded."""
+
+    def __init__(self):
+        super().__init__("Someone else changed this invoice since you opened it. "
+                         "Your changes were not saved: reload the page to see the latest version.")
+
+
 def line_amount(quantity: Decimal, unit_price_cents: int) -> int:
     return int((Decimal(unit_price_cents) * quantity).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
