@@ -34,6 +34,7 @@
         {% if purchase %}<p>Purchase invoice <a href="/purchases/{{ purchase.id }}">{{ purchase.supplier_reference }}</a> was created from this document.</p>{% endif %}
       </div></div>
     {% else %}
+    {% for a in proposal.advice %}<div class="flash flash-info" role="note" data-advice="{{ a.code }}">{{ a.message }}</div>{% endfor %}
     {% if proposal.duplicate %}
       <div class="flash flash-error" role="alert">This looks like invoice {{ proposal.duplicate.supplier_reference }} from {{ proposal.contact.name }}, which is already registered (<a href="/purchases/{{ proposal.duplicate.id }}">open it</a>). A second copy cannot be created.</div>
     {% endif %}

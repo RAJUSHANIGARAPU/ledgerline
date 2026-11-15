@@ -6,6 +6,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ledgerline import audit
+from ledgerline.advisory import review_advice
+from ledgerline.advisory.rules import Advice
 from ledgerline.inbox.extract import ExtractedInvoice, ExtractedLine
 from ledgerline.invoicing import forms
 from ledgerline.invoicing.calc import InvoiceError
@@ -64,6 +66,7 @@ class Proposal:
     rows: list[dict[str, str]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     duplicate: PurchaseInvoice | None = None
+    advice: list[Advice] = field(default_factory=list)
 
 
 def method_label(method: str | None) -> tuple[str, str]:
@@ -212,6 +215,10 @@ def build_proposal(session: Session, admin: Administration, document: InboxDocum
         proposal.rows = [forms.blank_purchase_row(account.id if account else "")]
     if contact and proposal.reference:
         proposal.duplicate = find_duplicate_purchase(session, admin, contact.id, proposal.reference)
+    proposal.advice = review_advice(
+        session, admin, contact=contact, line_codes=[r["vat_code"] for r in proposal.rows],
+        total_excl_cents=sum(line.amount_excl_cents for line in extracted.lines) or None,
+        document_date=extracted.invoice_date)
     return proposal
 
 
