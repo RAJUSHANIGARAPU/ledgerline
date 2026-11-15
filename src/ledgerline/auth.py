@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from ledgerline import audit
 from ledgerline.accounts import events, ratelimit, totp
 from ledgerline.db import set_tenant
+from ledgerline.i18n import tr
 from ledgerline.models import Administration, Membership, User
 from ledgerline.web import LoginDep, SessionDep, UserDep, render, verify_csrf
 
@@ -65,7 +66,7 @@ def login(
     ip = request.client.host if request.client else "unknown"
     if _locked_out(key) or ratelimit.password_failures_by_ip.blocked(ip):
         return render(request, "auth/login.html",
-                      {"error": "Too many attempts. Try again in 15 minutes."}, 429)
+                      {"error": tr(request, "auth.login.too_many")}, 429)
     user = session.scalar(select(User).where(func.lower(User.email) == key))
     if not _password_ok(user, password):
         _failures[key].append(time.monotonic())
@@ -73,7 +74,7 @@ def login(
         if user is not None:
             events.record_for_user(session, user.id, "login.failure", {"step": "password"})
             session.commit()
-        return render(request, "auth/login.html", {"error": "Wrong email or password."}, 401)
+        return render(request, "auth/login.html", {"error": tr(request, "auth.login.wrong")}, 401)
     _failures.pop(key, None)
     if hasher.check_needs_rehash(user.password_hash):
         user.password_hash = hasher.hash(password)
@@ -118,8 +119,7 @@ def _after_login(request: Request, session, user: User):
             return RedirectResponse("/account", status.HTTP_303_SEE_OTHER)
         request.session.clear()
         return render(request, "auth/login.html", {
-            "error": "Your account is not a member of any workspace yet. "
-                     "Ask the owner of the books to add you."}, 403)
+            "error": tr(request, "auth.login.no_workspace")}, 403)
     if len(memberships) == 1:
         return _enter_tenant(request, session, user, memberships[0], "login")
     return RedirectResponse("/tenants", status.HTTP_303_SEE_OTHER)

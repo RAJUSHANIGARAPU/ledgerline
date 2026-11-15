@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Link not valid{% endblock %}
+{% block title %}{{ t('auth.link_invalid.title') }}{% endblock %}
 {% block public %}
 <div class="auth-page">
   <div class="card auth-card">
@@ -8,8 +8,8 @@
       <span>Ledgerline</span>
     </div>
     {% for f in flashes %}<div class="flash flash-{{ f.kind }}" role="status">{{ f.message }}</div>{% endfor %}
-    <div class="flash flash-error" role="alert">This link is not valid. It may have expired or been used already.</div>
-    <p class="fine-print"><a href="/login">Back to sign in</a> · <a href="/forgot">Forgot password?</a></p>
+    <div class="flash flash-error" role="alert">{{ t('auth.link_invalid.body') }}</div>
+    <p class="fine-print"><a href="/login">{{ t('auth.back_to_login') }}</a> · <a href="/forgot">{{ t('auth.forgot_link') }}</a></p>
   </div>
 </div>
 {% endblock %}

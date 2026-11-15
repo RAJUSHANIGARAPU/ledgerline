@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% set standalone = true %}
 {% import "components/macros.html" as ui with context %}
-{% block title %}{% if is_owner %}Create your books{% else %}No access yet{% endif %}{% endblock %}
+{% block title %}{% if is_owner %}{{ t('auth.noadmin.owner_title') }}{% else %}{{ t('auth.noadmin.title') }}{% endif %}{% endblock %}
 {% block public %}
 <div class="auth-page">
   <div class="card auth-card">
@@ -10,25 +10,25 @@
       <span>Ledgerline</span>
     </div>
     {% if is_owner %}
-    <h1 class="page-title">Create your books</h1>
-    <p>Your account has no administration yet. Create the first one to start booking.</p>
+    <h1 class="page-title">{{ t('auth.noadmin.owner_title') }}</h1>
+    <p>{{ t('auth.noadmin.owner_intro') }}</p>
     <form method="post" action="/settings/first-administration" class="stack">
       {{ ui.csrf() }}
       {% for f in flashes %}<div class="flash flash-{{ f.kind }}" role="alert">{{ f.message }}</div>{% endfor %}
-      {{ ui.field('name', 'Name', required=True) }}
-      <label class="field"><span class="field-label">Legal form</span>
+      {{ ui.field('name', t('auth.noadmin.name'), required=True) }}
+      <label class="field"><span class="field-label">{{ t('auth.noadmin.legal_form') }}</span>
         <select class="input" name="legal_form">{% for f in legal_forms %}<option value="{{ f }}">{{ f }}</option>{% endfor %}</select></label>
-      <div class="form-actions"><button class="btn btn-primary" type="submit">Create your books</button></div>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">{{ t('auth.noadmin.submit') }}</button></div>
     </form>
     {% else %}
-    <h1 class="page-title">No access yet</h1>
-    <p>You don't have access to any administration yet.</p>
-    <p class="muted">Ask the owner of your account to give you access. You can sign in again once they have.</p>
+    <h1 class="page-title">{{ t('auth.noadmin.title') }}</h1>
+    <p>{{ t('auth.noadmin.body') }}</p>
+    <p class="muted">{{ t('auth.noadmin.hint') }}</p>
     {% endif %}
-    {% if can_switch_tenant %}<p><a href="/tenants">Choose another workspace</a></p>{% endif %}
+    {% if can_switch_tenant %}<p><a href="/tenants">{{ t('auth.tenants.other') }}</a></p>{% endif %}
     <form method="post" action="/logout" data-purge-queue>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <button class="link-button" type="submit">Sign out</button>
+      <button class="link-button" type="submit">{{ t('foot.sign_out') }}</button>
     </form>
   </div>
 </div>

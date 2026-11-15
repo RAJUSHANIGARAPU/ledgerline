@@ -12,6 +12,7 @@ from ledgerline.accounts import events, invitations, passwords, ratelimit, token
 from ledgerline.auth import complete_login, hasher
 from ledgerline.config import get_settings
 from ledgerline.db import set_tenant
+from ledgerline.i18n import tr
 from ledgerline.models import Membership, RecoveryCode, Role, Tenant, User, UserTotp
 from ledgerline.platform import validation as v
 from ledgerline.web import (
@@ -30,7 +31,6 @@ TOTP_ATTEMPTS_PER_LOGIN = 5
 INVITE_NOTICE = "If {address} can be invited, the invitation email was sent."
 INVITE_FAILED = ("The invitation email to {address} could not be sent. Check the email "
                  "settings, then press Resend invitation in the Users list.")
-RESET_NOTICE = "If an account exists for that address, we sent a link to reset the password."
 
 
 def _base_url() -> str:
@@ -146,11 +146,12 @@ def invite_accept(
     target = session.get(User, row.user_id)
     needs_password = not target.is_active
     if needs_password:
-        err = passwords.check_new_password(password, confirm, target.email)
-        if err:
+        problem = passwords.password_problem(password, confirm, target.email)
+        if problem:
             return render(request, "auth/invite.html", {
                 "tenant_name": membership.tenant.name, "needs_password": True,
-                "email": target.email, "token": token, "error": err}, 422)
+                "email": target.email, "token": token,
+                "error": tr(request, problem[0], **problem[1])}, 422)
     if not tokens.consume(session, row):
         return _invalid_link(request)
     if needs_password:
@@ -161,7 +162,7 @@ def invite_accept(
     events.record_for_user(session, target.id, "invite.accepted", {"role": membership.role},
                            only_tenant=membership.tenant_id)
     session.commit()
-    flash(request, "Invitation accepted. Sign in to continue.")
+    flash(request, tr(request, "auth.invite.done"))
     return RedirectResponse("/login", 303)
 
 
@@ -209,7 +210,7 @@ def forgot(request: Request, background: BackgroundTasks, session: SessionDep,
         background.add_task(_deliver, user.email,
                             mail.password_reset(link, int(tokens.RESET_TTL.total_seconds() // 60)),
                             link)
-    flash(request, RESET_NOTICE)
+    flash(request, tr(request, "auth.forgot.notice"))
     return RedirectResponse("/login", 303)
 
 
@@ -233,9 +234,10 @@ def reset_password(request: Request, session: SessionDep, token: str,
     row, user = _live_reset(session, token)
     if row is None:
         return _invalid_link(request)
-    err = passwords.check_new_password(password, confirm, user.email)
-    if err:
-        return render(request, "auth/reset.html", {"token": token, "error": err}, 422)
+    problem = passwords.password_problem(password, confirm, user.email)
+    if problem:
+        return render(request, "auth/reset.html", {
+            "token": token, "error": tr(request, problem[0], **problem[1])}, 422)
     if not tokens.consume(session, row):
         return _invalid_link(request)
     tokens.invalidate_resets(session, user.id)
@@ -243,7 +245,7 @@ def reset_password(request: Request, session: SessionDep, token: str,
     user.session_version += 1
     events.record_for_user(session, user.id, "reset.completed")
     session.commit()
-    flash(request, "Password changed. Sign in with the new password.")
+    flash(request, tr(request, "auth.reset.done"))
     return RedirectResponse("/login", 303)
 
 
@@ -274,7 +276,7 @@ def totp_login(request: Request, session: SessionDep, code: Annotated[str, Form(
     if row is None or ratelimit.totp_failures.blocked(str(user.id)):
         request.session.clear()
         return render(request, "auth/login.html",
-                      {"error": "Too many attempts. Try again in 15 minutes."}, 429)
+                      {"error": tr(request, "auth.login.too_many")}, 429)
     recovery = not totp.is_totp_code(code)
     ok = (totp.use_recovery_code(session, user.id, code) if recovery
           else totp.verify_code(session, row, code))
@@ -288,10 +290,10 @@ def totp_login(request: Request, session: SessionDep, code: Annotated[str, Form(
     attempts = marker["n"] + 1
     if attempts >= TOTP_ATTEMPTS_PER_LOGIN:
         request.session.clear()
-        flash(request, "Too many wrong codes. Sign in again.", "error")
+        flash(request, tr(request, "auth.totp.too_many"), "error")
         return RedirectResponse("/login", 303)
     request.session["pw_ok"] = {**marker, "n": attempts}
-    return render(request, "auth/totp.html", {"error": "That code is not valid."}, 401)
+    return render(request, "auth/totp.html", {"error": tr(request, "auth.totp.invalid")}, 401)
 
 
 # --- account pages ------------------------------------------------------------------------
