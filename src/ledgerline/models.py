@@ -257,6 +257,8 @@ class JournalEntry(TenantScoped, Base):
     __tablename__ = "journal_entries"
     __table_args__ = (
         UniqueConstraint("administration_id", "number"),
+        CheckConstraint("actor_type IN ('user', 'worker', 'system', 'unknown')",
+                        name="ck_journal_entries_actor_type"),
         # An entry can be reversed once; the database settles two requests racing to do it.
         Index("uq_journal_entries_reversal_of", "reversal_of_id", unique=True,
               postgresql_where=text("reversal_of_id IS NOT NULL")),
@@ -270,6 +272,7 @@ class JournalEntry(TenantScoped, Base):
     source_id: Mapped[int | None] = mapped_column(Integer)
     reversal_of_id: Mapped[int | None] = mapped_column(ForeignKey("journal_entries.id"))
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    actor_type: Mapped[str] = mapped_column(String(10), server_default="unknown")
     created_at: Mapped[datetime] = _now()
     lines: Mapped[list["JournalLine"]] = relationship(
         back_populates="entry", order_by="JournalLine.id", lazy="selectin"
@@ -548,9 +551,14 @@ class AuditEvent(TenantScoped, Base):
     """Append-only (enforced by a database trigger)."""
 
     __tablename__ = "audit_events"
+    __table_args__ = (
+        CheckConstraint("actor_type IN ('user', 'worker', 'system', 'unknown')",
+                        name="ck_audit_events_actor_type"),
+    )
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     administration_id: Mapped[int | None] = mapped_column(ForeignKey("administrations.id"))
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    actor_type: Mapped[str] = mapped_column(String(10), server_default="unknown")
     action: Mapped[str] = mapped_column(String(60))
     entity_type: Mapped[str | None] = mapped_column(String(40))
     entity_id: Mapped[int | None] = mapped_column(Integer)
