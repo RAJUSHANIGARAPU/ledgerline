@@ -58,7 +58,7 @@ Set `LEDGERLINE_EXTRACTION_PROVIDER=openrouter`, `OPENROUTER_API_KEY` and `LEDGE
 
 ### Monthly cap
 
-Each document read by the vision step counts towards the cap, per administration. When the cap is reached, the vision step is skipped (a warning is logged) and the document stays in the inbox for manual entry. The count resets on the first of the month. Set `LEDGERLINE_EXTRACTION_MONTHLY_LIMIT=0` to turn the cap off; then your spend limit in the provider console is the only brake.
+Each document read by the vision step counts towards the cap, per administration. When the cap is reached, the vision step is skipped (a warning is logged) and the document stays in the inbox for manual entry. The inbox then shows a banner, and each affected document says that the monthly limit was reached and that it resets next month. The count resets on the first of the month. Set `LEDGERLINE_EXTRACTION_MONTHLY_LIMIT=0` to turn the cap off; then your spend limit in the provider console is the only brake.
 
 ## Cost
 
@@ -70,7 +70,7 @@ This is an estimate, not a quote. The token counts are an assumption, not a meas
 | `claude-sonnet-5-5` | US$2 / US$10 | about US$0.016 |
 | `claude-haiku-5-5` | US$0.10 / US$0.50 (prompts up to 100k tokens) | under US$0.001 |
 
-Multi-page PDFs cost more. At the default cap of 200 documents per month the Opus estimate is roughly US$6 per administration and the Haiku estimate under US$0.20.
+Multi-page PDFs cost more. At the default cap of 200 documents per month the estimate for the default model, `claude-haiku-5-5`, is under US$0.20 per administration. The Opus alternative comes to roughly US$6.
 
 ### Choosing a model
 
