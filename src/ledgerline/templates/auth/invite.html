@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Accept invitation{% endblock %}
+{% block title %}{{ t('auth.invite.title') }}{% endblock %}
 {% block public %}
 <div class="auth-page">
   <div class="card auth-card">
@@ -8,18 +8,19 @@
       <span>Ledgerline</span>
     </div>
     {% for f in flashes %}<div class="flash flash-{{ f.kind }}" role="status">{{ f.message }}</div>{% endfor %}
-    <p class="muted">You are invited to work in <strong>{{ tenant_name }}</strong> as {{ email }}.</p>
+    {% set tenant_html %}<strong>{{ tenant_name }}</strong>{% endset %}
+    <p class="muted">{{ t('auth.invite.intro', tenant=tenant_html, email=email) }}</p>
     {% if error %}<div class="flash flash-error" role="alert">{{ error }}</div>{% endif %}
     <form class="stack" method="post" action="/invite/{{ token }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       {% if needs_password %}
-      <label class="field"><span class="field-label">Choose a password</span>
+      <label class="field"><span class="field-label">{{ t('auth.invite.choose_password') }}</span>
         <input class="input" type="password" name="password" minlength="12" autocomplete="new-password" required autofocus>
-        <span class="field-hint">At least 12 characters.</span></label>
-      <label class="field"><span class="field-label">Repeat password</span>
+        <span class="field-hint">{{ t('auth.password_hint') }}</span></label>
+      <label class="field"><span class="field-label">{{ t('auth.invite.repeat_password') }}</span>
         <input class="input" type="password" name="confirm" minlength="12" autocomplete="new-password" required></label>
       {% endif %}
-      <button class="btn btn-primary btn-block" type="submit">Accept invitation</button>
+      <button class="btn btn-primary btn-block" type="submit">{{ t('auth.invite.submit') }}</button>
     </form>
   </div>
 </div>

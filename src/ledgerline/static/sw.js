@@ -1,5 +1,5 @@
 // Caches static assets only; pages and API responses always go to the network.
-const CACHE = "ledgerline-static-v3";
+const CACHE = "ledgerline-static-v4";
 importScripts("/static/js/capture-queue.js");
 
 const OFFLINE_URL = "/static/offline.html";

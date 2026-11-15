@@ -4,6 +4,12 @@ if ("serviceWorker" in navigator) {
 }
 
 const queue = window.captureQueue;
+const strings = JSON.parse(document.getElementById("capture-strings")?.textContent || "{}");
+const say = (key, vars = {}) =>
+  (strings[key] ?? key).replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? ""));
+const plural = (key, count) => say(`${key}_${count === 1 ? "one" : "other"}`, { count });
+// Queue failures hold a code (this page's language) or text the server already translated.
+const failure = (item) => (item.code ? say(`err.${item.code}`, { status: item.arg }) : item.error);
 const queueBox = document.getElementById("capture-queue");
 const who = queueBox
   ? { userId: Number(queueBox.dataset.userId), tenantId: Number(queueBox.dataset.tenantId) }
@@ -21,19 +27,19 @@ async function renderQueue() {
   const lines = [];
   if (notice) lines.push(box("flash-success", notice));
   if (needsSignIn && waiting.length) {
-    const row = box("flash-error", `Sign in again to upload ${waiting.length} item${waiting.length === 1 ? "" : "s"}. `);
+    const row = box("flash-error", `${plural("sign_in_again", waiting.length)} `);
     const link = document.createElement("a");
     link.href = "/login";
-    link.textContent = "Sign in";
+    link.textContent = say("sign_in");
     row.append(link);
     lines.push(row);
   } else if (waiting.length) {
-    lines.push(box("flash-info", `${waiting.length} waiting to upload`));
+    lines.push(box("flash-info", say("waiting", { count: waiting.length })));
   }
   for (const item of failed) {
-    const row = box("flash-error", `${item.name} (${item.adminName}): ${item.error} `);
-    if (item.retryable) row.append(action("Retry", () => queue.retry(item.id).then(flushQueue)));
-    row.append(action("Discard", () => queue.remove(item.id).then(renderQueue)));
+    const row = box("flash-error", `${item.name} (${item.adminName}): ${failure(item)} `);
+    if (item.retryable) row.append(action(say("retry"), () => queue.retry(item.id).then(flushQueue)));
+    row.append(action(say("discard"), () => queue.remove(item.id).then(renderQueue)));
     lines.push(row);
   }
   queueBox.replaceChildren(...lines);
@@ -70,7 +76,7 @@ async function flushQueue() {
   try {
     const result = await queue.flush();
     needsSignIn = result.auth;
-    if (result.sent) notice = `${result.sent} queued upload${result.sent === 1 ? "" : "s"} sent. Check your inbox.`;
+    if (result.sent) notice = plural("sent", result.sent);
   } catch {
     // IndexedDB unavailable or the network dropped again; the next trigger retries
   }
@@ -89,12 +95,12 @@ if (queue && who) {
 
 function storageProblem(error) {
   if (error?.name === "QuotaExceededError") {
-    return "This phone is out of storage, so the files could not be saved for later. Free some space and try again.";
+    return say("storage_full");
   }
   if (!window.indexedDB || ["SecurityError", "InvalidStateError", "UnknownError"].includes(error?.name)) {
-    return "This browser cannot save uploads for later, which private browsing often blocks. Connect to the internet and try again.";
+    return say("storage_blocked");
   }
-  return "The files could not be saved on this phone. Try again.";
+  return say("storage_failed");
 }
 
 async function enqueue(files, note, administration) {
@@ -169,7 +175,7 @@ if (form) {
       submit.disabled = false;
       progress.hidden = true;
       if (!files.length || !queue) {
-        previews.textContent = "Upload failed. Check your connection and try again.";
+        previews.textContent = say("upload_failed");
         return;
       }
       try {
@@ -180,7 +186,7 @@ if (form) {
       }
       form.reset();
       previews.replaceChildren();
-      notice = "No connection. Saved on this phone; it uploads when you are back online.";
+      notice = say("saved_offline");
       renderQueue();
     };
     progress.hidden = false;

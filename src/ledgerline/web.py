@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from ledgerline.accounts import totp
 from ledgerline.config import get_settings
 from ledgerline.db import get_session, set_tenant
+from ledgerline.i18n import bundle, language, template_translator
 from ledgerline.models import (
     CAPTURE_ROLES,
     WRITE_ROLES,
@@ -26,6 +27,8 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=TEMPLATE_DIR)
 templates.env.filters["eur"] = format_eur
 templates.env.filters["nldate"] = lambda d: d.strftime("%d-%m-%Y") if d else ""
+# Default for templates rendered outside render(); render() binds the request language.
+templates.env.globals["t"] = template_translator("en")
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
@@ -201,4 +204,10 @@ def render(request: Request, template: str, context: dict | None = None, status_
     ctx.setdefault("is_uploader", role == Role.UPLOADER)
     ctx.setdefault("can_switch_tenant", getattr(request.state, "tenant_count", 0) > 1)
     ctx.setdefault("active_nav", template.split("/")[0])
-    return templates.TemplateResponse(request, template, ctx, status_code=status_code)
+    lang = language(request)
+    ctx.setdefault("lang", lang)
+    ctx.setdefault("t", template_translator(lang))
+    ctx.setdefault("js_strings", lambda prefix: bundle(lang, prefix))
+    response = templates.TemplateResponse(request, template, ctx, status_code=status_code)
+    response.headers.append("Vary", "Accept-Language")
+    return response

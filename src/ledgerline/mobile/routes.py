@@ -9,6 +9,7 @@ from sqlalchemy import select
 from ledgerline import audit
 from ledgerline.config import get_settings
 from ledgerline.db import get_sessionmaker
+from ledgerline.i18n import tr
 from ledgerline.inbox import service as inbox
 from ledgerline.mobile import tokens
 from ledgerline.models import Administration, ApiToken
@@ -79,7 +80,7 @@ async def capture_submit(
     if not chosen:
         if wants_json:
             return JSONResponse({"detail": "no file"}, 400)
-        flash(request, "Choose a photo or file first.", "error")
+        flash(request, tr(request, "capture.choose_first"), "error")
         return RedirectResponse("/capture", 303)
     # A queued upload names the administration it was captured for, not whichever is selected now.
     target = _capture_target(session, admin, form.get("administration_id"))
@@ -87,7 +88,8 @@ async def capture_submit(
         return JSONResponse({"detail": "administration not available"}, 409)
     payloads = [(f.filename, await f.read()) for f in chosen]
     results = await run_in_threadpool(
-        _ingest, session, target.id, user.id, payloads, note.strip() or None
+        _ingest, session, target.id, user.id, payloads, note.strip() or None,
+        lambda key: tr(request, key),
     )
     if wants_json:
         return JSONResponse({"administration": target.name, "results": results})
@@ -106,7 +108,7 @@ def _capture_target(session, current, requested) -> Administration | None:
     return session.get(Administration, int(requested))
 
 
-def _ingest(session, admin_id: int, user_id: int, payloads, subject):
+def _ingest(session, admin_id: int, user_id: int, payloads, subject, say):
     results = []
     for name, content in payloads:
         try:
@@ -115,17 +117,23 @@ def _ingest(session, admin_id: int, user_id: int, payloads, subject):
             )
         except inbox.InboxError as exc:
             inbox.record_rejection(session, admin_id, "phone", exc, user_id=user_id)
-            results.append({"name": name, "error": _friendly(str(exc))})
+            results.append({"name": name, "error": _friendly(exc, say)})
             continue
         results.append({"name": name, "id": document.id, "duplicate": not created})
     session.commit()
     return results
 
 
-def _friendly(message: str) -> str:
-    if message.startswith("Only PDF"):
-        return "This file type is not supported. Send a PDF, JPEG or PNG."
-    return message
+FRIENDLY = {
+    "unsupported_type": "capture.unsupported",
+    "empty": "capture.empty",
+    "too_large": "capture.too_large",
+}
+
+
+def _friendly(error: inbox.InboxError, say) -> str:
+    key = FRIENDLY.get(error.code)
+    return say(key) if key else str(error)
 
 
 def _unauthorized() -> JSONResponse:
