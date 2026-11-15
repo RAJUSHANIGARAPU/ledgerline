@@ -103,6 +103,10 @@ STUBS = {
         case "$*" in *api.github.com*)
           [ -f "$STATE/checks.json" ] || exit 22; cat "$STATE/checks.json"; exit 0 ;;
         esac
+        case "$*" in *healthz/deep*)
+          deep="$STATE/deep_before.json"; [ -f "$STATE/upgraded" ] && deep="$STATE/deep_after.json"
+          if [ -f "$deep" ]; then cat "$deep"; else echo '{"status":"ok"}'; fi; exit 0 ;;
+        esac
         [ -f "$STATE/unhealthy" ] && exit 22
         echo '{"status":"ok"}' """,
     "sleep": "exit 0",
@@ -118,7 +122,8 @@ GREEN = check_runs(test="success", docker="success", e2e="success")
 
 
 def run_update(
-    tmp_path, healthy_after_rollback=True, new_version_healthy=False, args=(), checks=GREEN, env=()
+    tmp_path, healthy_after_rollback=True, new_version_healthy=False, args=(), checks=GREEN, env=(),
+    deep_before=None, deep_after=None,
 ):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
@@ -126,11 +131,14 @@ def run_update(
     state.mkdir()
     if checks is not None:
         (state / "checks.json").write_text(checks)
+    for name, deep in (("deep_before", deep_before), ("deep_after", deep_after)):
+        if deep is not None:
+            (state / f"{name}.json").write_text(deep)
     log = tmp_path / "log"
     docker = f"""
         echo "docker $*" >> "$LOG"
         case "$*" in
-          "compose up -d --build") rm -f "$STATE/unhealthy"
+          "compose up -d --build") rm -f "$STATE/unhealthy"; touch "$STATE/upgraded"
             {"" if new_version_healthy else 'touch "$STATE/unhealthy"'} ;;
           "compose up -d --no-build") rm -f "$STATE/unhealthy"
             {"" if healthy_after_rollback else 'touch "$STATE/unhealthy"'} ;;
@@ -229,6 +237,68 @@ def test_update_override_deploys_and_says_why(tmp_path):
     assert result.returncode == 0, result.stdout + result.stderr
     assert "WARNING: deploying without green CI" in result.stdout
     assert "hotfix while GitHub is down" in result.stdout
+
+
+
+def deep(worker=True, worker_age=0, backup=True, database=True, disk=True):
+    checks = {
+        "database": {"ok": database},
+        "worker": {"ok": worker, "age_seconds": worker_age},
+        "backup": {"ok": backup, "age_hours": 3.2, "offsite": True},
+        "disk": {"ok": disk, "free_percent": 32.8},
+    }
+    status = "ok" if all(c["ok"] for c in checks.values()) else "fail"
+    return json.dumps({"status": status, "checks": checks})
+
+
+def test_deep_check_green_before_and_after_passes(tmp_path):
+    result, _, _ = run_update(tmp_path, new_version_healthy=True,
+                              deep_before=deep(worker_age=30), deep_after=deep())
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "deep check ok" in result.stdout
+
+
+def test_a_check_that_regresses_exits_2_and_keeps_the_new_version(tmp_path):
+    result, log, _ = run_update(tmp_path, new_version_healthy=True,
+                                deep_before=deep(), deep_after=deep(worker=False, worker_age=200))
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "regressed: worker" in result.stdout
+    assert not any("--no-build" in line or "checkout" in line for line in log)
+    assert "ROLLING BACK" not in result.stdout
+
+
+def test_a_heartbeat_older_than_the_restart_is_not_accepted(tmp_path):
+    result, _, _ = run_update(tmp_path, new_version_healthy=True,
+                              deep_before=deep(), deep_after=deep(worker_age=100))
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "regressed: worker" in result.stdout
+
+
+def test_a_check_already_failing_before_the_update_only_warns(tmp_path):
+    result, log, _ = run_update(tmp_path, new_version_healthy=True,
+                                deep_before=deep(backup=False), deep_after=deep(backup=False))
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "already failing before the update: backup" in result.stdout
+    assert not any("--no-build" in line for line in log)
+
+
+def test_no_readable_deep_check_before_the_update_skips_it(tmp_path):
+    result, _, _ = run_update(tmp_path, new_version_healthy=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "skipping the deep check" in result.stdout
+
+
+def test_an_unreadable_deep_check_after_the_update_exits_2(tmp_path):
+    result, _, _ = run_update(tmp_path, new_version_healthy=True, deep_before=deep(),
+                              deep_after='{"status":"rate_limited"}')
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "deep check unreadable" in result.stdout
+
+
+def test_an_unhealthy_update_still_rolls_back_without_reading_the_deep_check(tmp_path):
+    result, log, _ = run_update(tmp_path, new_version_healthy=False,
+                                deep_before=deep(), deep_after=deep(worker=False))
+    assert result.returncode == 1 and "ROLLING BACK" in result.stdout
 
 
 # Provisioning files.

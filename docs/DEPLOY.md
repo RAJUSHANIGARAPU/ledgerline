@@ -78,7 +78,7 @@ The body limit stops oversized uploads at the proxy, before the app reads them. 
 deploy/hetzner/update.sh v1.2.0
 ```
 
-It backs up, deploys, waits for `/healthz` and rolls back to the previous commit and images when the new version does not become healthy (see OPERATIONS.md for its limits). The manual form is `git pull && docker compose up -d --build` after a backup (`scripts/backup.sh`). Migrations are applied on start. Upgrading an existing single-owner installation to multi-tenancy needs one new variable, `LEDGERLINE_APP_DB_PASSWORD`, in `.env`; the migration moves all data into tenant 1 and gives every existing user a membership there with their old role.
+It backs up, deploys, waits for `/healthz` and rolls back to the previous commit and images when the new version does not become healthy. It then checks that every `/healthz/deep` check that was ok before the update is ok again, and exits 2 without a rollback when one is not (see OPERATIONS.md for both and their limits). The manual form is `git pull && docker compose up -d --build` after a backup (`scripts/backup.sh`). Migrations are applied on start. Upgrading an existing single-owner installation to multi-tenancy needs one new variable, `LEDGERLINE_APP_DB_PASSWORD`, in `.env`; the migration moves all data into tenant 1 and gives every existing user a membership there with their old role.
 
 ## Outbound email (invitations and password reset)
 
