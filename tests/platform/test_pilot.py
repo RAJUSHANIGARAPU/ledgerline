@@ -124,7 +124,6 @@ def test_mailbox_attachments_are_counted(session, admin):
     assert (email.ok, email.failed, email.reasons) == (1, 1, {"unsupported_type": 1})
 
 
-
 def _mail_settings(admin):
     return get_settings().model_copy(update={
         "imap_host": "mail.example", "imap_user": "i@jouwbedrijf.example",
@@ -185,6 +184,24 @@ def test_the_refusal_key_is_a_hash_not_the_message_id(session, admin):
     assert set(event.details) == {"channel", "reason", "dedup_key"}
     assert len(event.details["dedup_key"]) == 64
     assert "leverancier" not in str(event.details)
+
+
+def test_the_same_bad_file_twice_in_one_mail_counts_once(session, admin):
+    mailbox = FakeMailbox({"1": eml(attachments=[BAD, BAD])})
+    email_intake.poll_once(session, lambda _s: mailbox, _mail_settings(admin))
+    assert _report(session, admin).channels["email"].failed == 1
+
+
+def test_the_same_refusal_key_counts_in_each_administration(session, admin):
+    from ledgerline.ledger.chart import create_administration
+
+    other = create_administration(session, name="Tweede Zaak", kvk_number="11112222")
+    error = service.InboxError("Only PDF", "unsupported_type")
+    for administration_id in (admin.id, other.id, admin.id, other.id):
+        service.record_rejection(session, administration_id, "email", error, dedup_key="k" * 64)
+    reports = {r.administration_id: r for r in pilot.administration_reports(session, *WIDE)}
+    assert reports[admin.id].channels["email"].failed == 1
+    assert reports[other.id].channels["email"].failed == 1
 
 
 def test_web_refusals_of_the_same_file_are_each_counted(session, admin):
