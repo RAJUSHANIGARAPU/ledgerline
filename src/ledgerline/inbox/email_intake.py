@@ -75,7 +75,9 @@ class ImapMailbox:
         status, _ = self.client.uid("COPY", uid, f'"{folder}"')
         if status != "OK":
             raise RuntimeError("could not copy a message")
-        self.client.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
+        status, _ = self.client.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
+        if status != "OK":
+            raise RuntimeError("could not mark a copied message as deleted")
         self.client.expunge()
 
     def close(self) -> None:

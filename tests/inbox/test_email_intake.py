@@ -230,3 +230,18 @@ def test_imap_adapter_copy_then_flag_without_move_capability():
     verbs = [c[1] for c in client.calls if c[0] == "uid"]
     assert verbs == ["COPY", "STORE", "COPY", "STORE"]
     assert [c for c in client.calls if c[0] == "create"] == [("create", '"Ledgerline/Processed"')]
+
+
+def test_imap_adapter_raises_when_the_copy_cannot_be_flagged_deleted():
+    class StoreRefused(FakeImap):
+        def uid(self, *args):
+            if args[0] == "STORE":
+                self.calls.append(("uid", *args))
+                return "NO", [b"flags are read-only"]
+            return super().uid(*args)
+
+    client = StoreRefused(("IMAP4REV1",))
+    box = email_intake.ImapMailbox(client, "INBOX")
+    with pytest.raises(RuntimeError, match="could not mark"):
+        box.move("4", "Ledgerline/Processed")
+    assert ("expunge",) not in client.calls
