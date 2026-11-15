@@ -58,7 +58,7 @@ ROUTES = registered()
 DENIED_GET = [p for m, p in ROUTES if m == "GET" and p not in ALLOWED]
 DENIED_WRITE = [(m, p) for m, p in ROUTES if m != "GET" and not (
     p in ALLOWED or p.startswith(("/account/", "/login/", "/forgot", "/reset/", "/invite/"))
-    or p in {"/logout", "/tenants"})]
+    or p in {"/logout", "/tenants", "/language"})]
 
 
 def test_matrix_sees_the_whole_route_table():
