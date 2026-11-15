@@ -3,6 +3,7 @@
 Mail is moved to another folder, never deleted outright.
 """
 import contextlib
+import hashlib
 import imaplib
 import logging
 import re
@@ -207,6 +208,15 @@ def _attachments(message: EmailMessage):
             yield filename or "attachment", payload
 
 
+def _refusal_key(message_id: str | None, payload: bytes) -> str:
+    """Same mail, same attachment: a mail fetched again after a failed move is not a new refusal.
+
+    A hash, so the audit log holds no header text; without a Message-ID only the file counts.
+    """
+    file_digest = hashlib.sha256(payload).hexdigest()
+    return hashlib.sha256(f"{message_id or ''}\0{file_digest}".encode()).hexdigest()
+
+
 def _clean_header(value: object) -> str | None:
     text = " ".join(str(value or "").split())
     return text or None
@@ -242,7 +252,8 @@ def process_message(
                 )
         except service.InboxError as exc:
             log.info("attachment not accepted: %s", exc)
-            service.record_rejection(session, admin_id, "email", exc)
+            service.record_rejection(session, admin_id, "email", exc,
+                                     dedup_key=_refusal_key(message_id, payload))
             continue
         if created:
             result.documents += 1

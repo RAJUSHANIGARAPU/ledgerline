@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ledgerline import audit
 from ledgerline.config import get_settings
-from ledgerline.models import Attachment, InboxDocument, InboxStatus
+from ledgerline.models import Attachment, AuditEvent, InboxDocument, InboxStatus
 
 
 class InboxError(ValueError):
@@ -95,9 +95,24 @@ def receive(
 
 def record_rejection(
     session: Session, administration_id: int, channel: str, error: InboxError,
-    *, user_id: int | None = None,
+    *, user_id: int | None = None, dedup_key: str | None = None,
 ) -> None:
-    """Count a refused upload (channel and reason code only; the caller commits)."""
+    """Count a refused upload (channel, reason code, optional hash; the caller commits).
+
+    With a `dedup_key` (a hash, never the content) the refusal is recorded once per key and
+    administration, so a source that delivers the same item again is not counted twice.
+    """
+    details = {"channel": channel, "reason": error.code}
+    if dedup_key is not None:
+        already = session.scalar(
+            select(AuditEvent.id).where(
+                AuditEvent.administration_id == administration_id,
+                AuditEvent.action == "inbox.receive_failed",
+                AuditEvent.details["dedup_key"].astext == dedup_key,
+            ).limit(1)
+        )
+        if already is not None:
+            return
+        details["dedup_key"] = dedup_key
     audit.record(session, "inbox.receive_failed", user_id=user_id,
-                 administration_id=administration_id,
-                 details={"channel": channel, "reason": error.code})
+                 administration_id=administration_id, details=details)
