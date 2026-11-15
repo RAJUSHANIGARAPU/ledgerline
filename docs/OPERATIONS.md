@@ -25,7 +25,7 @@ cd ~/ledgerline
 deploy/hetzner/update.sh v1.2.0     # a tag; without an argument it fast-forwards the current branch
 ```
 
-The script refuses to run with local changes, takes a backup (the local tier and the off-site copy), remembers the image ids of the running services, checks out the target, runs `docker compose up -d --build` and waits for `/healthz`. If the new version is not healthy within `HEALTH_TIMEOUT` (120 s) it checks out the previous commit, points the image names back at the previous builds (kept under a `:rollback` tag) and starts them without rebuilding, and exits non-zero.
+The script refuses to run with local changes, and refuses a commit whose GitHub CI run (`test`, `docker`, `e2e`) is missing, failed or unfinished; if GitHub cannot be reached it refuses too (`ALLOW_UNVERIFIED_DEPLOY="<reason>"` overrides and prints the reason). It then takes a backup (the local tier and the off-site copy), remembers the image ids of the running services, checks out the target, runs `docker compose up -d --build` and waits for `/healthz`. If the new version is not healthy within `HEALTH_TIMEOUT` (120 s) it checks out the previous commit, points the image names back at the previous builds (kept under a `:rollback` tag) and starts them without rebuilding, and exits non-zero.
 
 Limits you should know:
 - The pre-update backup is taken before the target is checked out and before any migration runs (`SKIP_BACKUP=1` skips it; do not set it for a real update). It is the only way back across a migration.
