@@ -168,3 +168,34 @@ def test_ubl_next_to_pdf_in_the_same_email_is_preferred(session, admin):
         .id
         == pdf.id
     )
+
+
+PAYSLIPS = [
+    "<h1>Salarisspecificatie</h1><p>Periode 07</p><p>Netto 1.234,56</p>",
+    "<p>Bakker Horeca</p><p>Maandoverzicht</p><p>Bruto loon 2.000,00</p>"
+    "<p>Loonheffing 400,00</p><p>Netto loon 1.600,00</p>",
+    "<p>Naam medewerker</p>" + "<p>regel</p>" * 12 + "<p>Loonstrook juli</p><p>Netto 1.234,56</p>",
+]
+
+
+@pytest.mark.parametrize("html", PAYSLIPS)
+@pytest.mark.parametrize("provider", ["anthropic", "openrouter"])
+def test_a_payslip_never_reaches_the_vision_step(
+    session, admin, monkeypatch, html, provider
+):
+    import sys
+    import types
+
+    monkeypatch.setenv("LEDGERLINE_EXTRACTION_PROVIDER", provider)
+    get_settings.cache_clear()
+    fake = FakeVision(ExtractedInvoice(invoice_number="V-1", total_incl_cents=500))
+    name = "vision" if provider == "anthropic" else provider
+    module = types.ModuleType(f"ledgerline.inbox.extract.{name}")
+    module.get_extractor = lambda session, administration_id: fake
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    document = receive(session, admin, pdf_from_html(html), "loon.pdf")
+    pipeline.run(session, document)
+    get_settings.cache_clear()
+    assert fake.calls == 0
+    assert document.extraction["document_type"] == "payslip"
+    assert document.extraction_method == "pdf_text"

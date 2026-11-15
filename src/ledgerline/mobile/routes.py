@@ -54,6 +54,7 @@ def capture_form(request: Request, user: CaptureDep, admin: CaptureAdminDep):
             "user_id": user.id,
             "tenant_id": request.state.tenant.id,
             "max_mb": get_settings().max_upload_bytes // (1024 * 1024),
+            "photo_reading": get_settings().extraction_provider != "none",
         },
     )
 

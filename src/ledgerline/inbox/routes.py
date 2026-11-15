@@ -94,6 +94,7 @@ def inbox_list(request: Request, session: SessionDep, user: UserDep, admin: Admi
         "duplicates": duplicates, "names": names, "labels": review.METHODS,
         "types": review.DOCUMENT_TYPES, "user_can_write": user.role in WRITE_ROLES,
         "max_mb": get_settings().max_upload_bytes // (1024 * 1024),
+        "photo_reading": get_settings().extraction_provider != "none",
         "inbox_address": email_intake.inbox_address(get_settings(), admin.inbox_token)
         if user.role in WRITE_ROLES else None,
         "notices": forwarding.active_notices(session, admin.id)
