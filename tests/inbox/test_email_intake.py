@@ -245,3 +245,27 @@ def test_imap_adapter_raises_when_the_copy_cannot_be_flagged_deleted():
     with pytest.raises(RuntimeError, match="could not mark"):
         box.move("4", "Ledgerline/Processed")
     assert ("expunge",) not in client.calls
+
+
+def test_imap_adapter_never_expunges_the_whole_folder():
+    """Mail the user flagged deleted in their own client must survive a move."""
+    for caps in (("IMAP4REV1",), ("IMAP4REV1", "UIDPLUS")):
+        client = FakeImap(caps)
+        box = email_intake.ImapMailbox(client, "INBOX")
+        box.move("4", "Ledgerline/Processed")
+        assert ("expunge",) not in client.calls
+
+
+def test_imap_adapter_expunges_only_the_moved_uid_with_uidplus():
+    client = FakeImap((b"IMAP4REV1", b"UIDPLUS"))
+    box = email_intake.ImapMailbox(client, "INBOX")
+    box.move("4", "Ledgerline/Processed")
+    verbs = [c[1:] for c in client.calls if c[0] == "uid"]
+    assert verbs[-1] == ("EXPUNGE", "4")
+
+
+def test_imap_adapter_skips_flagged_deleted_mail_when_polling():
+    """Without UIDPLUS a moved message stays flagged; it must not be fetched again."""
+    client = FakeImap(("IMAP4REV1",))
+    email_intake.ImapMailbox(client, "INBOX").unseen()
+    assert ("uid", "SEARCH", None, "UNSEEN", "UNDELETED") in client.calls

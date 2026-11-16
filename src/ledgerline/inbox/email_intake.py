@@ -43,14 +43,16 @@ class ImapMailbox:
         status, _ = client.select(f'"{folder}"')
         if status != "OK":
             raise RuntimeError("could not open the mailbox folder")
-        self.can_move = b"MOVE" in b" ".join(
-            part if isinstance(part, bytes) else str(part).encode()
-            for part in (client.capabilities if hasattr(client, "capabilities") else ())
-        ).upper()
+        capabilities = {
+            (part.decode() if isinstance(part, bytes) else str(part)).upper()
+            for part in getattr(client, "capabilities", ())
+        }
+        self.can_move = "MOVE" in capabilities
+        self.can_uid_expunge = "UIDPLUS" in capabilities
         self.known_folders: set[str] = set()
 
     def unseen(self) -> list[str]:
-        status, data = self.client.uid("SEARCH", None, "UNSEEN")
+        status, data = self.client.uid("SEARCH", None, "UNSEEN", "UNDELETED")
         if status != "OK" or not data or not data[0]:
             return []
         return [u.decode() for u in data[0].split()]
@@ -79,7 +81,13 @@ class ImapMailbox:
         status, _ = self.client.uid("STORE", uid, "+FLAGS", r"(\Deleted)")
         if status != "OK":
             raise RuntimeError("could not mark a copied message as deleted")
-        self.client.expunge()
+        # A plain EXPUNGE removes every message flagged deleted in the folder,
+        # including ones the user flagged in their own mail client. Expunge only
+        # this message, or leave it flagged for the user's client to expunge.
+        if self.can_uid_expunge:
+            status, _ = self.client.uid("EXPUNGE", uid)
+            if status != "OK":
+                raise RuntimeError("could not expunge a moved message")
 
     def close(self) -> None:
         with contextlib.suppress(imaplib.IMAP4.error, OSError):
