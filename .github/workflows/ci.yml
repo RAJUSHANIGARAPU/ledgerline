@@ -42,7 +42,8 @@ jobs:
           if docker run --rm ledgerline:ci true; then echo "expected failure"; exit 1; fi
 
   e2e:
-    runs-on: ubuntu-latest
+    # ubuntu-latest moved to 26.04, where Playwright 1.56.1 cannot install chromium.
+    runs-on: ubuntu-24.04
     needs: test
     steps:
       - uses: actions/checkout@v4
