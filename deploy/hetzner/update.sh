@@ -25,6 +25,12 @@ TARGET="${1:-}"
 
 say() { echo "[update] $*"; }
 
+# A timeout of 0, a negative number or text would end the health wait before its first check,
+# and the script would then roll back a version that was healthy.
+bad_timeout() { say "HEALTH_TIMEOUT must be a whole number of seconds above 0, not deploying"; exit 1; }
+case "$HEALTH_TIMEOUT" in ''|*[!0-9]*) bad_timeout ;; esac
+[ "$HEALTH_TIMEOUT" -gt 0 ] || bad_timeout
+
 wait_healthy() {
   waited=0
   while [ "$waited" -lt "$HEALTH_TIMEOUT" ]; do

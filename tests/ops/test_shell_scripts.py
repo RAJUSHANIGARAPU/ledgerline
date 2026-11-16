@@ -208,6 +208,17 @@ def test_failed_rollback_is_reported_and_still_exits_nonzero(tmp_path):
     assert "rollback did not become healthy" in result.stdout
 
 
+@pytest.mark.parametrize("timeout", ["0", "00", "-5", "2m", "1.5"])
+def test_update_refuses_a_health_timeout_that_cannot_wait(tmp_path, timeout):
+    """Such a timeout ended the health wait at once and rolled back a healthy version."""
+    result, log, _ = run_update(
+        tmp_path, new_version_healthy=True, env={"HEALTH_TIMEOUT": timeout}.items()
+    )
+    assert result.returncode == 1
+    assert "HEALTH_TIMEOUT must be" in result.stdout
+    assert not any(line.startswith("docker") or "checkout" in line for line in log)
+
+
 def test_update_to_a_tag_checks_it_out(tmp_path):
     _, log, _ = run_update(tmp_path, new_version_healthy=True, args=("v1.2.0",))
     assert "git checkout --quiet v1.2.0" in log
