@@ -35,8 +35,9 @@ wait_healthy() {
   return 1
 }
 
-# /healthz/deep answers 503 with the same JSON when a check fails, so no -f here.
-read_deep() { curl -sS -m 5 "$DEEP_HEALTH_URL" 2>/dev/null || true; }
+# /healthz/deep answers 503 with the same JSON when a check fails, so no -f here. curl's own
+# error (refused, timed out) becomes the body, so a message can show why nothing was read.
+read_deep() { curl -sS -m 5 "$DEEP_HEALTH_URL" 2>&1 || true; }
 
 # Evaluate one /healthz/deep body (stdin) against the reading taken before the update ($2, may
 # be empty). Prints "<state>|<regressed>|<still failing>|<new and failing>": state is ok,

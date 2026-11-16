@@ -357,6 +357,27 @@ def test_a_rate_limited_first_reading_is_retried(tmp_path):
     assert "skipping the deep check" not in result.stdout
 
 
+def test_an_unreachable_deep_check_says_why(tmp_path):
+    result, _, _ = run_update(tmp_path, new_version_healthy=True, deep_before=deep(),
+                              deep_after="curl: (7) Failed to connect to 127.0.0.1 port 8000")
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "unreadable after the update: curl: (7) Failed to connect" in result.stdout
+
+
+def test_only_a_literal_true_counts_as_ok(tmp_path):
+    after = json.loads(deep())
+    after["checks"]["disk"]["ok"] = 1
+    result, _, _ = run_update(tmp_path, new_version_healthy=True,
+                              deep_before=deep(), deep_after=json.dumps(after))
+    assert result.returncode == 2 and "regressed: disk" in result.stdout
+
+
+def test_deep_health_url_overrides_the_derived_address(tmp_path):
+    _, log, _ = run_update(tmp_path, new_version_healthy=True,
+                           env={"DEEP_HEALTH_URL": "http://10.0.0.5:9000/healthz/deep?probe=1"})
+    assert any("http://10.0.0.5:9000/healthz/deep?probe=1" in line for line in log)
+
+
 def test_a_trailing_slash_in_the_health_url_still_finds_the_deep_check(tmp_path):
     _, log, _ = run_update(tmp_path, new_version_healthy=True,
                            env={"HEALTH_URL": "http://127.0.0.1:8000/healthz/"})
