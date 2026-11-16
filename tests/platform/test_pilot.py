@@ -124,6 +124,92 @@ def test_mailbox_attachments_are_counted(session, admin):
     assert (email.ok, email.failed, email.reasons) == (1, 1, {"unsupported_type": 1})
 
 
+def _mail_settings(admin):
+    return get_settings().model_copy(update={
+        "imap_host": "mail.example", "imap_user": "i@jouwbedrijf.example",
+        "imap_default_administration_id": admin.id, "imap_allowed_senders": "",
+        "imap_processed_folder": "Ledgerline/Processed"})
+
+
+class MoveFailsOnce(FakeMailbox):
+    """The first move raises after the poll committed: the mail stays and is fetched again."""
+
+    def __init__(self, messages):
+        super().__init__(messages)
+        self.failed = False
+
+    def move(self, uid, folder):
+        if not self.failed:
+            self.failed = True
+            raise RuntimeError("IMAP connection dropped")
+        super().move(uid, folder)
+
+
+BAD = ("bad.pdf", b"not a pdf at all", "application", "pdf")
+OTHER_BAD = ("other.pdf", b"also not a pdf", "application", "pdf")
+
+
+def test_a_refused_attachment_polled_again_after_a_failed_move_counts_once(session, admin):
+    settings = _mail_settings(admin)
+    mailbox = MoveFailsOnce({"1": eml(attachments=[
+        ("ok.pdf", pdf("mail"), "application", "pdf"), BAD, OTHER_BAD])})
+    first = email_intake.poll_once(session, lambda _s: mailbox, settings)
+    second = email_intake.poll_once(session, lambda _s: mailbox, settings)
+    assert (first.skipped, second.duplicates, mailbox.messages) == (1, 1, {})
+    email = _report(session, admin).channels["email"]
+    assert (email.ok, email.failed, email.reasons) == (1, 2, {"unsupported_type": 2})
+
+
+def test_the_same_refused_file_in_a_new_mail_counts_again(session, admin):
+    settings = _mail_settings(admin)
+    mailbox = FakeMailbox({"1": eml(attachments=[BAD], message_id="<a@leverancier.example>"),
+                           "2": eml(attachments=[BAD], message_id="<b@leverancier.example>")})
+    email_intake.poll_once(session, lambda _s: mailbox, settings)
+    assert _report(session, admin).channels["email"].failed == 2
+
+
+def test_a_mail_without_message_id_polled_again_counts_once(session, admin):
+    settings = _mail_settings(admin)
+    mailbox = MoveFailsOnce({"1": eml(attachments=[BAD], message_id="")})
+    email_intake.poll_once(session, lambda _s: mailbox, settings)
+    email_intake.poll_once(session, lambda _s: mailbox, settings)
+    assert _report(session, admin).channels["email"].failed == 1
+
+
+def test_the_refusal_key_is_a_hash_not_the_message_id(session, admin):
+    mailbox = FakeMailbox({"1": eml(attachments=[BAD], message_id="<a@leverancier.example>")})
+    email_intake.poll_once(session, lambda _s: mailbox, _mail_settings(admin))
+    [event] = session.scalars(select(AuditEvent).where(
+        AuditEvent.action == "inbox.receive_failed")).all()
+    assert set(event.details) == {"channel", "reason", "dedup_key"}
+    assert len(event.details["dedup_key"]) == 64
+    assert "leverancier" not in str(event.details)
+
+
+def test_the_same_bad_file_twice_in_one_mail_counts_once(session, admin):
+    mailbox = FakeMailbox({"1": eml(attachments=[BAD, BAD])})
+    email_intake.poll_once(session, lambda _s: mailbox, _mail_settings(admin))
+    assert _report(session, admin).channels["email"].failed == 1
+
+
+def test_the_same_refusal_key_counts_in_each_administration(session, admin):
+    from ledgerline.ledger.chart import create_administration
+
+    other = create_administration(session, name="Tweede Zaak", kvk_number="11112222")
+    error = service.InboxError("Only PDF", "unsupported_type")
+    for administration_id in (admin.id, other.id, admin.id, other.id):
+        service.record_rejection(session, administration_id, "email", error, dedup_key="k" * 64)
+    reports = {r.administration_id: r for r in pilot.administration_reports(session, *WIDE)}
+    assert reports[admin.id].channels["email"].failed == 1
+    assert reports[other.id].channels["email"].failed == 1
+
+
+def test_web_refusals_of_the_same_file_are_each_counted(session, admin):
+    error = service.InboxError("Only PDF", "unsupported_type")
+    service.record_rejection(session, admin.id, "web", error)
+    service.record_rejection(session, admin.id, "web", error)
+    assert _report(session, admin).channels["web"].failed == 2
+
 def _event(session, action, admin, doc_id, at):
     session.add(AuditEvent(action=action, administration_id=admin.id,
                            entity_type="inbox_document", entity_id=doc_id, created_at=at,

@@ -103,7 +103,7 @@ Counts are compared before the migrations run, so a migration cannot hide a rest
 
 ## Pilot measurements
 
-No analytics service and no extra tracking table: uploads and processing times are derived from the audit events the app already writes (`inbox.receive`, `inbox.receive_failed`, `inbox.create_purchase`, `inbox.link_duplicate`). They hold channel, reason code and timestamps, never document contents or amounts.
+No analytics service and no extra tracking table: uploads and processing times are derived from the audit events the app already writes (`inbox.receive`, `inbox.receive_failed`, `inbox.create_purchase`, `inbox.link_duplicate`). They hold channel, reason code and timestamps (a refused mail attachment also carries a hash, see below), never document contents or amounts.
 
 ```
 docker compose exec app ledgerline pilot-report --from 2026-11-15 --to 2026-11-30 [--tenant N]
@@ -122,7 +122,8 @@ docker compose exec app ledgerline feedback-export --from 2026-11-15 --to 2026-1
 - The CSV has a `tenant_id` column. Its text is verbatim except that a cell starting with `=`, `+`, `-`, `@`, tab or carriage return gets a leading `'` so a spreadsheet does not run it as a formula.
 - The terminal report escapes control characters (including ANSI and OSC sequences) as `\uXXXX`; newline and tab stay. Storage and CSV keep the original characters.
 - Both commands refuse to run when the database role is a superuser, has BYPASSRLS or owns tables without forced row-level security, because every tenant would then see all rows. Use the application role, or pass `--allow-rls-bypass` knowingly. An unknown `--tenant` is an error.
-- Known limits: a receive failure is recorded in the polling session, so a poll that fails and re-fetches the message can record the failure twice (receipts are deduplicated by hash, failures are not). Unknown senders, unroutable mail, size refusals made before the app sees the file, unexpected errors and uploads without a filename are not counted as failures.
+- A mail that is fetched again (for example after the move to the processed folder failed) records each refused attachment once: the event carries a hash of the Message-ID and the file, never the header itself. The same file in a new mail counts again. The same file attached twice to one mail counts once. A mail without a Message-ID, or a sender that reuses one Message-ID for every mail, is matched on the file alone, so a later refusal of the same file from it is not counted; the match has no time limit.
+- Known limits: unknown senders, unroutable mail, size refusals made before the app sees the file, unexpected errors and uploads without a filename are not counted as failures.
 
 ## Monitoring
 
