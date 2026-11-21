@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ledgerline import audit
 from ledgerline.imports import csvio
+from ledgerline.invoicing.service import reference_key
 from ledgerline.ledger.service import (
     LedgerError,
     LineSpec,
@@ -168,9 +169,11 @@ def _existing(session: Session, admin_id: int, kind: str, number: str,
     if kind == SALES:
         return session.scalar(select(SalesInvoice).where(
             SalesInvoice.administration_id == admin_id, SalesInvoice.number == number))
-    return session.scalar(select(PurchaseInvoice).where(
-        PurchaseInvoice.administration_id == admin_id, PurchaseInvoice.contact_id == contact_id,
-        func.lower(func.trim(PurchaseInvoice.supplier_reference)) == number.lower()))
+    key = reference_key(number)
+    stmt = select(PurchaseInvoice).where(
+        PurchaseInvoice.administration_id == admin_id, PurchaseInvoice.contact_id == contact_id)
+    return next((p for p in session.scalars(stmt) if reference_key(p.supplier_reference) == key),
+                None)
 
 
 def evaluate(session: Session, admin: Administration, raw_rows: list[tuple[int, dict[str, str]]],

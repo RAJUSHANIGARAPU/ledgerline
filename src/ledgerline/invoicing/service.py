@@ -1,10 +1,11 @@
 """Sales and purchase invoice use cases. Callable without HTTP; callers commit."""
 import hashlib
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ledgerline import audit
@@ -423,18 +424,29 @@ def _purchase_codes() -> set[str]:
     return {c.code for c in codes.for_direction(Direction.PURCHASE)}
 
 
+def reference_key(reference: str) -> str:
+    """A supplier invoice number reduced to what identifies it: case, spacing, punctuation and
+    leading zeros of all-digit parts do not (DV-2026-0412 == dv 2026 412)."""
+    parts = re.split(r"[\W_]+", reference.casefold())
+    return "-".join(p.lstrip("0") or "0" if p.isdigit() else p for p in parts if p)
+
+
 def find_duplicate_purchase(
     session: Session, admin: Administration, contact_id: int, reference: str,
     exclude_id: int | None = None,
 ) -> PurchaseInvoice | None:
+    key = reference_key(reference)
+    if not key:
+        return None
     stmt = select(PurchaseInvoice).where(
         PurchaseInvoice.administration_id == admin.id,
         PurchaseInvoice.contact_id == contact_id,
-        func.lower(func.trim(PurchaseInvoice.supplier_reference)) == reference.strip().lower(),
-    )
+    ).order_by(PurchaseInvoice.id)
     if exclude_id:
         stmt = stmt.where(PurchaseInvoice.id != exclude_id)
-    return session.scalars(stmt).first()
+    return next(
+        (p for p in session.scalars(stmt) if reference_key(p.supplier_reference) == key), None
+    )
 
 
 def purchase_line_account_ok(account: Account) -> bool:
