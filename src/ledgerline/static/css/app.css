@@ -151,6 +151,7 @@ img { max-width: 100%; }
 .table tbody tr:last-child td { border-bottom: 0; }
 .table tbody tr:hover { background: var(--surface-2); }
 .table tr.is-clickable { cursor: pointer; }
+.table tr.is-draft td { color: var(--text-muted); font-style: italic; }
 .table tr.total-row td { font-weight: 700; background: var(--surface-2); border-top: 2px solid var(--border); }
 .table-compact th, .table-compact td { padding: 0.35rem 0.6rem; }
 .num { text-align: right !important; font-variant-numeric: tabular-nums; font-family: var(--font); }

@@ -2,7 +2,7 @@ import re
 
 import pytest
 
-PAGES = ["/", "/sales", "/sales/new", "/purchases", "/purchases/new", "/bank", "/ledger",
+PAGES = ["/", "/sales", "/sales/new", "/purchases", "/purchases/new", "/spend", "/bank", "/ledger",
          "/ledger/new", "/accounts", "/vat", "/reports", "/contacts", "/contacts/new",
          "/settings", "/settings/privacy"]
 
