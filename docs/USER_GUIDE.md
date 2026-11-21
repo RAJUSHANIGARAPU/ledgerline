@@ -83,7 +83,7 @@ Four ways in, all ending as a purchase invoice you book:
    mailbox itself is set up by whoever runs the server, see `LEDGERLINE_IMAP_*` in `.env.example`).
    Keep the address private; the owner can create a new one in Settings, which disables the old one.
    Attachments land in the Inbox.
-2. Upload: drop PDFs, photos or e-invoice (UBL/XML) files on the [Inbox](/inbox) page.
+2. Upload: drop PDFs, photos or e-invoice (UBL/XML) files on the [Inbox](/inbox) page. You can select many files at once: each file may be up to 10 MB and one batch up to 200 MB; above that the server refuses the whole batch, so upload it in parts.
 3. Phone: open [Capture](/capture) on your phone and take a photo, or use the "Send to Ledgerline"
    share-sheet shortcut. Create its upload key under [Phone devices](/settings/devices); the steps
    are in `docs/IPHONE.md` in the repository.
