@@ -427,7 +427,7 @@ def _purchase_codes() -> set[str]:
 def reference_key(reference: str) -> str:
     """A supplier invoice number reduced to what identifies it: case, spacing, punctuation and
     leading zeros of all-digit parts do not (DV-2026-0412 == dv 2026 412)."""
-    parts = re.split(r"[^0-9a-z]+", reference.casefold())
+    parts = re.split(r"[\W_]+", reference.casefold())
     return "-".join(p.lstrip("0") or "0" if p.isdigit() else p for p in parts if p)
 
 

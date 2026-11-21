@@ -7,6 +7,7 @@ from ledgerline.invoicing.service import (
     book_purchase_invoice,
     create_purchase_invoice,
     find_duplicate_purchase,
+    reference_key,
     update_purchase_invoice,
 )
 from ledgerline.ledger.chart import create_administration
@@ -45,6 +46,11 @@ def test_same_number_written_differently_is_the_same_invoice(session, admin, sup
 def test_a_genuinely_different_number_is_allowed(session, admin, supplier, other):
     _create(session, admin, supplier, REFERENCE)
     assert _create(session, admin, supplier, other).id
+
+
+def test_letters_outside_a_to_z_still_tell_numbers_apart():
+    assert reference_key("Ä-1") != reference_key("Ö-1")
+    assert reference_key("Ä-01") == reference_key("ä 1")
 
 
 def test_same_number_from_another_supplier_is_allowed(session, admin, supplier):
