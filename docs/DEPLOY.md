@@ -59,14 +59,26 @@ The owner role must be a superuser or hold `BYPASSRLS`; the migration refuses to
 ```
 books.example.com {
     encode zstd gzip
-    request_body {
-        max_size 12MB
+    @bulk {
+        method POST
+        path /inbox/upload
     }
-    reverse_proxy 127.0.0.1:8000
+    handle @bulk {
+        request_body {
+            max_size 200MB
+        }
+        reverse_proxy 127.0.0.1:8000
+    }
+    handle {
+        request_body {
+            max_size 12MB
+        }
+        reverse_proxy 127.0.0.1:8000
+    }
 }
 ```
 
-The body limit stops oversized uploads at the proxy, before the app reads them. Caddy obtains and renews a Let's Encrypt certificate by itself. The app starts uvicorn with `--proxy-headers`, so the original scheme and client address are taken from the proxy. Open only ports 80 and 443 in the firewall (plus SSH).
+The body limits stop oversized requests at the proxy, before the app reads them: 200 MB for the inbox bulk upload (`POST /inbox/upload`, many files in one request) and 12 MB for every other route (one file per request). The app still refuses any single file above `LEDGERLINE_MAX_UPLOAD_BYTES` (10 MiB), so a 200 MB batch means about twenty files of the maximum size, or many more smaller ones. A batch above 200 MB is refused by Caddy with a bare 413 before the app can show a message; split it. Caddy obtains and renews a Let's Encrypt certificate by itself. The app starts uvicorn with `--proxy-headers`, so the original scheme and client address are taken from the proxy. Open only ports 80 and 443 in the firewall (plus SSH).
 
 ## A Hetzner Cloud server, scripted
 

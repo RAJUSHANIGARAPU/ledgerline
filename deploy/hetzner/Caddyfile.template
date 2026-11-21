@@ -5,8 +5,23 @@
         Strict-Transport-Security "max-age=3600"
         -Server
     }
-    request_body {
-        max_size 12MB
+    # Bulk upload on the inbox page: many files in one request. The app still refuses any single
+    # file above LEDGERLINE_MAX_UPLOAD_BYTES (10 MiB), so this only sets the size of a whole batch.
+    @bulk {
+        method POST
+        path /inbox/upload
     }
-    reverse_proxy 127.0.0.1:8000
+    handle @bulk {
+        request_body {
+            max_size 200MB
+        }
+        reverse_proxy 127.0.0.1:8000
+    }
+    # Everything else keeps the small cap (one file per request, plus form overhead).
+    handle {
+        request_body {
+            max_size 12MB
+        }
+        reverse_proxy 127.0.0.1:8000
+    }
 }

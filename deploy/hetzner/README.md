@@ -30,7 +30,7 @@ If your home IP changes, update the firewall rule: `hcloud firewall describe led
 
 - Installs Docker from Docker's apt repository, Caddy from Caddy's repository, unattended-upgrades and fail2ban.
 - Creates the `deploy` user (key login only, no password, in the `docker` group); root login and password login over SSH are disabled.
-- Clones the repository at `REPO_REF`, writes `.env` from `env.template` with passwords generated on the server (mode 600), writes `/etc/caddy/Caddyfile` from `Caddyfile.template` (12 MB request body limit) and starts the stack.
+- Clones the repository at `REPO_REF`, writes `.env` from `env.template` with passwords created on the server (mode 600), writes `/etc/caddy/Caddyfile` from `Caddyfile.template` (200 MB request body limit for the inbox bulk upload, 12 MB elsewhere) and starts the stack.
 - Writes the first owner password to `~deploy/FIRST-LOGIN.txt`.
 - Log: `/var/log/ledgerline-bootstrap.log`.
 

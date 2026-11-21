@@ -17,7 +17,7 @@ flowchart LR
     end
 
     subgraph server["Server (EU)"]
-        caddy["Caddy<br/>HTTPS, 12 MB body limit"]
+        caddy["Caddy<br/>HTTPS, body limit 200 MB inbox upload, 12 MB elsewhere"]
         subgraph compose["docker compose"]
             app["app<br/>FastAPI + htmx<br/>role: ledgerline_app"]
             worker["worker<br/>inbox extraction + mailbox polling<br/>role: ledgerline_app"]
