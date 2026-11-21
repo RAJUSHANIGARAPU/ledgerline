@@ -1,4 +1,5 @@
 import imaplib
+import ssl
 
 import pytest
 from sqlalchemy import select
@@ -269,3 +270,26 @@ def test_imap_adapter_skips_flagged_deleted_mail_when_polling():
     client = FakeImap(("IMAP4REV1",))
     email_intake.ImapMailbox(client, "INBOX").unseen()
     assert ("uid", "SEARCH", None, "UNSEEN", "UNDELETED") in client.calls
+
+
+def test_connect_verifies_the_server_certificate_and_hostname(session, monkeypatch, settings):
+    captured = {}
+
+    class FakeImap:
+        def __init__(self, host, port, **kwargs):
+            captured.update(host=host, port=port, **kwargs)
+
+        capabilities = ()
+
+        def login(self, user, password):
+            return "OK", []
+
+        def select(self, folder):
+            return "OK", [b"0"]
+
+    monkeypatch.setattr(imaplib, "IMAP4_SSL", FakeImap)
+    email_intake.connect(settings)
+
+    context = captured["ssl_context"]
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname is True

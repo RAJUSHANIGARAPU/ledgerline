@@ -7,6 +7,7 @@ import hashlib
 import imaplib
 import logging
 import re
+import ssl
 from dataclasses import dataclass
 from email import policy
 from email.message import EmailMessage
@@ -95,7 +96,9 @@ class ImapMailbox:
 
 
 def connect(settings: Settings) -> Mailbox:
-    client = imaplib.IMAP4_SSL(settings.imap_host, settings.imap_port, timeout=30)
+    # imaplib's default context does not verify the certificate or hostname.
+    client = imaplib.IMAP4_SSL(settings.imap_host, settings.imap_port, timeout=30,
+                               ssl_context=ssl.create_default_context())
     client.login(settings.imap_user, settings.imap_password)
     return ImapMailbox(client, settings.imap_folder)
 
