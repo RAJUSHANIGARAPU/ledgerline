@@ -98,6 +98,17 @@ Or enter it by hand: [New purchase invoice](/purchases/new). Fill in the supplie
 
 Always check the amounts and the VAT code before booking. Reverse-charge codes (for example IEU21 for EU purchases) post both the VAT you owe and the VAT you deduct. Keep the original documents: records must be kept 7 years (10 for real estate). Ledgerline stores the attachment in its database, so it is part of every backup.
 
+## Spend overview
+
+[Spend](/spend) lists every purchase bill in one place, however it arrived (email, upload, phone or typed in). Sales invoices never appear here.
+
+- **Period and supplier.** Pick This month, This quarter, This year, Last year or All time, or enter your own dates, and optionally one supplier. Own dates replace the preset.
+- **Totals count booked bills only.** Excl. VAT, VAT, Incl. VAT and Open add up the bills you have booked. Tick **Show drafts** to list drafts as well; they are marked as drafts and stay out of every total.
+- **Breakdown** by supplier, by month and by expense category, for the same period and bills as the totals.
+- **Waiting for review.** Documents in the [Inbox](/inbox) that are not yet turned into a purchase are counted as "N bills waiting for review". They are not in the totals, because nobody has checked their amounts yet.
+- **Export CSV** downloads the rows you are looking at, with the same filters.
+- **Many bills at once.** The upload box on this page takes any number of PDFs, photos or e-invoice (UBL/XML) files in one go and sends them to the Inbox. Each file may be up to 10 MB. Behind the standard HTTPS setup one upload is limited to 12 MB in total, so send larger batches in several rounds. A file already in the Inbox is reported as a duplicate and not added again.
+
 ## Forward invoices from Gmail / Outlook automatically
 
 Ledgerline never connects to your mailbox. Instead your mailbox forwards the invoice mails to your administration's private address, shown on the [Inbox](/inbox) page (`mailbox+<token>@domain`). Keep the address private. Only mail with attachments (PDF, JPEG, PNG, UBL XML) creates documents, and nothing is booked without your review. Only new mail is forwarded, not mail already in the mailbox.

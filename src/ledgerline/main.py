@@ -36,6 +36,7 @@ MODULES = [
     "ledgerline.imports.routes",
     "ledgerline.platform.routes",
     "ledgerline.inbox.routes",
+    "ledgerline.spend.routes",
     "ledgerline.mobile.routes",
     "ledgerline.onboarding.routes",
     "ledgerline.ops.routes",

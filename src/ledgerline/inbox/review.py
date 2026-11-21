@@ -394,7 +394,7 @@ def reject(session: Session, admin: Administration, user: User, document: InboxD
                  entity_type="inbox_document", entity_id=document.id)
 
 
-def _document_type():
+def document_type():
     return func.coalesce(InboxDocument.extraction["document_type"].as_string(), "invoice")
 
 
@@ -403,9 +403,9 @@ def in_tab(tab: str, admin_id: int):
     status = InboxStatus(tab) if tab != "other" else InboxStatus.REVIEW
     clause = [InboxDocument.administration_id == admin_id, InboxDocument.status == status]
     if tab == "review":
-        clause.append(_document_type() == "invoice")
+        clause.append(document_type() == "invoice")
     elif tab == "other":
-        clause.append(_document_type() != "invoice")
+        clause.append(document_type() != "invoice")
     return clause
 
 

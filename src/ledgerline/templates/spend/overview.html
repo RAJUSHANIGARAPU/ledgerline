@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui with context %}
+{% block title %}Spend{% endblock %}
+{% block heading %}Spend overview{% endblock %}
+{% block actions %}<a class="btn btn-secondary" id="spend-export" href="/spend.csv?{{ export_query }}">Export CSV</a>{% endblock %}
+{% macro breakdown(section_id, title, groups) %}
+<section id="{{ section_id }}" class="card">
+  <div class="card-body"><h2>{{ title }}</h2></div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>{{ title }}</th><th class="num">Bills</th><th class="num">Excl. VAT</th><th class="num">VAT</th><th class="num">Incl. VAT</th></tr></thead>
+      <tbody>
+      {% for g in groups %}
+        <tr><td>{{ g.key }}</td><td class="num">{{ g.totals.count }}</td><td class="num">{{ g.totals.excl_cents|eur }}</td><td class="num">{{ g.totals.vat_cents|eur }}</td><td class="num">{{ g.totals.incl_cents|eur }}</td></tr>
+      {% else %}
+        <tr><td colspan="5" class="muted">Nothing booked in this period.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endmacro %}
+{% block content %}
+<div class="tabs">
+  {% for key, label, query in presets %}<a class="tab{% if active_preset == key %} is-active{% endif %}" data-preset="{{ key }}" href="/spend?{{ query }}">{{ label }}</a>{% endfor %}
+</div>
+<form id="spend-filter" class="card" method="get" action="/spend">
+  <div class="card-body row">
+    {% if active_preset %}<input type="hidden" name="preset" value="{{ active_preset }}">{% endif %}
+    <label class="field"><span class="field-label">From</span><input class="input" type="date" name="date_from" value="{{ flt.date_from.isoformat() if flt.date_from else '' }}"></label>
+    <label class="field"><span class="field-label">To</span><input class="input" type="date" name="date_to" value="{{ flt.date_to.isoformat() if flt.date_to else '' }}"></label>
+    <label class="field"><span class="field-label">Supplier</span>
+      <select class="input" name="contact_id">
+        <option value="">All suppliers</option>
+        {% for s in suppliers %}<option value="{{ s.id }}"{% if flt.contact_id == s.id %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field"><span class="field-label">Drafts</span><span><input type="checkbox" name="drafts" value="1"{% if flt.include_drafts %} checked{% endif %}> Show drafts</span></label>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Apply</button></div>
+  </div>
+</form>
+
+{% set tot = data.totals %}
+<div id="spend-totals" class="grid grid-4">
+  <div class="stat"><div class="stat-label">Bills</div><div class="stat-value num" data-total="count">{{ tot.count }}</div><div class="stat-hint">Booked, drafts not counted</div></div>
+  <div class="stat"><div class="stat-label">Excl. VAT</div><div class="stat-value num" data-total="excl">{{ tot.excl_cents|eur }}</div></div>
+  <div class="stat"><div class="stat-label">VAT</div><div class="stat-value num" data-total="vat">{{ tot.vat_cents|eur }}</div></div>
+  <div class="stat"><div class="stat-label">Incl. VAT</div><div class="stat-value num" data-total="incl">{{ tot.incl_cents|eur }}</div></div>
+  <div class="stat"><div class="stat-label">Still to pay</div><div class="stat-value num" data-total="open">{{ tot.open_cents|eur }}</div></div>
+</div>
+
+{% if data.pending.count > 0 %}
+<div id="spend-pending" class="card"><div class="card-body">
+  <a href="/inbox?tab=new">{{ data.pending.count }} bill{{ '' if data.pending.count == 1 else 's' }} waiting for review</a>
+  (about {{ data.pending.extracted_incl_cents|eur }}, not checked yet{% if data.pending.unreadable %}; {{ data.pending.unreadable }} unreadable{% endif %}).
+  <span class="muted">These are not included in the totals above.</span>
+</div></div>
+{% endif %}
+
+{% if data.rows %}
+<div class="card">
+  <div class="table-wrap">
+    <table class="table" id="spend-rows">
+      <thead><tr><th>Date</th><th>Supplier</th><th>Invoice number</th><th>Source</th><th>Status</th><th class="num">Excl. VAT</th><th class="num">VAT</th><th class="num">Incl. VAT</th><th class="num">Open</th></tr></thead>
+      <tbody>
+      {% for r in data.rows %}
+        <tr data-invoice-id="{{ r.invoice_id }}"{% if r.status == 'draft' %} class="is-draft"{% endif %}>
+          <td>{{ r.invoice_date|nldate }}</td>
+          <td><a href="/purchases/{{ r.invoice_id }}">{{ r.supplier }}</a></td>
+          <td>{{ r.supplier_reference }}{% if r.is_opening %} <span class="pill">opening</span>{% endif %}</td>
+          <td><span class="pill">{{ r.source }}</span></td>
+          <td>{{ ui.badge(r.status) }}</td>
+          <td class="num">{{ r.excl_cents|eur }}</td>
+          <td class="num">{{ r.vat_cents|eur }}</td>
+          <td class="num">{{ r.incl_cents|eur }}</td>
+          <td class="num">{% if r.status != 'draft' %}{{ r.open_cents|eur }}{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr><th colspan="5">Total booked ({{ tot.count }})</th><th class="num">{{ tot.excl_cents|eur }}</th><th class="num">{{ tot.vat_cents|eur }}</th><th class="num">{{ tot.incl_cents|eur }}</th><th class="num">{{ tot.open_cents|eur }}</th></tr>
+      </tfoot>
+    </table>
+  </div>
+  {% if has_drafts %}<div class="card-body"><span class="field-hint">Drafts are shown in italics and are not in the totals.</span></div>{% endif %}
+</div>
+{% else %}
+{% if can_write %}
+{{ ui.empty("No bills in this period", "Change the dates or supplier, or upload bills below.", "/inbox#upload-form", "Open inbox") }}
+{% else %}
+{{ ui.empty("No bills in this period", "Change the dates or supplier to see more.") }}
+{% endif %}
+{% endif %}
+
+<div class="stack">
+  {{ breakdown("spend-by-supplier", "By supplier", data.by_supplier) }}
+  {{ breakdown("spend-by-month", "By month", data.by_month) }}
+  {{ breakdown("spend-by-category", "By category", data.by_category) }}
+</div>
+
+{% if can_write %}
+<div class="card">
+  <div class="card-body">
+    <form id="spend-upload" method="post" action="/inbox/upload" enctype="multipart/form-data" class="stack">
+      {{ ui.csrf() }}
+      <label class="field">
+        <span class="field-label">Upload many bills at once (PDF, JPEG, PNG or UBL XML)</span>
+        <input class="input" type="file" name="files" multiple required accept="application/pdf,image/jpeg,image/png,application/xml,text/xml,.xml">
+        <span class="field-hint">Bills also arrive by email (<a href="/settings">inbox address</a>) and from your phone (<a href="/settings/devices">phone devices</a>).</span>
+      </label>
+      <div class="form-actions"><button class="btn btn-primary" type="submit">Upload</button></div>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
